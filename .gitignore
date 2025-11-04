@@ -1,0 +1,25 @@
+# Project-wide ignores
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*.orig
+
+# Logs
+*.log
+logs/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Python cache (if tooling scripts added later)
+__pycache__/
+*.pyc
