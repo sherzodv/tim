@@ -34,10 +34,27 @@ const emitConnectionState = (state: ConnectionState) => {
 const ensureSocket = () => {
 	if (!browser) return null;
 	if (!socket) {
-		socket = connectBackendSocket({
+		const backendSocket = connectBackendSocket({
 			onMessage: dispatch,
 			onConnectionState: emitConnectionState
 		});
+
+		const managedSocket: SocketLike = {
+			send(data: string) {
+				backendSocket.send(data);
+			},
+			close() {
+				backendSocket.close();
+				if (socket === managedSocket) {
+					socket = null;
+					if (connectionState !== 'connecting') {
+						emitConnectionState('connecting');
+					}
+				}
+			}
+		};
+
+		socket = managedSocket;
 	}
 	return socket;
 };
@@ -74,7 +91,12 @@ export const apiService = {
 		listeners.add(listener);
 		listener(createConnectionMessage(connectionState));
 		ensureSocket();
-		return () => listeners.delete(listener);
+		return () => {
+			listeners.delete(listener);
+			if (listeners.size === 0 && socket) {
+				socket.close();
+			}
+		};
 	}
 };
 
