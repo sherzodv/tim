@@ -1,0 +1,169 @@
+import { browser } from '$app/environment';
+import { writable } from 'svelte/store';
+import { apiService } from '$lib/api/service';
+import type { ServerMessage } from '$lib/api/types';
+import {
+	DEFAULT_HELP,
+	DEFAULT_STATUS,
+	STORAGE_KEY,
+	THEME_CHOICES,
+	type CommandContent,
+	type CommandEntry,
+	type CommandRole,
+	type SessionSnapshot
+} from '$lib/models/session';
+
+const createDefaultSnapshot = (): SessionSnapshot => ({
+	theme: 'night',
+	entries: [],
+	status: DEFAULT_STATUS,
+	help: DEFAULT_HELP
+});
+
+const sanitizeContent = (content: unknown): CommandContent | null => {
+	if (!content || typeof content !== 'object') return null;
+
+	const candidate = content as { kind?: unknown; text?: unknown; html?: unknown };
+
+	if (candidate.kind === 'text' && typeof candidate.text === 'string') {
+		return { kind: 'text', text: candidate.text };
+	}
+
+	if (candidate.kind === 'html' && typeof candidate.html === 'string') {
+		return { kind: 'html', html: candidate.html };
+	}
+
+	return null;
+};
+
+const sanitizeEntry = (entry: unknown): CommandEntry | null => {
+	if (!entry || typeof entry !== 'object') return null;
+
+	const candidate = entry as { id?: unknown; role?: unknown; content?: unknown };
+	const content = sanitizeContent(candidate.content);
+	const role = candidate.role === 'command' || candidate.role === 'output' ? candidate.role : null;
+	const id = typeof candidate.id === 'number' ? candidate.id : Date.now();
+
+	if (!content || !role) return null;
+
+	return {
+		id,
+		role,
+		content
+	};
+};
+
+const loadSnapshot = (): SessionSnapshot => {
+	if (!browser) return createDefaultSnapshot();
+
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) return createDefaultSnapshot();
+
+		const parsed = JSON.parse(raw) as Partial<SessionSnapshot>;
+		if (!parsed || typeof parsed !== 'object') return createDefaultSnapshot();
+
+		const sanitizedEntries: CommandEntry[] = Array.isArray(parsed.entries)
+			? parsed.entries
+					.map((entry) => {
+						if (!entry || typeof entry !== 'object') return null;
+
+						let content = sanitizeContent((entry as { content?: unknown }).content);
+						if (!content) {
+							const legacyText = (entry as { text?: unknown }).text;
+							if (typeof legacyText === 'string') {
+								content = { kind: 'text', text: legacyText };
+							}
+						}
+						const role =
+							entry.role === 'command' || entry.role === 'output' ? entry.role : 'output';
+						const id = typeof entry.id === 'number' ? entry.id : Date.now();
+
+						if (!content) return null;
+
+						return {
+							id,
+							role,
+							content
+						};
+					})
+					.filter(Boolean) as CommandEntry[]
+			: [];
+
+		return {
+			...createDefaultSnapshot(),
+			...parsed,
+			entries: sanitizedEntries
+		};
+	} catch {
+		return createDefaultSnapshot();
+	}
+};
+
+function createSessionStore() {
+	const { subscribe: baseSubscribe, update } = writable<SessionSnapshot>(loadSnapshot());
+
+	const persist = (snapshot: SessionSnapshot) => {
+		if (!browser) return;
+
+		try {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+		} catch {
+			/* ignore storage errors */
+		}
+	};
+
+	const applyServerMessage = (state: SessionSnapshot, message: ServerMessage): SessionSnapshot => {
+		switch (message.type) {
+			case 'workspace.entries.clear':
+				return { ...state, entries: [] };
+			case 'workspace.entry.append': {
+				const entry = sanitizeEntry(message.payload.entry);
+				if (!entry) return state;
+				return {
+					...state,
+					entries: [...state.entries, entry]
+				};
+			}
+			case 'session.status':
+				return { ...state, status: message.payload.status };
+			case 'session.help':
+				return { ...state, help: message.payload.help };
+			case 'session.theme':
+				return state.theme === message.payload.theme
+					? state
+					: { ...state, theme: message.payload.theme };
+			default:
+				return state;
+		}
+	};
+
+	if (browser) {
+		apiService.subscribe((message) => {
+			update((state) => applyServerMessage(state, message));
+		});
+	}
+
+	return {
+		subscribe(
+			run: (value: SessionSnapshot) => void,
+			invalidate?: (value?: SessionSnapshot) => void
+		) {
+			return baseSubscribe((value) => {
+				run(value);
+				persist(value);
+			}, invalidate);
+		},
+		resetAll() {
+			update(() => createDefaultSnapshot());
+			if (browser) {
+				localStorage.removeItem(STORAGE_KEY);
+			}
+		}
+	};
+}
+
+export const session = createSessionStore();
+export const THEME_OPTIONS = THEME_CHOICES;
+export const DEFAULT_STATUS_TEXT = DEFAULT_STATUS;
+export const DEFAULT_HELP_TEXT = DEFAULT_HELP;

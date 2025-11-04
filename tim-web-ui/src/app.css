@@ -1,0 +1,130 @@
+@import '@fontsource/fira-mono';
+
+:root {
+	--base-font:
+		'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
+		'Open Sans', 'Helvetica Neue', sans-serif;
+	--mono: 'Fira Mono', 'SFMono-Regular', ui-monospace, 'Source Code Pro', monospace;
+	--transition-base: 0.2s ease;
+}
+
+:root[data-theme='night'],
+:root:not([data-theme]) {
+	--shell-top: #1c1f24;
+	--shell-bottom: #0f1215;
+	--panel-bg: rgba(15, 20, 26, 0.85);
+	--shell-text: #eff6ff;
+	--accent: #5fc8ff;
+	--accent-soft: rgba(95, 200, 255, 0.28);
+	--focus-ring: 0 0 0 2px rgba(95, 200, 255, 0.45);
+	--control-bg: rgba(0, 0, 0, 0.55);
+	--control-bg-selected: rgba(95, 200, 255, 0.18);
+	--control-border: rgba(95, 200, 255, 0.35);
+	--control-border-selected: rgba(95, 200, 255, 0.65);
+	--muted-text: rgba(255, 255, 255, 0.35);
+	--log-prefix-bg: rgba(0, 0, 0, 0.35);
+	--log-text-color: rgba(255, 255, 255, 0.9);
+	--scrollbar-thumb: rgba(35, 48, 62, 0.85);
+	--scrollbar-thumb-hover: rgba(55, 80, 110, 0.9);
+	--scrollbar-track: rgba(255, 255, 255, 0.06);
+	--background-color: #0b0e11;
+	--background-gradient-1: radial-gradient(circle at top, rgba(95, 200, 255, 0.12), transparent 45%);
+	--background-gradient-2: radial-gradient(circle at bottom left, rgba(53, 94, 126, 0.18), transparent 55%);
+	--background-gradient-3: linear-gradient(180deg, rgba(8, 11, 14, 0.95) 0%, rgba(6, 8, 11, 0.95) 100%);
+}
+
+:root[data-theme='day'] {
+	--shell-top: #f2f5f8;
+	--shell-bottom: #dae3ef;
+	--panel-bg: rgba(255, 255, 255, 0.88);
+	--shell-text: #1f2a36;
+	--accent: #2d72d9;
+	--accent-soft: rgba(45, 114, 217, 0.18);
+	--focus-ring: 0 0 0 2px rgba(45, 114, 217, 0.35);
+	--control-bg: rgba(240, 244, 249, 0.9);
+	--control-bg-selected: rgba(45, 114, 217, 0.15);
+	--control-border: rgba(45, 114, 217, 0.25);
+	--control-border-selected: rgba(45, 114, 217, 0.55);
+	--muted-text: rgba(31, 42, 54, 0.55);
+	--log-prefix-bg: rgba(255, 255, 255, 0.7);
+	--log-text-color: rgba(31, 42, 54, 0.9);
+	--scrollbar-thumb: rgba(130, 150, 180, 0.6);
+	--scrollbar-thumb-hover: rgba(118, 138, 170, 0.7);
+	--scrollbar-track: rgba(0, 0, 0, 0.06);
+	--background-color: #e8f1fd;
+	--background-gradient-1: radial-gradient(circle at top, rgba(255, 255, 255, 0.85), transparent 50%);
+	--background-gradient-2: radial-gradient(circle at bottom left, rgba(188, 208, 237, 0.45), transparent 65%);
+	--background-gradient-3: linear-gradient(180deg, rgba(233, 239, 248, 0.95) 0%, rgba(215, 227, 242, 0.95) 100%);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	background-color: var(--background-color);
+	background-image: var(--background-gradient-1), var(--background-gradient-2), var(--background-gradient-3);
+	color: var(--shell-text);
+	font-family: var(--mono);
+	line-height: 1.4;
+	transition:
+		background-color var(--transition-base),
+		color var(--transition-base);
+	overflow: hidden;
+}
+
+body > div {
+	display: flex;
+	flex-direction: column;
+	min-height: 100%;
+	height: 100%;
+}
+
+body > div > * {
+	flex: 1;
+	min-height: 0;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+	transition: color var(--transition-base);
+}
+
+a:hover,
+a:focus {
+	text-decoration: underline;
+}
+
+button {
+	font-family: inherit;
+	cursor: pointer;
+	transition:
+		background-color var(--transition-base),
+		border-color var(--transition-base),
+		color var(--transition-base),
+		opacity var(--transition-base);
+}
+
+button:disabled {
+	cursor: not-allowed;
+}
+
+button:focus-visible,
+input:focus-visible {
+	outline: none;
+	box-shadow: var(--focus-ring);
+}
+
+input {
+	font-family: inherit;
+}
