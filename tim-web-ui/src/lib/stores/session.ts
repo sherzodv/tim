@@ -10,14 +10,22 @@ import {
 	type CommandContent,
 	type CommandEntry,
 	type CommandRole,
-	type SessionSnapshot
+	type SessionSnapshot,
+	type ConnectionState
 } from '$lib/models/session';
+
+const CONNECTING_STATUS = 'Connecting to server...';
+const CONNECTING_HELP = 'Waiting for backend connection.';
+const RECONNECTING_STATUS = 'Reconnecting to server...';
+const RECONNECTING_HELP =
+	'Backend unreachable. Commands are disabled until the connection is restored.';
 
 const createDefaultSnapshot = (): SessionSnapshot => ({
 	theme: 'night',
+	connection: 'connecting',
 	entries: [],
-	status: DEFAULT_STATUS,
-	help: DEFAULT_HELP
+	status: CONNECTING_STATUS,
+	help: CONNECTING_HELP
 });
 
 const sanitizeContent = (content: unknown): CommandContent | null => {
@@ -51,6 +59,43 @@ const sanitizeEntry = (entry: unknown): CommandEntry | null => {
 		role,
 		content
 	};
+};
+
+const sanitizeConnection = (value: unknown): ConnectionState => {
+	if (value === 'open' || value === 'reconnecting' || value === 'connecting') {
+		return value;
+	}
+	return 'connecting';
+};
+
+const applyConnectionUpdate = (
+	state: SessionSnapshot,
+	connection: ConnectionState
+): SessionSnapshot => {
+	switch (connection) {
+		case 'open':
+			return {
+				...state,
+				connection,
+				status: DEFAULT_STATUS,
+				help: DEFAULT_HELP
+			};
+		case 'connecting':
+			return {
+				...state,
+				connection,
+				status: CONNECTING_STATUS,
+				help: CONNECTING_HELP
+			};
+		case 'reconnecting':
+		default:
+			return {
+				...state,
+				connection,
+				status: RECONNECTING_STATUS,
+				help: RECONNECTING_HELP
+			};
+	}
 };
 
 const loadSnapshot = (): SessionSnapshot => {
@@ -93,7 +138,8 @@ const loadSnapshot = (): SessionSnapshot => {
 		return {
 			...createDefaultSnapshot(),
 			...parsed,
-			entries: sanitizedEntries
+			entries: sanitizedEntries,
+			connection: sanitizeConnection((parsed as { connection?: unknown }).connection)
 		};
 	} catch {
 		return createDefaultSnapshot();
@@ -133,6 +179,8 @@ function createSessionStore() {
 				return state.theme === message.payload.theme
 					? state
 					: { ...state, theme: message.payload.theme };
+			case 'connection.state':
+				return applyConnectionUpdate(state, message.payload.state);
 			default:
 				return state;
 		}

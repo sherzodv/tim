@@ -2,6 +2,8 @@ export type Theme = 'night' | 'day';
 
 export type CommandRole = 'command' | 'output';
 
+export type ConnectionState = 'connecting' | 'open' | 'reconnecting';
+
 export type CommandContent =
 	| {
 			kind: 'text';
@@ -20,6 +22,7 @@ export type CommandEntry = {
 
 export type SessionSnapshot = {
 	theme: Theme;
+	connection: ConnectionState;
 	entries: CommandEntry[];
 	status: string;
 	help: string;

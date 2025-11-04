@@ -1,4 +1,10 @@
-import type { CommandEntry, CommandRole, CommandContent, Theme } from '$lib/models/session';
+import type {
+	CommandEntry,
+	CommandRole,
+	CommandContent,
+	Theme,
+	ConnectionState
+} from '$lib/models/session';
 
 export type CommandRequestMessage = {
 	type: 'command.request';
@@ -45,12 +51,21 @@ export type SessionThemeMessage = {
 	};
 };
 
+export type ConnectionStateMessage = {
+	type: 'connection.state';
+	id: string;
+	payload: {
+		state: ConnectionState;
+	};
+};
+
 export type ServerMessage =
 	| WorkspaceEntryAppendMessage
 	| WorkspaceEntriesClearMessage
 	| SessionStatusMessage
 	| SessionHelpMessage
-	| SessionThemeMessage;
+	| SessionThemeMessage
+	| ConnectionStateMessage;
 
 export type ClientMessage = CommandRequestMessage;
 
