@@ -11,11 +11,12 @@ Three components: frontend: tim-web-ui, backend: tim-code, cloud: tim-cloud. tim
 ## Tooling & env
 
 tim-web-ui:
-  typescript, svelte, vite
+  typescript, svelte, vite, grpc
   protobuf implementation libs are to be analyzed and picked
 
 tim-code:
   rust
+  grpc
 
 tim-cloud:
   java 21, spring, spring boot all latest versions
@@ -23,4 +24,4 @@ tim-cloud:
 
 ## Work style
 
-Iterative, small step changes. Each patch has high quality just like it should pass review of the top tier world top 100 tech lead (rust, java, typescript).
+Iterative, small step changes. Each patch must have high quality just like it should pass review of the world top 100 tech lead (rust, java, typescript).
