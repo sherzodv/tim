@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
-futures-util = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tokio-stream = "0.1"
+tonic = { version = "0.14", features = ["transport"] }
+tonic-web = "0.14"
+tonic-prost = "0.14"
+tower-http = { version = "0.5", features = ["cors"] }
+prost = "0.14"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[build-dependencies]
+tonic-prost-build = "0.14"

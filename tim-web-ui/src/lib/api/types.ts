@@ -1,18 +1,4 @@
-import type {
-	CommandEntry,
-	CommandRole,
-	CommandContent,
-	Theme,
-	ConnectionState
-} from '$lib/models/session';
-
-export type CommandRequestMessage = {
-	type: 'command.request';
-	id: string;
-	payload: {
-		command: string;
-	};
-};
+import type { CommandEntry, Theme, ConnectionState } from '$lib/models/session';
 
 export type WorkspaceEntryAppendMessage = {
 	type: 'workspace.entry.append';
@@ -67,16 +53,4 @@ export type ServerMessage =
 	| SessionThemeMessage
 	| ConnectionStateMessage;
 
-export type ClientMessage = CommandRequestMessage;
-
 export type ApiListener = (message: ServerMessage) => void;
-
-export type OutboxCommand = {
-	command: string;
-	id: string;
-};
-
-export type SocketLike = {
-	send: (data: string) => void;
-	close: () => void;
-};

@@ -1,18 +1,31 @@
 import { browser } from '$app/environment';
+import { createClient, type Client } from '@connectrpc/connect';
+import { createGrpcWebTransport } from '@connectrpc/connect-web';
+import {
+	CommandRole,
+	ConsoleService,
+	type CommandContent as RpcCommandContent,
+	type CommandEntry as RpcCommandEntry,
+	type ServerMessage as RpcServerMessage,
+	Theme as RpcTheme
+} from '../../gen/api_pb';
+import type { ApiListener, ConnectionStateMessage, ServerMessage } from '$lib/api/types';
 import type {
-	ApiListener,
-	ClientMessage,
-	ConnectionStateMessage,
-	ServerMessage,
-	SocketLike
-} from '$lib/api/types';
-import type { ConnectionState } from '$lib/models/session';
+	CommandContent as UiCommandContent,
+	CommandEntry as UiCommandEntry,
+	ConnectionState,
+	Theme
+} from '$lib/models/session';
+
+const CLIENT_ID_STORAGE_KEY = 'tim.client-id';
 
 const listeners = new Set<ApiListener>();
-
-let socket: SocketLike | null = null;
+let client: Client<typeof ConsoleService> | null = null;
+let streamController: AbortController | null = null;
+let streamTask: Promise<void> | null = null;
 let connectionState: ConnectionState = 'connecting';
 let connectionEventCounter = 0;
+let cachedClientId: string | null = null;
 
 const dispatch = (message: ServerMessage) => {
 	for (const listener of listeners) {
@@ -27,242 +40,319 @@ const createConnectionMessage = (state: ConnectionState): ConnectionStateMessage
 });
 
 const emitConnectionState = (state: ConnectionState) => {
+	if (connectionState === state) return;
 	connectionState = state;
 	dispatch(createConnectionMessage(state));
 };
 
-const ensureSocket = () => {
-	if (!browser) return null;
-	if (!socket) {
-		const backendSocket = connectBackendSocket({
-			onMessage: dispatch,
-			onConnectionState: emitConnectionState
-		});
+async function ensureClient(): Promise<Client<typeof ConsoleService>> {
+	if (client) return client;
 
-		const managedSocket: SocketLike = {
-			send(data: string) {
-				backendSocket.send(data);
-			},
-			close() {
-				backendSocket.close();
-				if (socket === managedSocket) {
-					socket = null;
-					if (connectionState !== 'connecting') {
-						emitConnectionState('connecting');
-					}
+	const baseUrl = resolveBackendBaseUrl();
+	if (!baseUrl) {
+		throw new Error('Unable to resolve backend base URL for gRPC transport.');
+	}
+
+	client = createClient(
+		ConsoleService,
+		createGrpcWebTransport({
+			baseUrl
+		})
+	);
+
+	return client;
+}
+
+function ensureSubscription() {
+	if (!browser) return;
+	if (streamTask) return;
+	if (listeners.size === 0) return;
+
+	streamController = new AbortController();
+	const { signal } = streamController;
+	streamTask = runSubscription(signal).finally(() => {
+		streamTask = null;
+		streamController = null;
+		if (connectionState !== 'connecting' && listeners.size > 0) {
+			emitConnectionState('connecting');
+		}
+	});
+}
+
+function stopSubscription() {
+	if (streamController) {
+		streamController.abort();
+		streamController = null;
+	}
+	streamTask = null;
+	if (connectionState !== 'connecting') {
+		emitConnectionState('connecting');
+	}
+}
+
+async function runSubscription(signal: AbortSignal) {
+	let retryCount = 0;
+
+	while (!signal.aborted) {
+		try {
+			const rpcClient = await ensureClient();
+			const stream = rpcClient.subscribe({ clientId: getClientId() }, { signal });
+			retryCount = 0;
+			emitConnectionState('open');
+
+			for await (const message of stream) {
+				if (signal.aborted) break;
+				const converted = translateServerMessage(message);
+				if (converted) {
+					dispatch(converted);
 				}
 			}
-		};
 
-		socket = managedSocket;
+			if (signal.aborted) {
+				break;
+			}
+
+			emitConnectionState('reconnecting');
+		} catch (error) {
+			if (signal.aborted) {
+				break;
+			}
+			console.error('Failed to maintain backend subscription', error);
+			emitConnectionState('reconnecting');
+			retryCount = Math.min(retryCount + 1, 8);
+		}
+
+		const delay = Math.min(500 * Math.max(retryCount, 1), 5000);
+		try {
+			await wait(delay, signal);
+		} catch {
+			break;
+		}
 	}
-	return socket;
-};
+}
 
-const enqueue = (command: string) => {
-	const target = ensureSocket();
-	if (!target) return;
+function translateServerMessage(message: RpcServerMessage): ServerMessage | null {
+	const id = message.id || generateId();
+	const event = message.event;
 
-	const message: ClientMessage = {
-		type: 'command.request',
-		id: generateId(),
-		payload: { command }
+	if (!event || !event.case) {
+		console.warn('Server message missing event payload', message);
+		return null;
+	}
+
+	if (event.case === 'workspaceEntryAppend' && event.value?.entry) {
+		const entry = convertCommandEntry(event.value.entry);
+		if (!entry) return null;
+		return {
+			type: 'workspace.entry.append',
+			id,
+			payload: { entry }
+		};
+	}
+
+	if (event.case === 'workspaceEntriesClear') {
+		return {
+			type: 'workspace.entries.clear',
+			id
+		};
+	}
+
+	if (event.case === 'sessionStatus') {
+		return {
+			type: 'session.status',
+			id,
+			payload: {
+				status: event.value?.status ?? ''
+			}
+		};
+	}
+
+	if (event.case === 'sessionHelp') {
+		return {
+			type: 'session.help',
+			id,
+			payload: {
+				help: event.value?.help ?? ''
+			}
+		};
+	}
+
+	if (event.case === 'sessionTheme') {
+		const theme = convertTheme(event.value?.theme);
+		if (!theme) return null;
+		return {
+			type: 'session.theme',
+			id,
+			payload: { theme }
+		};
+	}
+
+	console.warn('Received unsupported server message payload', message);
+	return null;
+}
+
+function convertCommandEntry(entry: RpcCommandEntry): UiCommandEntry | null {
+	const roleValue = entry.role ?? CommandRole.UNSPECIFIED;
+	const role = roleValue === CommandRole.COMMAND ? 'command' : roleValue === CommandRole.OUTPUT ? 'output' : null;
+	if (!role) return null;
+
+	const content = convertCommandContent(entry.content);
+	if (!content) return null;
+
+	const rawId = entry.id ?? BigInt(Date.now());
+	let id = Number(rawId);
+	if (!Number.isFinite(id)) {
+		id = Date.now();
+	}
+
+	return {
+		id,
+		role,
+		content
 	};
+}
 
-	target.send(JSON.stringify(message));
-};
+function convertCommandContent(content?: RpcCommandContent | null): UiCommandContent | null {
+	if (!content) return null;
+	switch (content.value?.case) {
+		case 'text':
+			return { kind: 'text', text: content.value.value };
+		case 'html':
+			return { kind: 'html', html: content.value.value };
+		default:
+			return null;
+	}
+}
 
-const generateId = () => {
+function convertTheme(value?: RpcTheme | null): Theme | null {
+	switch (value) {
+		case RpcTheme.DAY:
+			return 'day';
+		case RpcTheme.NIGHT:
+			return 'night';
+		default:
+			return 'night';
+	}
+}
+
+function getClientId(): string {
+	if (cachedClientId) return cachedClientId;
+
+	const fallback = `client-${generateId()}`;
+	if (!browser) {
+		cachedClientId = fallback;
+		return cachedClientId;
+	}
+
+	try {
+		const stored = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+		if (stored && stored.length > 0) {
+			cachedClientId = stored;
+			return cachedClientId;
+		}
+
+		const generated = generateId();
+		localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+		cachedClientId = generated;
+		return cachedClientId;
+	} catch {
+		cachedClientId = fallback;
+		return cachedClientId;
+	}
+}
+
+function resolveBackendBaseUrl(): string | null {
+	if (!browser) return null;
+
+	const override =
+		import.meta.env.VITE_TIM_RPC_URL ??
+		import.meta.env.VITE_BACKEND_RPC_URL ??
+		import.meta.env.VITE_TIM_HTTP_URL ??
+		null;
+	if (override) {
+		return override.endsWith('/') ? override.slice(0, -1) : override;
+	}
+
+	const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+	const host = import.meta.env.VITE_TIM_RPC_HOST ?? window.location.hostname;
+	const port = import.meta.env.VITE_TIM_RPC_PORT ?? '8787';
+	const rawPath = import.meta.env.VITE_TIM_RPC_PATH ?? '';
+	const path = rawPath ? (rawPath.startsWith('/') ? rawPath : `/${rawPath}`) : '';
+
+	return `${protocol}://${host}:${port}${path}`;
+}
+
+function generateId() {
 	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
 		return crypto.randomUUID();
 	}
-	return `cmd-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-};
+	return `id-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+	if (typeof window === 'undefined') {
+		return new Promise<void>((resolve) => setTimeout(resolve, ms));
+	}
+
+	return new Promise<void>((resolve, reject) => {
+		const timer = window.setTimeout(() => {
+			cleanup();
+			resolve();
+		}, ms);
+
+		const onAbort = () => {
+			cleanup();
+			reject(new DOMException('Aborted', 'AbortError'));
+		};
+
+		const cleanup = () => {
+			window.clearTimeout(timer);
+			signal.removeEventListener('abort', onAbort);
+		};
+
+		if (signal.aborted) {
+			onAbort();
+			return;
+		}
+
+		signal.addEventListener('abort', onAbort);
+	});
+}
 
 if (browser) {
-	ensureSocket();
+	ensureSubscription();
 }
 
 export const apiService = {
-	sendCommand(command: string) {
-		enqueue(command);
+	async sendCommand(command: string) {
+		const trimmed = command.trim();
+		if (!trimmed) return;
+
+		try {
+			const rpcClient = await ensureClient();
+			ensureSubscription();
+			await rpcClient.sendCommand({
+				id: generateId(),
+				command: trimmed,
+				clientId: getClientId()
+			});
+		} catch (error) {
+			console.error('Failed to send command to backend', error);
+			emitConnectionState('reconnecting');
+		}
 	},
 	subscribe(listener: ApiListener) {
 		listeners.add(listener);
 		listener(createConnectionMessage(connectionState));
-		ensureSocket();
+		ensureSubscription();
+
 		return () => {
 			listeners.delete(listener);
-			if (listeners.size === 0 && socket) {
-				socket.close();
+			if (listeners.size === 0) {
+				stopSubscription();
 			}
 		};
 	}
 };
 
 export type ApiService = typeof apiService;
-
-type BackendSocketCallbacks = {
-	onMessage: ApiListener;
-	onConnectionState: (state: ConnectionState) => void;
-};
-
-function connectBackendSocket({
-	onMessage,
-	onConnectionState
-}: BackendSocketCallbacks): SocketLike {
-	const outbox: string[] = [];
-	let ws: WebSocket | null = null;
-	let reconnectTimer: number | null = null;
-	let retryCount = 0;
-	let manuallyClosed = false;
-
-	const clearReconnectTimer = () => {
-		if (reconnectTimer !== null) {
-			window.clearTimeout(reconnectTimer);
-			reconnectTimer = null;
-		}
-	};
-
-	const flushOutbox = () => {
-		if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-		while (outbox.length > 0) {
-			const payload = outbox.shift()!;
-
-			try {
-				ws.send(payload);
-			} catch (error) {
-				console.error('Failed to send payload over backend socket', error);
-				outbox.unshift(payload);
-				try {
-					ws.close();
-				} catch {
-					/* ignore close errors */
-				}
-				return;
-			}
-		}
-	};
-
-	const scheduleReconnect = () => {
-		if (manuallyClosed) return;
-		if (reconnectTimer !== null) return;
-
-		retryCount = Math.min(retryCount + 1, 10);
-		onConnectionState('reconnecting');
-
-		const delay = Math.min(1000 * retryCount, 5000);
-		reconnectTimer = window.setTimeout(() => {
-			reconnectTimer = null;
-			open();
-		}, delay);
-	};
-
-	const open = () => {
-		if (manuallyClosed) return;
-
-		const url = resolveBackendSocketUrl();
-		if (!url) {
-			console.error('Unable to resolve backend WebSocket URL.');
-			scheduleReconnect();
-			return;
-		}
-
-		const transitionalState: ConnectionState = retryCount === 0 ? 'connecting' : 'reconnecting';
-		onConnectionState(transitionalState);
-
-		try {
-			ws = new WebSocket(url);
-		} catch (error) {
-			console.error('Failed to establish backend WebSocket connection', error);
-			scheduleReconnect();
-			return;
-		}
-
-		ws.addEventListener('open', () => {
-			retryCount = 0;
-			onConnectionState('open');
-			flushOutbox();
-		});
-
-		ws.addEventListener('message', (event) => {
-			try {
-				const payload = typeof event.data === 'string' ? event.data : String(event.data);
-				const message = JSON.parse(payload) as ServerMessage;
-				onMessage(message);
-			} catch (error) {
-				console.error('Failed to parse backend message', error);
-			}
-		});
-
-		ws.addEventListener('close', () => {
-			ws = null;
-			if (!manuallyClosed) {
-				scheduleReconnect();
-			}
-		});
-
-		ws.addEventListener('error', () => {
-			if (!manuallyClosed) {
-				scheduleReconnect();
-			}
-		});
-	};
-
-	open();
-
-	return {
-		send(data: string) {
-			if (manuallyClosed) return;
-
-			if (ws && ws.readyState === WebSocket.OPEN) {
-				try {
-					ws.send(data);
-				} catch (error) {
-					console.error('Failed to send backend message', error);
-					outbox.push(data);
-					scheduleReconnect();
-					try {
-						ws.close();
-					} catch {
-						/* ignore close errors */
-					}
-				}
-				return;
-			}
-
-			outbox.push(data);
-		},
-		close() {
-			manuallyClosed = true;
-			clearReconnectTimer();
-
-			if (ws) {
-				try {
-					ws.close();
-				} catch (error) {
-					console.error('Failed to close backend socket', error);
-				} finally {
-					ws = null;
-				}
-			}
-		}
-	};
-}
-
-function resolveBackendSocketUrl() {
-	if (!browser) return null;
-
-	const override =
-		import.meta.env.VITE_TIM_WS_URL ?? import.meta.env.VITE_BACKEND_WS_URL ?? null;
-	if (override) return override;
-
-	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-	const host = import.meta.env.VITE_TIM_WS_HOST ?? window.location.hostname;
-	const port = import.meta.env.VITE_TIM_WS_PORT ?? '8787';
-	const rawPath = import.meta.env.VITE_TIM_WS_PATH ?? '/ws';
-	const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-
-	return `${protocol}://${host}:${port}${path}`;
-}

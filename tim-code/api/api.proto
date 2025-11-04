@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package tim.api.v1;
+
+option java_multiple_files = true;
+option java_package = "com.tim.api.v1";
+option csharp_namespace = "Tim.Api.V1";
+
+message CommandRequest {
+  string id = 1;
+  string command = 2;
+  string client_id = 3;
+}
+
+message SendCommandResponse {
+  string id = 1;
+}
+
+message SubscribeRequest {
+  string client_id = 1;
+}
+
+message ServerMessage {
+  string id = 1;
+  oneof event {
+    WorkspaceEntryAppend workspace_entry_append = 2;
+    WorkspaceEntriesClear workspace_entries_clear = 3;
+    SessionStatus session_status = 4;
+    SessionHelp session_help = 5;
+    SessionTheme session_theme = 6;
+  }
+}
+
+message WorkspaceEntryAppend {
+  CommandEntry entry = 1;
+}
+
+message WorkspaceEntriesClear {}
+
+message SessionStatus {
+  string status = 1;
+}
+
+message SessionHelp {
+  string help = 1;
+}
+
+message SessionTheme {
+  Theme theme = 1;
+}
+
+message CommandEntry {
+  int64 id = 1;
+  CommandRole role = 2;
+  CommandContent content = 3;
+}
+
+enum CommandRole {
+  COMMAND_ROLE_UNSPECIFIED = 0;
+  COMMAND_ROLE_COMMAND = 1;
+  COMMAND_ROLE_OUTPUT = 2;
+}
+
+message CommandContent {
+  oneof value {
+    string text = 1;
+    string html = 2;
+  }
+}
+
+enum Theme {
+  THEME_UNSPECIFIED = 0;
+  THEME_NIGHT = 1;
+  THEME_DAY = 2;
+}
+
+service ConsoleService {
+  rpc SendCommand(CommandRequest) returns (SendCommandResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream ServerMessage);
+}
