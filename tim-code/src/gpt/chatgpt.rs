@@ -138,10 +138,7 @@ impl GptClient for ChatGptClient {
 
         let payload = OpenAiChatRequest {
             model,
-            messages: messages
-                .into_iter()
-                .map(OpenAiChatMessage::from)
-                .collect(),
+            messages: messages.into_iter().map(OpenAiChatMessage::from).collect(),
             max_tokens: max_output_tokens,
             temperature,
             top_p,
@@ -294,11 +291,7 @@ fn provider_error(status: StatusCode, body: &str) -> GptClientError {
         }
         GptClientError::Provider(format!("{}: {}", status.as_u16(), message))
     } else {
-        GptClientError::Provider(format!(
-            "{}: {}",
-            status.as_u16(),
-            body.trim().to_string()
-        ))
+        GptClientError::Provider(format!("{}: {}", status.as_u16(), body.trim().to_string()))
     }
 }
 

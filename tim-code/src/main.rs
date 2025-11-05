@@ -4,6 +4,11 @@ mod api {
 
 pub mod gpt;
 
+use crate::gpt::chatgpt::ChatGptClient;
+use crate::gpt::{
+    GptChatRequest, GptClient, GptClientError, GptGenerationControls, GptMessage, GptMessageRole,
+    GptUsage,
+};
 use api::command_content::Value as CommandContentValue;
 use api::console_service_server::{ConsoleService, ConsoleServiceServer};
 use api::server_message::Event as ServerMessageEvent;
@@ -24,17 +29,18 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const BASE_DELAY_MILLIS: u64 = 120;
 const DEFAULT_STATUS: &str = "Ready";
 const DEFAULT_HELP: &str =
     "Type `HELP` for available commands. Press `Esc` to cancel current input.";
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ConsoleServiceImpl {
     clients: Arc<RwLock<HashMap<String, mpsc::Sender<ServerMessage>>>>,
     event_counter: Arc<AtomicU64>,
+    chat_bridge: Option<Arc<ChatBridge>>,
 }
 
 #[tonic::async_trait]
@@ -91,7 +97,31 @@ impl ConsoleService for ConsoleServiceImpl {
 
 impl ConsoleServiceImpl {
     fn new() -> Self {
-        Self::default()
+        let chat_bridge = match ChatBridge::from_env() {
+            Ok(bridge) => {
+                info!(
+                    "ChatGPT integration enabled with model `{}`.",
+                    bridge.model_name()
+                );
+                Some(Arc::new(bridge))
+            }
+            Err(ChatBridgeInitError::MissingApiKey) => {
+                debug!(
+                    "ChatGPT integration disabled: set OPENAI_TIM_API_KEY to enable assistant responses."
+                );
+                None
+            }
+            Err(ChatBridgeInitError::Client(err)) => {
+                warn!("ChatGPT integration disabled: {err}");
+                None
+            }
+        };
+
+        Self {
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            event_counter: Arc::new(AtomicU64::new(0)),
+            chat_bridge,
+        }
     }
 
     async fn add_client(&self, id: String, sender: mpsc::Sender<ServerMessage>) {
@@ -340,45 +370,129 @@ impl ConsoleServiceImpl {
     }
 
     async fn handle_unknown(&self, client_id: String, request_id: String, command: String) {
-        let notice =
-            format!("Unknown command \"{command}\". Type HELP to show available commands.");
-
         self.enqueue_message(
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
-                command_entry(command),
+                command_entry(command.clone()),
             ),
             0.0,
         )
         .await;
 
-        self.enqueue_message(
-            client_id.clone(),
-            self.create_append_entry_message(
-                self.next_event_id(&request_id),
-                output_entry_text(&notice),
-            ),
-            1.0,
-        )
-        .await;
+        if let Some(bridge) = self.chat_bridge.clone() {
+            self.enqueue_message(
+                client_id.clone(),
+                self.create_status_message(
+                    self.next_event_id(&request_id),
+                    "Consulting assistant…",
+                ),
+                0.2,
+            )
+            .await;
 
-        self.enqueue_message(
-            client_id.clone(),
-            self.create_status_message(self.next_event_id(&request_id), "Unknown command"),
-            1.3,
-        )
-        .await;
+            match bridge.send(&command).await {
+                Ok(reply) => {
+                    let ChatBridgeReply {
+                        text,
+                        usage,
+                        provider_request_id,
+                    } = reply;
 
-        self.enqueue_message(
-            client_id,
-            self.create_help_message(
-                self.next_event_id(&request_id),
-                "Type HELP to see the command list.",
-            ),
-            1.4,
-        )
-        .await;
+                    if let Some(request_ref) = provider_request_id {
+                        debug!("assistant request completed: {request_ref}");
+                    }
+
+                    self.enqueue_message(
+                        client_id.clone(),
+                        self.create_append_entry_message(
+                            self.next_event_id(&request_id),
+                            output_entry_text(&text),
+                        ),
+                        1.0,
+                    )
+                    .await;
+
+                    let status_text = usage
+                        .map(|usage| {
+                            format!("Assistant responded ({} tokens).", usage.total_tokens)
+                        })
+                        .unwrap_or_else(|| "Assistant responded.".to_string());
+
+                    self.enqueue_message(
+                        client_id.clone(),
+                        self.create_status_message(self.next_event_id(&request_id), &status_text),
+                        1.3,
+                    )
+                    .await;
+
+                    self.enqueue_message(
+                        client_id,
+                        self.create_help_message(self.next_event_id(&request_id), DEFAULT_HELP),
+                        1.4,
+                    )
+                    .await;
+                }
+                Err(err) => {
+                    let notice = format!(
+                        "Assistant request failed: {err}. Type HELP for available commands."
+                    );
+
+                    self.enqueue_message(
+                        client_id.clone(),
+                        self.create_append_entry_message(
+                            self.next_event_id(&request_id),
+                            output_entry_text(&notice),
+                        ),
+                        1.0,
+                    )
+                    .await;
+
+                    self.enqueue_message(
+                        client_id.clone(),
+                        self.create_status_message(
+                            self.next_event_id(&request_id),
+                            "Assistant unavailable",
+                        ),
+                        1.3,
+                    )
+                    .await;
+
+                    self.enqueue_message(
+                        client_id,
+                        self.create_help_message(self.next_event_id(&request_id), DEFAULT_HELP),
+                        1.4,
+                    )
+                    .await;
+                }
+            }
+        } else {
+            let notice = "Assistant is not configured. Set OPENAI_TIM_API_KEY to enable responses.";
+
+            self.enqueue_message(
+                client_id.clone(),
+                self.create_append_entry_message(
+                    self.next_event_id(&request_id),
+                    output_entry_text(notice),
+                ),
+                1.0,
+            )
+            .await;
+
+            self.enqueue_message(
+                client_id.clone(),
+                self.create_status_message(self.next_event_id(&request_id), "Assistant disabled"),
+                1.3,
+            )
+            .await;
+
+            self.enqueue_message(
+                client_id,
+                self.create_help_message(self.next_event_id(&request_id), DEFAULT_HELP),
+                1.4,
+            )
+            .await;
+        }
     }
 
     async fn enqueue_message(
@@ -455,6 +569,102 @@ impl ConsoleServiceImpl {
             })),
         }
     }
+}
+
+#[derive(Clone)]
+struct ChatBridge {
+    client: ChatGptClient,
+    model: String,
+    system_prompt: String,
+    max_output_tokens: Option<u32>,
+    temperature: f32,
+    timeout: Duration,
+}
+
+impl ChatBridge {
+    fn from_env() -> Result<Self, ChatBridgeInitError> {
+        let api_key =
+            std::env::var("OPENAI_TIM_API_KEY").map_err(|_| ChatBridgeInitError::MissingApiKey)?;
+        let model = std::env::var("OPENAI_TIM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+        let system_prompt = std::env::var("OPENAI_TIM_SYSTEM_PROMPT")
+            .unwrap_or_else(|_| "You are Tim, a command centric assistant.".to_string());
+        let client = ChatGptClient::new(api_key).map_err(|err| {
+            ChatBridgeInitError::Client(format!("failed to create ChatGPT client: {err}"))
+        })?;
+
+        Ok(Self {
+            client,
+            model,
+            system_prompt,
+            max_output_tokens: Some(320),
+            temperature: 0.2,
+            timeout: Duration::from_secs(30),
+        })
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    async fn send(&self, user_command: &str) -> Result<ChatBridgeReply, GptClientError> {
+        let mut controls = GptGenerationControls::new();
+        controls.max_output_tokens = self.max_output_tokens;
+        controls.temperature = Some(self.temperature);
+        controls.timeout = Some(self.timeout);
+
+        let messages = vec![
+            GptMessage {
+                role: GptMessageRole::System,
+                content: self.system_prompt.clone(),
+            },
+            GptMessage {
+                role: GptMessageRole::User,
+                content: user_command.to_string(),
+            },
+        ];
+
+        let request = GptChatRequest::new(self.model.clone(), messages).with_controls(controls);
+        let response = self.client.chat(request).await?;
+        let text = response
+            .choices
+            .first()
+            .map(|choice| choice.message.content.clone())
+            .filter(|content| !content.trim().is_empty())
+            .ok_or_else(|| {
+                GptClientError::Provider("assistant returned an empty response".to_string())
+            })?;
+
+        Ok(ChatBridgeReply {
+            text,
+            usage: response.usage,
+            provider_request_id: response.provider_request_id,
+        })
+    }
+}
+
+#[derive(Debug)]
+enum ChatBridgeInitError {
+    MissingApiKey,
+    Client(String),
+}
+
+impl std::fmt::Display for ChatBridgeInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChatBridgeInitError::MissingApiKey => {
+                write!(f, "OPENAI_TIM_API_KEY environment variable is not set")
+            }
+            ChatBridgeInitError::Client(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for ChatBridgeInitError {}
+
+struct ChatBridgeReply {
+    text: String,
+    usage: Option<GptUsage>,
+    provider_request_id: Option<String>,
 }
 
 #[tokio::main]
