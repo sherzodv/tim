@@ -2,6 +2,8 @@ mod api {
     tonic::include_proto!("tim.api.v1");
 }
 
+pub mod gpt;
+
 use api::command_content::Value as CommandContentValue;
 use api::console_service_server::{ConsoleService, ConsoleServiceServer};
 use api::server_message::Event as ServerMessageEvent;
