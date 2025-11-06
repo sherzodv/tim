@@ -1,7 +1,7 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
 import { apiService } from '$lib/api/service';
-import type { ServerMessage } from '$lib/api/types';
+import type { SpaceUpdateMessage } from '$lib/api/types';
 import {
 	DEFAULT_HELP,
 	DEFAULT_STATUS,
@@ -51,14 +51,14 @@ const sanitizeEntry = (entry: unknown): CommandEntry | null => {
 		id?: unknown;
 		role?: unknown;
 		content?: unknown;
-		authorId?: unknown;
+		senderId?: unknown;
 	};
 	const content = sanitizeContent(candidate.content);
 	const role = candidate.role === 'command' || candidate.role === 'output' ? candidate.role : null;
 	const id = typeof candidate.id === 'number' ? candidate.id : Date.now();
-	const authorId =
-		typeof candidate.authorId === 'string' && candidate.authorId.length > 0
-			? candidate.authorId
+	const senderId =
+		typeof candidate.senderId === 'string' && candidate.senderId.length > 0
+			? candidate.senderId
 			: 'system';
 
 	if (!content || !role) return null;
@@ -66,7 +66,7 @@ const sanitizeEntry = (entry: unknown): CommandEntry | null => {
 	return {
 		id,
 		role,
-		authorId,
+		senderId,
 		content
 	};
 };
@@ -133,10 +133,10 @@ const loadSnapshot = (): SessionSnapshot => {
 						const role =
 							entry.role === 'command' || entry.role === 'output' ? entry.role : 'output';
 						const id = typeof entry.id === 'number' ? entry.id : Date.now();
-						const authorIdRaw = (entry as { authorId?: unknown }).authorId;
-						const authorId =
-							typeof authorIdRaw === 'string' && authorIdRaw.length > 0
-								? authorIdRaw
+						const senderIdRaw = (entry as { senderId?: unknown }).senderId;
+						const senderId =
+							typeof senderIdRaw === 'string' && senderIdRaw.length > 0
+								? senderIdRaw
 								: 'system';
 
 						if (!content) return null;
@@ -144,7 +144,7 @@ const loadSnapshot = (): SessionSnapshot => {
 						return {
 							id,
 							role,
-							authorId,
+							senderId,
 							content
 						};
 					})
@@ -175,7 +175,10 @@ function createSessionStore() {
 		}
 	};
 
-	const applyServerMessage = (state: SessionSnapshot, message: ServerMessage): SessionSnapshot => {
+	const applyServerMessage = (
+		state: SessionSnapshot,
+		message: SpaceUpdateMessage
+	): SessionSnapshot => {
 		switch (message.type) {
 			case 'workspace.entries.clear':
 				return { ...state, entries: [] };

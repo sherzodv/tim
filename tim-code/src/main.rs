@@ -10,11 +10,11 @@ use crate::gpt::{
     GptUsage,
 };
 use api::command_content::Value as CommandContentValue;
-use api::server_message::Event as ServerMessageEvent;
+use api::space_update::Event as SpaceUpdateEvent;
 use api::tim_api_server::{TimApi, TimApiServer};
 use api::{
-    CommandContent, CommandEntry, CommandRequest, CommandRole, SendCommandResponse, ServerMessage,
-    SessionHelp, SessionStatus, SessionTheme, SpaceMessage, SpaceNewMessage, SubscribeRequest,
+    CommandContent, CommandEntry, CommandRole, Message, SendMessageReq, SendMessageRes,
+    SessionHelp, SessionStatus, SessionTheme, SpaceNewMessage, SpaceUpdate, SubscribeToSpaceReq,
     Theme, WorkspaceEntriesClear,
 };
 use std::collections::HashMap;
@@ -35,25 +35,25 @@ const BASE_DELAY_MILLIS: u64 = 120;
 const DEFAULT_STATUS: &str = "Ready";
 const DEFAULT_HELP: &str =
     "Type `HELP` for available commands. Press `Esc` to cancel current input.";
-const SYSTEM_AUTHOR_ID: &str = "tim-code";
-const ASSISTANT_AUTHOR_ID: &str = "assistant";
+const SYSTEM_SENDER_ID: &str = "tim-code";
+const ASSISTANT_SENDER_ID: &str = "assistant";
 
 #[derive(Clone)]
 struct TimApiImpl {
-    clients: Arc<RwLock<HashMap<String, mpsc::Sender<ServerMessage>>>>,
+    clients: Arc<RwLock<HashMap<String, mpsc::Sender<SpaceUpdate>>>>,
     event_counter: Arc<AtomicU64>,
     chat_bridge: Option<Arc<ChatBridge>>,
 }
 
 #[tonic::async_trait]
 impl TimApi for TimApiImpl {
-    type SubscribeStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<ServerMessage, Status>> + Send>>;
+    type SubscribeToSpaceStream =
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
 
-    async fn send_command(
+    async fn send_message(
         &self,
-        request: Request<CommandRequest>,
-    ) -> Result<Response<SendCommandResponse>, Status> {
+        request: Request<SendMessageReq>,
+    ) -> Result<Response<SendMessageRes>, Status> {
         let payload = request.into_inner();
         let client_id = payload.client_id.trim();
         if client_id.is_empty() {
@@ -62,7 +62,7 @@ impl TimApi for TimApiImpl {
 
         let command = payload.command.trim();
         if command.is_empty() {
-            return Ok(Response::new(SendCommandResponse { id: payload.id }));
+            return Ok(Response::new(SendMessageRes { id: payload.id }));
         }
 
         if !self.client_exists(client_id).await {
@@ -76,13 +76,13 @@ impl TimApi for TimApiImpl {
         )
         .await;
 
-        Ok(Response::new(SendCommandResponse { id: payload.id }))
+        Ok(Response::new(SendMessageRes { id: payload.id }))
     }
 
-    async fn subscribe(
+    async fn subscribe_to_space(
         &self,
-        request: Request<SubscribeRequest>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
+        request: Request<SubscribeToSpaceReq>,
+    ) -> Result<Response<Self::SubscribeToSpaceStream>, Status> {
         let payload = request.into_inner();
         let client_id = payload.client_id.trim();
         if client_id.is_empty() {
@@ -93,7 +93,9 @@ impl TimApi for TimApiImpl {
         self.add_client(client_id.to_string(), sender).await;
 
         let stream = ReceiverStream::new(receiver).map(Ok);
-        Ok(Response::new(Box::pin(stream) as Self::SubscribeStream))
+        Ok(Response::new(
+            Box::pin(stream) as Self::SubscribeToSpaceStream
+        ))
     }
 }
 
@@ -126,7 +128,7 @@ impl TimApiImpl {
         }
     }
 
-    async fn add_client(&self, id: String, sender: mpsc::Sender<ServerMessage>) {
+    async fn add_client(&self, id: String, sender: mpsc::Sender<SpaceUpdate>) {
         let mut clients = self.clients.write().await;
         clients.insert(id, sender);
     }
@@ -178,7 +180,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
-                SYSTEM_AUTHOR_ID,
+                SYSTEM_SENDER_ID,
                 output_entry_html(help_html()),
             ),
             1.0,
@@ -223,7 +225,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
-                SYSTEM_AUTHOR_ID,
+                SYSTEM_SENDER_ID,
                 output_entry_text("Workspace cleared."),
             ),
             0.8,
@@ -275,7 +277,7 @@ impl TimApiImpl {
                     client_id.clone(),
                     self.create_append_entry_message(
                         self.next_event_id(&request_id),
-                        SYSTEM_AUTHOR_ID,
+                        SYSTEM_SENDER_ID,
                         output_entry_text(&confirmation),
                     ),
                     1.0,
@@ -308,7 +310,7 @@ impl TimApiImpl {
                     client_id.clone(),
                     self.create_append_entry_message(
                         self.next_event_id(&request_id),
-                        SYSTEM_AUTHOR_ID,
+                        SYSTEM_SENDER_ID,
                         output_entry_text("Usage: THEME <night|day>"),
                     ),
                     1.0,
@@ -418,7 +420,7 @@ impl TimApiImpl {
                         client_id.clone(),
                         self.create_append_entry_message(
                             self.next_event_id(&request_id),
-                            ASSISTANT_AUTHOR_ID,
+                            ASSISTANT_SENDER_ID,
                             output_entry_text(&text),
                         ),
                         1.0,
@@ -454,7 +456,7 @@ impl TimApiImpl {
                         client_id.clone(),
                         self.create_append_entry_message(
                             self.next_event_id(&request_id),
-                            SYSTEM_AUTHOR_ID,
+                            SYSTEM_SENDER_ID,
                             output_entry_text(&notice),
                         ),
                         1.0,
@@ -486,7 +488,7 @@ impl TimApiImpl {
                 client_id.clone(),
                 self.create_append_entry_message(
                     self.next_event_id(&request_id),
-                    SYSTEM_AUTHOR_ID,
+                    SYSTEM_SENDER_ID,
                     output_entry_text(notice),
                 ),
                 1.0,
@@ -512,7 +514,7 @@ impl TimApiImpl {
     async fn enqueue_message(
         &self,
         client_id: String,
-        message: ServerMessage,
+        message: SpaceUpdate,
         delay_multiplier: f64,
     ) {
         let delay =
@@ -542,51 +544,51 @@ impl TimApiImpl {
     fn create_append_entry_message(
         &self,
         id: String,
-        author_id: &str,
+        sender_id: &str,
         entry: CommandEntry,
-    ) -> ServerMessage {
-        ServerMessage {
+    ) -> SpaceUpdate {
+        SpaceUpdate {
             id,
-            event: Some(ServerMessageEvent::SpaceNewMessage(SpaceNewMessage {
-                message: Some(SpaceMessage {
-                    author_id: author_id.to_string(),
+            event: Some(SpaceUpdateEvent::SpaceNewMessage(SpaceNewMessage {
+                message: Some(Message {
+                    sender_id: sender_id.to_string(),
                     entry: Some(entry),
                 }),
             })),
         }
     }
 
-    fn create_workspace_clear_message(&self, id: String) -> ServerMessage {
-        ServerMessage {
+    fn create_workspace_clear_message(&self, id: String) -> SpaceUpdate {
+        SpaceUpdate {
             id,
-            event: Some(ServerMessageEvent::WorkspaceEntriesClear(
+            event: Some(SpaceUpdateEvent::WorkspaceEntriesClear(
                 WorkspaceEntriesClear {},
             )),
         }
     }
 
-    fn create_status_message(&self, id: String, status: &str) -> ServerMessage {
-        ServerMessage {
+    fn create_status_message(&self, id: String, status: &str) -> SpaceUpdate {
+        SpaceUpdate {
             id,
-            event: Some(ServerMessageEvent::SessionStatus(SessionStatus {
+            event: Some(SpaceUpdateEvent::SessionStatus(SessionStatus {
                 status: status.to_string(),
             })),
         }
     }
 
-    fn create_help_message(&self, id: String, help: &str) -> ServerMessage {
-        ServerMessage {
+    fn create_help_message(&self, id: String, help: &str) -> SpaceUpdate {
+        SpaceUpdate {
             id,
-            event: Some(ServerMessageEvent::SessionHelp(SessionHelp {
+            event: Some(SpaceUpdateEvent::SessionHelp(SessionHelp {
                 help: help.to_string(),
             })),
         }
     }
 
-    fn create_theme_message(&self, id: String, theme: Theme) -> ServerMessage {
-        ServerMessage {
+    fn create_theme_message(&self, id: String, theme: Theme) -> SpaceUpdate {
+        SpaceUpdate {
             id,
-            event: Some(ServerMessageEvent::SessionTheme(SessionTheme {
+            event: Some(SpaceUpdateEvent::SessionTheme(SessionTheme {
                 theme: theme as i32,
             })),
         }

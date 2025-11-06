@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use super::{
     GptChatChoice, GptChatRequest, GptChatResponse, GptClient, GptClientError, GptClientResult,
@@ -101,6 +102,7 @@ impl ChatGptClient {
 
     fn prepare_post(&self, path: &str) -> reqwest::RequestBuilder {
         let url = self.join_path(path);
+        info!(target: "tim_code::http", method = "POST", %url, "dispatching external HTTP request");
         let builder = self.http.post(url).bearer_auth(&self.api_key);
         if let Some(org) = &self.organization {
             builder.header("OpenAI-Organization", org)

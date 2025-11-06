@@ -49,12 +49,12 @@ export type SpaceMessageEvent = {
 	type: 'space.message';
 	id: string;
 	payload: {
-		authorId: string;
+		senderId: string;
 		entry: CommandEntry;
 	};
 };
 
-export type ServerMessage =
+export type SpaceUpdateMessage =
 	| WorkspaceEntryAppendMessage
 	| WorkspaceEntriesClearMessage
 	| SessionStatusMessage
@@ -63,4 +63,4 @@ export type ServerMessage =
 	| ConnectionStateMessage
 	| SpaceMessageEvent;
 
-export type ApiListener = (message: ServerMessage) => void;
+export type ApiListener = (message: SpaceUpdateMessage) => void;

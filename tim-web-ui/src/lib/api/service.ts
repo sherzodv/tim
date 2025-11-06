@@ -6,10 +6,10 @@ import {
 	TimApi,
 	type CommandContent as RpcCommandContent,
 	type CommandEntry as RpcCommandEntry,
-	type ServerMessage as RpcServerMessage,
+	type SpaceUpdate as RpcSpaceUpdate,
 	Theme as RpcTheme
 } from '../../gen/tim/api/g1/api_pb';
-import type { ApiListener, ConnectionStateMessage, ServerMessage } from '$lib/api/types';
+import type { ApiListener, ConnectionStateMessage, SpaceUpdateMessage } from '$lib/api/types';
 import type {
 	CommandContent as UiCommandContent,
 	CommandEntry as UiCommandEntry,
@@ -27,7 +27,7 @@ let connectionState: ConnectionState = 'connecting';
 let connectionEventCounter = 0;
 let cachedClientId: string | null = null;
 
-const dispatch = (message: ServerMessage) => {
+const dispatch = (message: SpaceUpdateMessage) => {
 	for (const listener of listeners) {
 		listener(message);
 	}
@@ -96,13 +96,13 @@ async function runSubscription(signal: AbortSignal) {
 	while (!signal.aborted) {
 		try {
 			const rpcClient = await ensureClient();
-			const stream = rpcClient.subscribe({ clientId: getClientId() }, { signal });
+			const stream = rpcClient.subscribeToSpace({ clientId: getClientId() }, { signal });
 			retryCount = 0;
 			emitConnectionState('open');
 
 			for await (const message of stream) {
 				if (signal.aborted) break;
-				const converted = translateServerMessage(message);
+				const converted = translateSpaceUpdate(message);
 				if (converted) {
 					dispatch(converted);
 				}
@@ -131,25 +131,25 @@ async function runSubscription(signal: AbortSignal) {
 	}
 }
 
-function translateServerMessage(message: RpcServerMessage): ServerMessage | null {
+function translateSpaceUpdate(message: RpcSpaceUpdate): SpaceUpdateMessage | null {
 	const id = message.id || generateId();
 	const event = message.event;
 
 	if (!event || !event.case) {
-		console.warn('Server message missing event payload', message);
+		console.warn('Space update missing event payload', message);
 		return null;
 	}
 
 	if (event.case === 'spaceNewMessage') {
 		const payload = event.value?.message;
 		if (!payload?.entry) return null;
-		const entry = convertCommandEntry(payload.entry, payload.authorId);
+		const entry = convertCommandEntry(payload.entry, payload.senderId);
 		if (!entry) return null;
 		return {
 			type: 'space.message',
 			id,
 			payload: {
-				authorId: entry.authorId,
+				senderId: entry.senderId,
 				entry
 			}
 		};
@@ -202,11 +202,11 @@ function translateServerMessage(message: RpcServerMessage): ServerMessage | null
 		};
 	}
 
-	console.warn('Received unsupported server message payload', message);
+	console.warn('Received unsupported space update payload', message);
 	return null;
 }
 
-function convertCommandEntry(entry: RpcCommandEntry, authorId?: string): UiCommandEntry | null {
+function convertCommandEntry(entry: RpcCommandEntry, senderId?: string): UiCommandEntry | null {
 	const roleValue = entry.role ?? CommandRole.UNSPECIFIED;
 	const role = roleValue === CommandRole.COMMAND ? 'command' : roleValue === CommandRole.OUTPUT ? 'output' : null;
 	if (!role) return null;
@@ -220,13 +220,13 @@ function convertCommandEntry(entry: RpcCommandEntry, authorId?: string): UiComma
 		id = Date.now();
 	}
 
-	const normalizedAuthor =
-		typeof authorId === 'string' && authorId.length > 0 ? authorId : 'system';
+	const normalizedSender =
+		typeof senderId === 'string' && senderId.length > 0 ? senderId : 'system';
 
 	return {
 		id,
 		role,
-		authorId: normalizedAuthor,
+		senderId: normalizedSender,
 		content
 	};
 }
@@ -350,7 +350,7 @@ export const apiService = {
 		try {
 			const rpcClient = await ensureClient();
 			ensureSubscription();
-			await rpcClient.sendCommand({
+			await rpcClient.sendMessage({
 				id: generateId(),
 				command: trimmed,
 				clientId: getClientId()

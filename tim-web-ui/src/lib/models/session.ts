@@ -17,7 +17,7 @@ export type CommandContent =
 export type CommandEntry = {
 	id: number;
 	role: CommandRole;
-	authorId: string;
+	senderId: string;
 	content: CommandContent;
 };
 

@@ -2,21 +2,7 @@ syntax = "proto3";
 
 package tim.api.g1;
 
-message CommandRequest {
-  string id = 1;
-  string command = 2;
-  string client_id = 3;
-}
-
-message SendCommandResponse {
-  string id = 1;
-}
-
-message SubscribeRequest {
-  string client_id = 1;
-}
-
-message ServerMessage {
+message SpaceUpdate {
   string id = 1;
   oneof event {
     WorkspaceEntryAppend workspace_entry_append = 2;
@@ -65,13 +51,13 @@ message CommandContent {
   }
 }
 
-message SpaceMessage {
-  string author_id = 1;
+message Message {
+  string sender_id = 1;
   CommandEntry entry = 2;
 }
 
 message SpaceNewMessage {
-  SpaceMessage message = 1;
+  Message message = 1;
 }
 
 enum Theme {
@@ -80,7 +66,21 @@ enum Theme {
   THEME_DAY = 2;
 }
 
+message SendMessageReq {
+  string id = 1;
+  string command = 2;
+  string client_id = 3;
+}
+
+message SendMessageRes {
+  string id = 1;
+}
+
+message SubscribeToSpaceReq {
+  string client_id = 1;
+}
+
 service TimApi {
-  rpc SendCommand(CommandRequest) returns (SendCommandResponse);
-  rpc Subscribe(SubscribeRequest) returns (stream ServerMessage);
+  rpc SendMessage(SendMessageReq) returns (SendMessageRes);
+  rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);
 }
