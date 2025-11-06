@@ -140,6 +140,21 @@ function translateServerMessage(message: RpcServerMessage): ServerMessage | null
 		return null;
 	}
 
+	if (event.case === 'spaceNewMessage') {
+		const payload = event.value?.message;
+		if (!payload?.entry) return null;
+		const entry = convertCommandEntry(payload.entry, payload.authorId);
+		if (!entry) return null;
+		return {
+			type: 'space.message',
+			id,
+			payload: {
+				authorId: entry.authorId,
+				entry
+			}
+		};
+	}
+
 	if (event.case === 'workspaceEntryAppend' && event.value?.entry) {
 		const entry = convertCommandEntry(event.value.entry);
 		if (!entry) return null;
@@ -191,7 +206,7 @@ function translateServerMessage(message: RpcServerMessage): ServerMessage | null
 	return null;
 }
 
-function convertCommandEntry(entry: RpcCommandEntry): UiCommandEntry | null {
+function convertCommandEntry(entry: RpcCommandEntry, authorId?: string): UiCommandEntry | null {
 	const roleValue = entry.role ?? CommandRole.UNSPECIFIED;
 	const role = roleValue === CommandRole.COMMAND ? 'command' : roleValue === CommandRole.OUTPUT ? 'output' : null;
 	if (!role) return null;
@@ -205,9 +220,13 @@ function convertCommandEntry(entry: RpcCommandEntry): UiCommandEntry | null {
 		id = Date.now();
 	}
 
+	const normalizedAuthor =
+		typeof authorId === 'string' && authorId.length > 0 ? authorId : 'system';
+
 	return {
 		id,
 		role,
+		authorId: normalizedAuthor,
 		content
 	};
 }

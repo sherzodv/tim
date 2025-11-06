@@ -14,8 +14,8 @@ use api::server_message::Event as ServerMessageEvent;
 use api::tim_api_server::{TimApi, TimApiServer};
 use api::{
     CommandContent, CommandEntry, CommandRequest, CommandRole, SendCommandResponse, ServerMessage,
-    SessionHelp, SessionStatus, SessionTheme, SubscribeRequest, Theme, WorkspaceEntriesClear,
-    WorkspaceEntryAppend,
+    SessionHelp, SessionStatus, SessionTheme, SpaceMessage, SpaceNewMessage, SubscribeRequest,
+    Theme, WorkspaceEntriesClear,
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -35,6 +35,8 @@ const BASE_DELAY_MILLIS: u64 = 120;
 const DEFAULT_STATUS: &str = "Ready";
 const DEFAULT_HELP: &str =
     "Type `HELP` for available commands. Press `Esc` to cancel current input.";
+const SYSTEM_AUTHOR_ID: &str = "tim-code";
+const ASSISTANT_AUTHOR_ID: &str = "assistant";
 
 #[derive(Clone)]
 struct TimApiImpl {
@@ -165,6 +167,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                client_id.as_str(),
                 command_entry(command),
             ),
             0.0,
@@ -175,6 +178,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                SYSTEM_AUTHOR_ID,
                 output_entry_html(help_html()),
             ),
             1.0,
@@ -208,6 +212,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                client_id.as_str(),
                 command_entry(command),
             ),
             0.4,
@@ -218,6 +223,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                SYSTEM_AUTHOR_ID,
                 output_entry_text("Workspace cleared."),
             ),
             0.8,
@@ -250,6 +256,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                client_id.as_str(),
                 command_entry(command),
             ),
             0.0,
@@ -268,6 +275,7 @@ impl TimApiImpl {
                     client_id.clone(),
                     self.create_append_entry_message(
                         self.next_event_id(&request_id),
+                        SYSTEM_AUTHOR_ID,
                         output_entry_text(&confirmation),
                     ),
                     1.0,
@@ -300,6 +308,7 @@ impl TimApiImpl {
                     client_id.clone(),
                     self.create_append_entry_message(
                         self.next_event_id(&request_id),
+                        SYSTEM_AUTHOR_ID,
                         output_entry_text("Usage: THEME <night|day>"),
                     ),
                     1.0,
@@ -334,6 +343,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                client_id.as_str(),
                 command_entry(command),
             ),
             0.0,
@@ -374,6 +384,7 @@ impl TimApiImpl {
             client_id.clone(),
             self.create_append_entry_message(
                 self.next_event_id(&request_id),
+                client_id.as_str(),
                 command_entry(command.clone()),
             ),
             0.0,
@@ -407,6 +418,7 @@ impl TimApiImpl {
                         client_id.clone(),
                         self.create_append_entry_message(
                             self.next_event_id(&request_id),
+                            ASSISTANT_AUTHOR_ID,
                             output_entry_text(&text),
                         ),
                         1.0,
@@ -442,6 +454,7 @@ impl TimApiImpl {
                         client_id.clone(),
                         self.create_append_entry_message(
                             self.next_event_id(&request_id),
+                            SYSTEM_AUTHOR_ID,
                             output_entry_text(&notice),
                         ),
                         1.0,
@@ -473,6 +486,7 @@ impl TimApiImpl {
                 client_id.clone(),
                 self.create_append_entry_message(
                     self.next_event_id(&request_id),
+                    SYSTEM_AUTHOR_ID,
                     output_entry_text(notice),
                 ),
                 1.0,
@@ -525,12 +539,20 @@ impl TimApiImpl {
         format!("{seed}:{value}")
     }
 
-    fn create_append_entry_message(&self, id: String, entry: CommandEntry) -> ServerMessage {
+    fn create_append_entry_message(
+        &self,
+        id: String,
+        author_id: &str,
+        entry: CommandEntry,
+    ) -> ServerMessage {
         ServerMessage {
             id,
-            event: Some(ServerMessageEvent::WorkspaceEntryAppend(
-                WorkspaceEntryAppend { entry: Some(entry) },
-            )),
+            event: Some(ServerMessageEvent::SpaceNewMessage(SpaceNewMessage {
+                message: Some(SpaceMessage {
+                    author_id: author_id.to_string(),
+                    entry: Some(entry),
+                }),
+            })),
         }
     }
 

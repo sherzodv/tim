@@ -24,6 +24,7 @@ message ServerMessage {
     SessionStatus session_status = 4;
     SessionHelp session_help = 5;
     SessionTheme session_theme = 6;
+    SpaceNewMessage space_new_message = 7;
   }
 }
 
@@ -62,6 +63,15 @@ message CommandContent {
     string text = 1;
     string html = 2;
   }
+}
+
+message SpaceMessage {
+  string author_id = 1;
+  CommandEntry entry = 2;
+}
+
+message SpaceNewMessage {
+  SpaceMessage message = 1;
 }
 
 enum Theme {

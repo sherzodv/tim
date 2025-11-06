@@ -1,3 +1,6 @@
+# gen
+/src/gen
+
 # Dependencies
 node_modules
 .pnpm-store/

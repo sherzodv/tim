@@ -47,16 +47,26 @@ const sanitizeContent = (content: unknown): CommandContent | null => {
 const sanitizeEntry = (entry: unknown): CommandEntry | null => {
 	if (!entry || typeof entry !== 'object') return null;
 
-	const candidate = entry as { id?: unknown; role?: unknown; content?: unknown };
+	const candidate = entry as {
+		id?: unknown;
+		role?: unknown;
+		content?: unknown;
+		authorId?: unknown;
+	};
 	const content = sanitizeContent(candidate.content);
 	const role = candidate.role === 'command' || candidate.role === 'output' ? candidate.role : null;
 	const id = typeof candidate.id === 'number' ? candidate.id : Date.now();
+	const authorId =
+		typeof candidate.authorId === 'string' && candidate.authorId.length > 0
+			? candidate.authorId
+			: 'system';
 
 	if (!content || !role) return null;
 
 	return {
 		id,
 		role,
+		authorId,
 		content
 	};
 };
@@ -123,12 +133,18 @@ const loadSnapshot = (): SessionSnapshot => {
 						const role =
 							entry.role === 'command' || entry.role === 'output' ? entry.role : 'output';
 						const id = typeof entry.id === 'number' ? entry.id : Date.now();
+						const authorIdRaw = (entry as { authorId?: unknown }).authorId;
+						const authorId =
+							typeof authorIdRaw === 'string' && authorIdRaw.length > 0
+								? authorIdRaw
+								: 'system';
 
 						if (!content) return null;
 
 						return {
 							id,
 							role,
+							authorId,
 							content
 						};
 					})
@@ -164,6 +180,14 @@ function createSessionStore() {
 			case 'workspace.entries.clear':
 				return { ...state, entries: [] };
 			case 'workspace.entry.append': {
+				const entry = sanitizeEntry(message.payload.entry);
+				if (!entry) return state;
+				return {
+					...state,
+					entries: [...state.entries, entry]
+				};
+			}
+			case 'space.message': {
 				const entry = sanitizeEntry(message.payload.entry);
 				if (!entry) return state;
 				return {

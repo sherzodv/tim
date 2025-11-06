@@ -24,3 +24,7 @@ tim-cloud:
 ## Work style
 
 Iterative, small step changes. Each patch must have high quality code just like it should pass review of the world top 100 tech lead (rust, java, typescript). Again, keep changes small. Offer to check the patch and re-iterate rather than create big patch of full functionality.
+
+## Current focus
+
+Prototype technical architecture and social mechanics. No tests as everything is yet very unclear.

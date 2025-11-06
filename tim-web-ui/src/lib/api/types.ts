@@ -45,12 +45,22 @@ export type ConnectionStateMessage = {
 	};
 };
 
+export type SpaceMessageEvent = {
+	type: 'space.message';
+	id: string;
+	payload: {
+		authorId: string;
+		entry: CommandEntry;
+	};
+};
+
 export type ServerMessage =
 	| WorkspaceEntryAppendMessage
 	| WorkspaceEntriesClearMessage
 	| SessionStatusMessage
 	| SessionHelpMessage
 	| SessionThemeMessage
-	| ConnectionStateMessage;
+	| ConnectionStateMessage
+	| SpaceMessageEvent;
 
 export type ApiListener = (message: ServerMessage) => void;
