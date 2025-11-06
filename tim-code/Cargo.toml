@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "chatgtptest"
-path = "src/chatgtptest.rs"
+name = "tim-code"
+path = "src/main.rs"
 
 [dependencies]
 async-trait = "0.1"

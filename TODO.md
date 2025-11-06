@@ -1,0 +1,1 @@
+* buf lint in all builds - DONE

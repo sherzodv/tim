@@ -3,12 +3,12 @@ import { createClient, type Client } from '@connectrpc/connect';
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
 import {
 	CommandRole,
-	ConsoleService,
+	TimApi,
 	type CommandContent as RpcCommandContent,
 	type CommandEntry as RpcCommandEntry,
 	type ServerMessage as RpcServerMessage,
 	Theme as RpcTheme
-} from '../../gen/api_pb';
+} from '../../gen/tim/api/g1/api_pb';
 import type { ApiListener, ConnectionStateMessage, ServerMessage } from '$lib/api/types';
 import type {
 	CommandContent as UiCommandContent,
@@ -20,7 +20,7 @@ import type {
 const CLIENT_ID_STORAGE_KEY = 'tim.client-id';
 
 const listeners = new Set<ApiListener>();
-let client: Client<typeof ConsoleService> | null = null;
+let client: Client<typeof TimApi> | null = null;
 let streamController: AbortController | null = null;
 let streamTask: Promise<void> | null = null;
 let connectionState: ConnectionState = 'connecting';
@@ -45,7 +45,7 @@ const emitConnectionState = (state: ConnectionState) => {
 	dispatch(createConnectionMessage(state));
 };
 
-async function ensureClient(): Promise<Client<typeof ConsoleService>> {
+async function ensureClient(): Promise<Client<typeof TimApi>> {
 	if (client) return client;
 
 	const baseUrl = resolveBackendBaseUrl();
@@ -54,7 +54,7 @@ async function ensureClient(): Promise<Client<typeof ConsoleService>> {
 	}
 
 	client = createClient(
-		ConsoleService,
+		TimApi,
 		createGrpcWebTransport({
 			baseUrl
 		})

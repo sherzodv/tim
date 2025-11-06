@@ -1,5 +1,5 @@
 mod api {
-    tonic::include_proto!("tim.api.v1");
+    tonic::include_proto!("tim.api.g1");
 }
 
 pub mod gpt;
@@ -10,8 +10,8 @@ use crate::gpt::{
     GptUsage,
 };
 use api::command_content::Value as CommandContentValue;
-use api::console_service_server::{ConsoleService, ConsoleServiceServer};
 use api::server_message::Event as ServerMessageEvent;
+use api::tim_api_server::{TimApi, TimApiServer};
 use api::{
     CommandContent, CommandEntry, CommandRequest, CommandRole, SendCommandResponse, ServerMessage,
     SessionHelp, SessionStatus, SessionTheme, SubscribeRequest, Theme, WorkspaceEntriesClear,
@@ -37,14 +37,14 @@ const DEFAULT_HELP: &str =
     "Type `HELP` for available commands. Press `Esc` to cancel current input.";
 
 #[derive(Clone)]
-struct ConsoleServiceImpl {
+struct TimApiImpl {
     clients: Arc<RwLock<HashMap<String, mpsc::Sender<ServerMessage>>>>,
     event_counter: Arc<AtomicU64>,
     chat_bridge: Option<Arc<ChatBridge>>,
 }
 
 #[tonic::async_trait]
-impl ConsoleService for ConsoleServiceImpl {
+impl TimApi for TimApiImpl {
     type SubscribeStream =
         Pin<Box<dyn tokio_stream::Stream<Item = Result<ServerMessage, Status>> + Send>>;
 
@@ -95,7 +95,7 @@ impl ConsoleService for ConsoleServiceImpl {
     }
 }
 
-impl ConsoleServiceImpl {
+impl TimApiImpl {
     fn new() -> Self {
         let chat_bridge = match ChatBridge::from_env() {
             Ok(bridge) => {
@@ -681,8 +681,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("invalid TIM_CODE_HOST or TIM_CODE_PORT");
 
-    let service = ConsoleServiceImpl::new();
-    let svc = ConsoleServiceServer::new(service);
+    let service = TimApiImpl::new();
+    let svc = TimApiServer::new(service);
     let cors = CorsLayer::new()
         .allow_methods(Any)
         .allow_headers(Any)

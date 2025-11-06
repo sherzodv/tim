@@ -1,10 +1,6 @@
 syntax = "proto3";
 
-package tim.api.v1;
-
-option java_multiple_files = true;
-option java_package = "com.tim.api.v1";
-option csharp_namespace = "Tim.Api.V1";
+package tim.api.g1;
 
 message CommandRequest {
   string id = 1;
@@ -74,7 +70,7 @@ enum Theme {
   THEME_DAY = 2;
 }
 
-service ConsoleService {
+service TimApi {
   rpc SendCommand(CommandRequest) returns (SendCommandResponse);
   rpc Subscribe(SubscribeRequest) returns (stream ServerMessage);
 }
