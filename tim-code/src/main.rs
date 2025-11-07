@@ -2,6 +2,7 @@ pub(crate) mod api {
     tonic::include_proto!("tim.api.g1");
 }
 
+pub mod flows;
 pub mod gpt;
 mod services;
 

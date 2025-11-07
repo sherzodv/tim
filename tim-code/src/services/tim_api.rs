@@ -1,29 +1,29 @@
-use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, warn};
 
 use crate::api::tim_api_server::TimApi;
 use crate::api::{CommandEntry, SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq};
+use crate::flows::update_decide_reciever_flow::SpaceSubscriber;
 
 use super::assistant::{ChatBridge, ChatBridgeInitError, ChatBridgeReply};
 use super::messaging::{
     command_entry, help_html, output_entry_html, output_entry_text, SessionUpdates,
     ASSISTANT_SENDER_ID, DEFAULT_HELP, DEFAULT_STATUS, SYSTEM_SENDER_ID,
 };
+use super::space_updates_service::{InMemorySpaceUpdatesService, SpaceUpdatesService};
 
 const BASE_DELAY_MILLIS: u64 = 120;
+const SPACE_UPDATES_BUFFER: usize = 32;
 
 #[derive(Clone)]
 pub struct TimApiService {
-    clients: Arc<RwLock<HashMap<String, mpsc::Sender<SpaceUpdate>>>>,
+    space_updates: Arc<dyn SpaceUpdatesService>,
     event_counter: Arc<AtomicU64>,
     chat_bridge: Option<Arc<ChatBridge>>,
 }
@@ -48,7 +48,7 @@ impl TimApi for TimApiService {
             return Ok(Response::new(SendMessageRes { id: payload.id }));
         }
 
-        if !self.client_exists(client_id).await {
+        if !self.space_updates.has_subscriber(client_id) {
             return Err(Status::failed_precondition("client not subscribed"));
         }
 
@@ -72,10 +72,11 @@ impl TimApi for TimApiService {
             return Err(Status::invalid_argument("client_id is required"));
         }
 
-        let (sender, receiver) = mpsc::channel(32);
-        self.add_client(client_id.to_string(), sender).await;
-
-        let stream = ReceiverStream::new(receiver).map(Ok);
+        let stream = self.space_updates.subscribe(SpaceSubscriber {
+            client_id: client_id.to_string(),
+            timite_id: client_id.to_string(),
+            receive_own_messages: true,
+        });
         Ok(Response::new(
             Box::pin(stream) as Self::SubscribeToSpaceStream
         ))
@@ -84,6 +85,9 @@ impl TimApi for TimApiService {
 
 impl TimApiService {
     pub fn new() -> Self {
+        let space_updates: Arc<dyn SpaceUpdatesService> = Arc::new(
+            InMemorySpaceUpdatesService::with_default_decider(SPACE_UPDATES_BUFFER),
+        );
         let chat_bridge = match ChatBridge::from_env() {
             Ok(bridge) => {
                 info!(
@@ -105,7 +109,7 @@ impl TimApiService {
         };
 
         Self {
-            clients: Arc::new(RwLock::new(HashMap::new())),
+            space_updates,
             event_counter: Arc::new(AtomicU64::new(0)),
             chat_bridge,
         }
@@ -117,44 +121,18 @@ impl TimApiService {
             .await;
     }
 
-    async fn add_client(&self, id: String, sender: mpsc::Sender<SpaceUpdate>) {
-        let mut clients = self.clients.write().await;
-        clients.insert(id, sender);
-    }
-
-    async fn client_exists(&self, id: &str) -> bool {
-        let clients = self.clients.read().await;
-        clients.contains_key(id)
-    }
-
-    async fn remove_client(&self, id: &str) {
-        let mut clients = self.clients.write().await;
-        clients.remove(id);
-    }
-
-    async fn enqueue_message(
-        &self,
-        client_id: String,
-        message: SpaceUpdate,
-        delay_multiplier: f64,
-    ) {
+    async fn dispatch_update(&self, update: SpaceUpdate, delay_multiplier: f64) {
         let delay =
             Duration::from_millis((BASE_DELAY_MILLIS as f64 * delay_multiplier).round() as u64);
-        let maybe_sender = { self.clients.read().await.get(&client_id).cloned() };
-
-        if let Some(sender) = maybe_sender {
-            let service = self.clone();
-            tokio::spawn(async move {
-                if delay > Duration::from_millis(0) {
-                    sleep(delay).await;
-                }
-                if sender.send(message).await.is_err() {
-                    service.remove_client(&client_id).await;
-                }
-            });
-        } else {
-            warn!("client `{client_id}` missing when delivering message");
-        }
+        let updates = self.space_updates.clone();
+        tokio::spawn(async move {
+            if delay > Duration::from_millis(0) {
+                sleep(delay).await;
+            }
+            if let Err(err) = updates.publish(update).await {
+                warn!("failed to deliver space update: {err}");
+            }
+        });
     }
 
     fn next_event_id(&self, seed: &str) -> String {
@@ -438,9 +416,7 @@ impl<'a> CommandMessenger<'a> {
     }
 
     async fn publish(&self, update: SpaceUpdate, delay: f64) {
-        self.service
-            .enqueue_message(self.client_id.to_string(), update, delay)
-            .await;
+        self.service.dispatch_update(update, delay).await;
     }
 
     fn next_event_id(&self) -> String {
