@@ -8,14 +8,11 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info, warn};
 
 use crate::api::tim_api_server::TimApi;
-use crate::api::{CommandEntry, SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq};
+use crate::api::{SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq};
 use crate::flows::update_decide_reciever_flow::SpaceSubscriber;
 
 use super::assistant::{ChatBridge, ChatBridgeInitError, ChatBridgeReply};
-use super::messaging::{
-    command_entry, help_html, output_entry_html, output_entry_text, SessionUpdates,
-    ASSISTANT_SENDER_ID, DEFAULT_HELP, DEFAULT_STATUS, SYSTEM_SENDER_ID,
-};
+use super::messaging::{SessionUpdates, ASSISTANT_SENDER_ID, SYSTEM_SENDER_ID};
 use super::space_updates_service::{InMemorySpaceUpdatesService, SpaceUpdatesService};
 
 const BASE_DELAY_MILLIS: u64 = 120;
@@ -52,7 +49,7 @@ impl TimApi for TimApiService {
             return Err(Status::failed_precondition("client not subscribed"));
         }
 
-        self.process_command(
+        self.process_message(
             client_id.to_string(),
             payload.id.clone(),
             command.to_string(),
@@ -115,10 +112,49 @@ impl TimApiService {
         }
     }
 
-    async fn process_command(&self, client_id: String, request_id: String, command: String) {
-        CommandRouter::new(self.clone(), client_id, request_id, command)
-            .dispatch()
+    async fn process_message(&self, client_id: String, request_id: String, message: String) {
+        let messenger = SpaceMessenger::new(self, &request_id);
+        messenger
+            .push_message(client_id.as_str(), message.clone(), 0.0)
             .await;
+
+        if let Some(bridge) = self.chat_bridge() {
+            match bridge.send(&message).await {
+                Ok(reply) => self.deliver_assistant_reply(&messenger, reply).await,
+                Err(err) => {
+                    let notice = format!("Assistant request failed: {err}.");
+                    messenger.push_message(SYSTEM_SENDER_ID, notice, 1.0).await;
+                }
+            }
+        } else {
+            let notice = "Assistant is not configured. Set OPENAI_TIM_API_KEY to enable responses.";
+            messenger.push_message(SYSTEM_SENDER_ID, notice, 1.0).await;
+        }
+    }
+
+    async fn deliver_assistant_reply(
+        &self,
+        messenger: &SpaceMessenger<'_>,
+        reply: ChatBridgeReply,
+    ) {
+        let ChatBridgeReply {
+            text,
+            usage,
+            provider_request_id,
+        } = reply;
+
+        if let Some(request_ref) = provider_request_id {
+            debug!("assistant request completed: {request_ref}");
+        }
+
+        if let Some(usage) = usage {
+            debug!(
+                "assistant usage: prompt={} completion={} total={}",
+                usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+            );
+        }
+
+        messenger.push_message(ASSISTANT_SENDER_ID, text, 1.0).await;
     }
 
     async fn dispatch_update(&self, update: SpaceUpdate, delay_multiplier: f64) {
@@ -145,242 +181,12 @@ impl TimApiService {
     }
 }
 
-struct CommandRouter {
-    service: TimApiService,
-    client_id: String,
-    request_id: String,
-    command: String,
-    keyword: String,
-    args: Vec<String>,
-}
-
-impl CommandRouter {
-    fn new(service: TimApiService, client_id: String, request_id: String, command: String) -> Self {
-        let mut segments = command.split_whitespace();
-        let keyword = segments
-            .next()
-            .map(|value| value.to_ascii_lowercase())
-            .unwrap_or_default();
-        let args = segments.map(|value| value.to_string()).collect();
-
-        Self {
-            service,
-            client_id,
-            request_id,
-            command,
-            keyword,
-            args,
-        }
-    }
-
-    async fn dispatch(self) {
-        if self.keyword.is_empty() {
-            return;
-        }
-
-        match self.keyword.as_str() {
-            "help" => self.handle_help().await,
-            "clear" => self.handle_clear().await,
-            "theme" => {
-                let desired = self
-                    .args
-                    .get(0)
-                    .map(|value| value.to_ascii_lowercase())
-                    .unwrap_or_default();
-                self.handle_theme(&desired).await;
-            }
-            "reset" => self.handle_reset().await,
-            _ => self.handle_unknown().await,
-        }
-    }
-
-    async fn handle_help(&self) {
-        let messenger = self.messenger();
-        messenger
-            .push_entry(
-                self.client_id.as_str(),
-                command_entry(self.command.clone()),
-                0.0,
-            )
-            .await;
-
-        messenger
-            .push_entry(SYSTEM_SENDER_ID, output_entry_html(help_html()), 1.0)
-            .await;
-
-        messenger.push_status("Help displayed", 1.5).await;
-
-        messenger.push_help(DEFAULT_HELP, 1.6).await;
-    }
-
-    async fn handle_clear(&self) {
-        let messenger = self.messenger();
-        messenger.clear_workspace(0.2).await;
-
-        messenger
-            .push_entry(
-                self.client_id.as_str(),
-                command_entry(self.command.clone()),
-                0.4,
-            )
-            .await;
-
-        messenger
-            .push_entry(
-                SYSTEM_SENDER_ID,
-                output_entry_text("Workspace cleared."),
-                0.8,
-            )
-            .await;
-
-        messenger.push_status("Workspace cleared", 1.1).await;
-
-        messenger.push_help(DEFAULT_HELP, 1.2).await;
-    }
-
-    async fn handle_theme(&self, desired: &str) {
-        let messenger = self.messenger();
-        messenger
-            .push_entry(
-                self.client_id.as_str(),
-                command_entry(self.command.clone()),
-                0.0,
-            )
-            .await;
-
-        match desired {
-            "night" | "day" => {
-                let confirmation = format!("Theme set to {desired}.");
-                let theme = match desired {
-                    "day" => crate::api::Theme::Day,
-                    _ => crate::api::Theme::Night,
-                };
-
-                messenger
-                    .push_entry(SYSTEM_SENDER_ID, output_entry_text(&confirmation), 1.0)
-                    .await;
-
-                messenger.push_theme(theme, 1.2).await;
-
-                messenger.push_status(&confirmation, 1.3).await;
-
-                messenger.push_help(DEFAULT_HELP, 1.4).await;
-            }
-            _ => {
-                messenger
-                    .push_entry(
-                        SYSTEM_SENDER_ID,
-                        output_entry_text("Usage: THEME <night|day>"),
-                        1.0,
-                    )
-                    .await;
-
-                messenger.push_status("Theme command incomplete", 1.3).await;
-
-                messenger
-                    .push_help("Try THEME night or THEME day.", 1.4)
-                    .await;
-            }
-        }
-    }
-
-    async fn handle_reset(&self) {
-        let messenger = self.messenger();
-        messenger
-            .push_entry(
-                self.client_id.as_str(),
-                command_entry(self.command.clone()),
-                0.0,
-            )
-            .await;
-
-        messenger.clear_workspace(0.8).await;
-        messenger.push_theme(crate::api::Theme::Night, 1.0).await;
-        messenger.push_status(DEFAULT_STATUS, 1.1).await;
-        messenger.push_help(DEFAULT_HELP, 1.2).await;
-    }
-
-    async fn handle_unknown(&self) {
-        let messenger = self.messenger();
-        messenger
-            .push_entry(
-                self.client_id.as_str(),
-                command_entry(self.command.clone()),
-                0.0,
-            )
-            .await;
-
-        if let Some(bridge) = self.service.chat_bridge() {
-            messenger.push_status("Consulting assistant…", 0.2).await;
-
-            match bridge.send(&self.command).await {
-                Ok(reply) => self.handle_assistant_reply(&messenger, reply).await,
-                Err(err) => {
-                    let notice = format!(
-                        "Assistant request failed: {err}. Type HELP for available commands."
-                    );
-
-                    messenger
-                        .push_entry(SYSTEM_SENDER_ID, output_entry_text(&notice), 1.0)
-                        .await;
-
-                    messenger.push_status("Assistant unavailable", 1.3).await;
-
-                    messenger.push_help(DEFAULT_HELP, 1.4).await;
-                }
-            }
-        } else {
-            let notice = "Assistant is not configured. Set OPENAI_TIM_API_KEY to enable responses.";
-
-            messenger
-                .push_entry(SYSTEM_SENDER_ID, output_entry_text(notice), 1.0)
-                .await;
-
-            messenger.push_status("Assistant disabled", 1.3).await;
-
-            messenger.push_help(DEFAULT_HELP, 1.4).await;
-        }
-    }
-
-    async fn handle_assistant_reply(
-        &self,
-        messenger: &CommandMessenger<'_>,
-        reply: ChatBridgeReply,
-    ) {
-        let ChatBridgeReply {
-            text,
-            usage,
-            provider_request_id,
-        } = reply;
-
-        if let Some(request_ref) = provider_request_id {
-            debug!("assistant request completed: {request_ref}");
-        }
-
-        messenger
-            .push_entry(ASSISTANT_SENDER_ID, output_entry_text(&text), 1.0)
-            .await;
-
-        let status_text = usage
-            .map(|usage| format!("Assistant responded ({} tokens).", usage.total_tokens))
-            .unwrap_or_else(|| "Assistant responded.".to_string());
-
-        messenger.push_status(&status_text, 1.3).await;
-
-        messenger.push_help(DEFAULT_HELP, 1.4).await;
-    }
-
-    fn messenger(&self) -> CommandMessenger<'_> {
-        CommandMessenger::new(&self.service, &self.request_id)
-    }
-}
-
-struct CommandMessenger<'a> {
+struct SpaceMessenger<'a> {
     service: &'a TimApiService,
     request_id: &'a str,
 }
 
-impl<'a> CommandMessenger<'a> {
+impl<'a> SpaceMessenger<'a> {
     fn new(service: &'a TimApiService, request_id: &'a str) -> Self {
         Self {
             service,
@@ -388,28 +194,8 @@ impl<'a> CommandMessenger<'a> {
         }
     }
 
-    async fn push_entry(&self, sender_id: &str, entry: CommandEntry, delay: f64) {
-        let update = SessionUpdates::append_entry(self.next_event_id(), sender_id, entry);
-        self.publish(update, delay).await;
-    }
-
-    async fn push_status(&self, status: &str, delay: f64) {
-        let update = SessionUpdates::status(self.next_event_id(), status);
-        self.publish(update, delay).await;
-    }
-
-    async fn push_help(&self, help: &str, delay: f64) {
-        let update = SessionUpdates::help(self.next_event_id(), help.to_string());
-        self.publish(update, delay).await;
-    }
-
-    async fn push_theme(&self, theme: crate::api::Theme, delay: f64) {
-        let update = SessionUpdates::theme(self.next_event_id(), theme);
-        self.publish(update, delay).await;
-    }
-
-    async fn clear_workspace(&self, delay: f64) {
-        let update = SessionUpdates::workspace_cleared(self.next_event_id());
+    async fn push_message(&self, sender_id: &str, content: impl Into<String>, delay: f64) {
+        let update = SessionUpdates::message(self.next_event_id(), sender_id, content);
         self.publish(update, delay).await;
     }
 

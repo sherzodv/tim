@@ -36,7 +36,6 @@ impl UpdateDecideReceiverFlow for SpaceUpdateReceiverFlow {
                 Some(message) => message.sender_id != subscriber.timite_id,
                 None => true,
             },
-            _ => true,
         }
     }
 }

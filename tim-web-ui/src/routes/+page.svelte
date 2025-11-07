@@ -1,15 +1,14 @@
 <script lang="ts">
 import { browser } from '$app/environment';
 import './+page.css';
-import { session, THEME_OPTIONS } from '$lib/stores/session';
+import { session } from '$lib/stores/session';
 import type { Theme } from '$lib/models/session';
 import { apiService } from '$lib/api/service';
-
-const themeOptions = THEME_OPTIONS;
 
 let commandInput = $state('');
 let logContainer: HTMLElement | null = null;
 let isOnline = $state(false);
+const clientId = browser ? apiService.getClientId() : 'system';
 
 const handleSubmit = (event: SubmitEvent) => {
 	event.preventDefault();
@@ -19,14 +18,9 @@ const handleSubmit = (event: SubmitEvent) => {
 	const trimmed = commandInput.trim();
 	if (!trimmed) return;
 
-	apiService.sendCommand(trimmed);
+	apiService.sendMessage(trimmed);
 
 	commandInput = '';
-};
-
-const setTheme = (value: Theme) => {
-	if (!isOnline) return;
-	apiService.sendCommand(`THEME ${value}`);
 };
 
 const applyTheme = (value: Theme) => {
@@ -59,24 +53,13 @@ $effect(() => {
 </script>
 
 <svelte:head>
-	<title>Command Console</title>
-	<meta name="description" content="Minimal command console interface" />
+	<title>Message Console</title>
+	<meta name="description" content="Minimal realtime messaging console" />
 </svelte:head>
 
 <div class="command-shell" class:offline={!isOnline} aria-busy={!isOnline}>
 	<header class="shell-header">
-		<h1 class="shell-title">Command Console</h1>
-		<div class="theme-controls" role="group" aria-label="Theme selection" aria-disabled={!isOnline}>
-			{#each themeOptions as option}
-				<button
-					type="button"
-					class:selected={$session.theme === option.value}
-					disabled={!isOnline}
-					onclick={() => setTheme(option.value)}>
-					{option.label}
-				</button>
-			{/each}
-		</div>
+		<h1 class="shell-title">Message Console</h1>
 	</header>
 
 		{#if !isOnline}
@@ -91,27 +74,20 @@ $effect(() => {
 		<section class="workspace" bind:this={logContainer} aria-live="polite">
 			<div class="workspace-content">
 				{#if $session.entries.length === 0}
-					<div class="log-placeholder">Workspace is empty. Enter a command to begin.</div>
+					<div class="log-placeholder">Workspace is empty. Send a message to begin.</div>
 				{/if}
-				{#each $session.entries as entry (entry.id)}
-					<div
-						class="log-entry"
-						class:command={entry.role === 'command'}
-						class:output={entry.role === 'output'}>
-						<span class="log-prefix">{entry.role === 'command' ? 'Cmd' : 'App'}</span>
+					{#each $session.entries as entry (entry.id)}
 						<div
-							class="log-text"
-							class:text={entry.content.kind === 'text'}
-							class:rich={entry.content.kind === 'html'}>
-							{#if entry.content.kind === 'html'}
-								{@html entry.content.html}
-							{:else}
-								{entry.content.text}
-							{/if}
+							class="log-entry"
+							class:self={entry.senderId === clientId}
+							class:remote={entry.senderId !== clientId}>
+							<span class="log-prefix">
+								{entry.senderId === clientId ? 'You' : entry.senderId}
+							</span>
+							<div class="log-text">{entry.content}</div>
 						</div>
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
 		</section>
 
 	<div class="status-line" role="status" aria-live="polite">
@@ -122,9 +98,9 @@ $effect(() => {
 	<form
 		class="command-bar"
 		onsubmit={handleSubmit}
-		aria-label="Command input panel"
+		aria-label="Message input panel"
 		aria-busy={!isOnline}>
-		<label class="command-label" for="command-input">Command</label>
+		<label class="command-label" for="command-input">Message</label>
 		<input
 			id="command-input"
 			name="command"
@@ -132,7 +108,7 @@ $effect(() => {
 			autocomplete="off"
 			spellcheck="false"
 			bind:value={commandInput}
-			placeholder="Enter command and press Enter"
+			placeholder="Enter message and press Enter"
 			disabled={!isOnline}
 		/>
 	</form>

@@ -1,21 +1,9 @@
 import { browser } from '$app/environment';
 import { createClient, type Client } from '@connectrpc/connect';
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
-import {
-	CommandRole,
-	TimApi,
-	type CommandContent as RpcCommandContent,
-	type CommandEntry as RpcCommandEntry,
-	type SpaceUpdate as RpcSpaceUpdate,
-	Theme as RpcTheme
-} from '../../gen/tim/api/g1/api_pb';
+import { TimApi, type SpaceUpdate as RpcSpaceUpdate } from '../../gen/tim/api/g1/api_pb';
 import type { ApiListener, ConnectionStateMessage, SpaceUpdateMessage } from '$lib/api/types';
-import type {
-	CommandContent as UiCommandContent,
-	CommandEntry as UiCommandEntry,
-	ConnectionState,
-	Theme
-} from '$lib/models/session';
+import type { ConnectionState } from '$lib/models/session';
 
 const CLIENT_ID_STORAGE_KEY = 'tim.client-id';
 
@@ -96,7 +84,7 @@ async function runSubscription(signal: AbortSignal) {
 	while (!signal.aborted) {
 		try {
 			const rpcClient = await ensureClient();
-			const stream = rpcClient.subscribeToSpace({ clientId: getClientId() }, { signal });
+			const stream = rpcClient.subscribeToSpace({ clientId: resolveClientId() }, { signal });
 			retryCount = 0;
 			emitConnectionState('open');
 
@@ -142,63 +130,14 @@ function translateSpaceUpdate(message: RpcSpaceUpdate): SpaceUpdateMessage | nul
 
 	if (event.case === 'spaceNewMessage') {
 		const payload = event.value?.message;
-		if (!payload?.entry) return null;
-		const entry = convertCommandEntry(payload.entry, payload.senderId);
-		if (!entry) return null;
+		if (!payload) return null;
 		return {
 			type: 'space.message',
 			id,
 			payload: {
-				senderId: entry.senderId,
-				entry
+				senderId: payload.senderId || 'system',
+				content: payload.content ?? ''
 			}
-		};
-	}
-
-	if (event.case === 'workspaceEntryAppend' && event.value?.entry) {
-		const entry = convertCommandEntry(event.value.entry);
-		if (!entry) return null;
-		return {
-			type: 'workspace.entry.append',
-			id,
-			payload: { entry }
-		};
-	}
-
-	if (event.case === 'workspaceEntriesClear') {
-		return {
-			type: 'workspace.entries.clear',
-			id
-		};
-	}
-
-	if (event.case === 'sessionStatus') {
-		return {
-			type: 'session.status',
-			id,
-			payload: {
-				status: event.value?.status ?? ''
-			}
-		};
-	}
-
-	if (event.case === 'sessionHelp') {
-		return {
-			type: 'session.help',
-			id,
-			payload: {
-				help: event.value?.help ?? ''
-			}
-		};
-	}
-
-	if (event.case === 'sessionTheme') {
-		const theme = convertTheme(event.value?.theme);
-		if (!theme) return null;
-		return {
-			type: 'session.theme',
-			id,
-			payload: { theme }
 		};
 	}
 
@@ -206,55 +145,7 @@ function translateSpaceUpdate(message: RpcSpaceUpdate): SpaceUpdateMessage | nul
 	return null;
 }
 
-function convertCommandEntry(entry: RpcCommandEntry, senderId?: string): UiCommandEntry | null {
-	const roleValue = entry.role ?? CommandRole.UNSPECIFIED;
-	const role = roleValue === CommandRole.COMMAND ? 'command' : roleValue === CommandRole.OUTPUT ? 'output' : null;
-	if (!role) return null;
-
-	const content = convertCommandContent(entry.content);
-	if (!content) return null;
-
-	const rawId = entry.id ?? BigInt(Date.now());
-	let id = Number(rawId);
-	if (!Number.isFinite(id)) {
-		id = Date.now();
-	}
-
-	const normalizedSender =
-		typeof senderId === 'string' && senderId.length > 0 ? senderId : 'system';
-
-	return {
-		id,
-		role,
-		senderId: normalizedSender,
-		content
-	};
-}
-
-function convertCommandContent(content?: RpcCommandContent | null): UiCommandContent | null {
-	if (!content) return null;
-	switch (content.value?.case) {
-		case 'text':
-			return { kind: 'text', text: content.value.value };
-		case 'html':
-			return { kind: 'html', html: content.value.value };
-		default:
-			return null;
-	}
-}
-
-function convertTheme(value?: RpcTheme | null): Theme | null {
-	switch (value) {
-		case RpcTheme.DAY:
-			return 'day';
-		case RpcTheme.NIGHT:
-			return 'night';
-		default:
-			return 'night';
-	}
-}
-
-function getClientId(): string {
+function resolveClientId(): string {
 	if (cachedClientId) return cachedClientId;
 
 	const fallback = `client-${generateId()}`;
@@ -343,8 +234,8 @@ if (browser) {
 }
 
 export const apiService = {
-	async sendCommand(command: string) {
-		const trimmed = command.trim();
+	async sendMessage(message: string) {
+		const trimmed = message.trim();
 		if (!trimmed) return;
 
 		try {
@@ -353,10 +244,10 @@ export const apiService = {
 			await rpcClient.sendMessage({
 				id: generateId(),
 				command: trimmed,
-				clientId: getClientId()
+				clientId: resolveClientId()
 			});
 		} catch (error) {
-			console.error('Failed to send command to backend', error);
+			console.error('Failed to send message to backend', error);
 			emitConnectionState('reconnecting');
 		}
 	},
@@ -371,6 +262,9 @@ export const apiService = {
 				stopSubscription();
 			}
 		};
+	},
+	getClientId(): string {
+		return resolveClientId();
 	}
 };
 

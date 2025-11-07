@@ -6,10 +6,7 @@ import {
 	DEFAULT_HELP,
 	DEFAULT_STATUS,
 	STORAGE_KEY,
-	THEME_CHOICES,
-	type CommandContent,
-	type CommandEntry,
-	type CommandRole,
+	type MessageEntry,
 	type SessionSnapshot,
 	type ConnectionState
 } from '$lib/models/session';
@@ -18,7 +15,7 @@ const CONNECTING_STATUS = 'Connecting to server...';
 const CONNECTING_HELP = 'Waiting for backend connection.';
 const RECONNECTING_STATUS = 'Reconnecting to server...';
 const RECONNECTING_HELP =
-	'Backend unreachable. Commands are disabled until the connection is restored.';
+	'Backend unreachable. Messaging is disabled until the connection is restored.';
 
 const createDefaultSnapshot = (): SessionSnapshot => ({
 	theme: 'night',
@@ -28,44 +25,41 @@ const createDefaultSnapshot = (): SessionSnapshot => ({
 	help: CONNECTING_HELP
 });
 
-const sanitizeContent = (content: unknown): CommandContent | null => {
-	if (!content || typeof content !== 'object') return null;
-
-	const candidate = content as { kind?: unknown; text?: unknown; html?: unknown };
-
-	if (candidate.kind === 'text' && typeof candidate.text === 'string') {
-		return { kind: 'text', text: candidate.text };
+let entryCounter = 0;
+const nextEntryId = () => {
+	if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+		return `local-${crypto.randomUUID()}`;
 	}
-
-	if (candidate.kind === 'html' && typeof candidate.html === 'string') {
-		return { kind: 'html', html: candidate.html };
-	}
-
-	return null;
+	return `local-${Date.now()}-${entryCounter++}`;
 };
 
-const sanitizeEntry = (entry: unknown): CommandEntry | null => {
+const sanitizeEntry = (entry: unknown): MessageEntry | null => {
 	if (!entry || typeof entry !== 'object') return null;
 
 	const candidate = entry as {
 		id?: unknown;
-		role?: unknown;
-		content?: unknown;
 		senderId?: unknown;
+		content?: unknown;
 	};
-	const content = sanitizeContent(candidate.content);
-	const role = candidate.role === 'command' || candidate.role === 'output' ? candidate.role : null;
-	const id = typeof candidate.id === 'number' ? candidate.id : Date.now();
+	let id: string;
+	if (typeof candidate.id === 'string' && candidate.id.length > 0) {
+		id = candidate.id;
+	} else if (typeof candidate.id === 'number' && Number.isFinite(candidate.id)) {
+		id = `legacy-${candidate.id}`;
+	} else {
+		id = nextEntryId();
+	}
 	const senderId =
 		typeof candidate.senderId === 'string' && candidate.senderId.length > 0
 			? candidate.senderId
 			: 'system';
-
-	if (!content || !role) return null;
+	const content = typeof candidate.content === 'string' ? candidate.content : '';
+	if (!content.trim()) {
+		return null;
+	}
 
 	return {
 		id,
-		role,
 		senderId,
 		content
 	};
@@ -118,37 +112,22 @@ const loadSnapshot = (): SessionSnapshot => {
 		const parsed = JSON.parse(raw) as Partial<SessionSnapshot>;
 		if (!parsed || typeof parsed !== 'object') return createDefaultSnapshot();
 
-		const sanitizedEntries: CommandEntry[] = Array.isArray(parsed.entries)
+		const sanitizedEntries: MessageEntry[] = Array.isArray(parsed.entries)
 			? parsed.entries
 					.map((entry) => {
 						if (!entry || typeof entry !== 'object') return null;
 
-						let content = sanitizeContent((entry as { content?: unknown }).content);
-						if (!content) {
-							const legacyText = (entry as { text?: unknown }).text;
-							if (typeof legacyText === 'string') {
-								content = { kind: 'text', text: legacyText };
-							}
-						}
-						const role =
-							entry.role === 'command' || entry.role === 'output' ? entry.role : 'output';
-						const id = typeof entry.id === 'number' ? entry.id : Date.now();
-						const senderIdRaw = (entry as { senderId?: unknown }).senderId;
-						const senderId =
-							typeof senderIdRaw === 'string' && senderIdRaw.length > 0
-								? senderIdRaw
-								: 'system';
-
-						if (!content) return null;
-
-						return {
-							id,
-							role,
-							senderId,
-							content
-						};
+						const sanitized = sanitizeEntry({
+							id: (entry as { id?: unknown }).id,
+							senderId: (entry as { senderId?: unknown }).senderId,
+							content:
+								(entry as { content?: unknown }).content ??
+								(entry as { text?: unknown }).text ??
+								''
+						});
+						return sanitized;
 					})
-					.filter(Boolean) as CommandEntry[]
+					.filter(Boolean) as MessageEntry[]
 			: [];
 
 		return {
@@ -180,32 +159,18 @@ function createSessionStore() {
 		message: SpaceUpdateMessage
 	): SessionSnapshot => {
 		switch (message.type) {
-			case 'workspace.entries.clear':
-				return { ...state, entries: [] };
-			case 'workspace.entry.append': {
-				const entry = sanitizeEntry(message.payload.entry);
-				if (!entry) return state;
-				return {
-					...state,
-					entries: [...state.entries, entry]
-				};
-			}
 			case 'space.message': {
-				const entry = sanitizeEntry(message.payload.entry);
+				const entry = sanitizeEntry({
+					id: message.id,
+					senderId: message.payload.senderId,
+					content: message.payload.content
+				});
 				if (!entry) return state;
 				return {
 					...state,
 					entries: [...state.entries, entry]
 				};
 			}
-			case 'session.status':
-				return { ...state, status: message.payload.status };
-			case 'session.help':
-				return { ...state, help: message.payload.help };
-			case 'session.theme':
-				return state.theme === message.payload.theme
-					? state
-					: { ...state, theme: message.payload.theme };
 			case 'connection.state':
 				return applyConnectionUpdate(state, message.payload.state);
 			default:
@@ -239,6 +204,5 @@ function createSessionStore() {
 }
 
 export const session = createSessionStore();
-export const THEME_OPTIONS = THEME_CHOICES;
 export const DEFAULT_STATUS_TEXT = DEFAULT_STATUS;
 export const DEFAULT_HELP_TEXT = DEFAULT_HELP;
