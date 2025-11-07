@@ -33,3 +33,7 @@ Space has updates queue. If timite1 sends a message to a space, all the timites 
 UpdatesDispatcher should dispatch updates to space subscribers in a separate thread.
 
 Connection/transport layer should be completely isolated.
+
+## Sessions
+
+Timite sends Timite & ClientInfo on Authenticate. tim-code backend responses back with Session. Client sends session id in each subsequent request withing grpc metadata.

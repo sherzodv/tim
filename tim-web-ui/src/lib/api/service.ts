@@ -1,11 +1,23 @@
 import { browser } from '$app/environment';
-import { createClient, type Client } from '@connectrpc/connect';
+import { createClient, type Client, Code, ConnectError } from '@connectrpc/connect';
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
-import { TimApi, type SpaceUpdate as RpcSpaceUpdate } from '../../gen/tim/api/g1/api_pb';
+import { create } from '@bufbuild/protobuf';
+import {
+	TimApi,
+	AuthenticateReqSchema,
+	ClientInfoSchema,
+	TimiteSchema,
+	type AuthenticateReq,
+	type ClientInfo as RpcClientInfo,
+	type SpaceUpdate as RpcSpaceUpdate,
+	type Timite as RpcTimite
+} from '../../gen/tim/api/g1/api_pb';
 import type { ApiListener, ConnectionStateMessage, SpaceUpdateMessage } from '$lib/api/types';
 import type { ConnectionState } from '$lib/models/session';
 
 const CLIENT_ID_STORAGE_KEY = 'tim.client-id';
+const SESSION_ID_STORAGE_KEY = 'tim.session-id';
+const SESSION_HEADER = 'tim-session-id' as const;
 
 const listeners = new Set<ApiListener>();
 let client: Client<typeof TimApi> | null = null;
@@ -14,6 +26,8 @@ let streamTask: Promise<void> | null = null;
 let connectionState: ConnectionState = 'connecting';
 let connectionEventCounter = 0;
 let cachedClientId: string | null = null;
+let cachedSessionId: string | null = null;
+let sessionInit: Promise<string> | null = null;
 
 const dispatch = (message: SpaceUpdateMessage) => {
 	for (const listener of listeners) {
@@ -84,7 +98,14 @@ async function runSubscription(signal: AbortSignal) {
 	while (!signal.aborted) {
 		try {
 			const rpcClient = await ensureClient();
-			const stream = rpcClient.subscribeToSpace({ clientId: resolveClientId() }, { signal });
+			const sessionId = await ensureSessionId();
+			const stream = rpcClient.subscribeToSpace(
+				{ clientId: resolveClientId() },
+				{
+					signal,
+					headers: buildSessionHeaders(sessionId)
+				}
+			);
 			retryCount = 0;
 			emitConnectionState('open');
 
@@ -102,6 +123,9 @@ async function runSubscription(signal: AbortSignal) {
 
 			emitConnectionState('reconnecting');
 		} catch (error) {
+			if (handleAuthFailure(error)) {
+				continue;
+			}
 			if (signal.aborted) {
 				break;
 			}
@@ -169,6 +193,109 @@ function resolveClientId(): string {
 		cachedClientId = fallback;
 		return cachedClientId;
 	}
+}
+
+async function ensureSessionId(): Promise<string> {
+	if (cachedSessionId) return cachedSessionId;
+	if (sessionInit) return sessionInit;
+
+	sessionInit = (async () => {
+		const stored = loadStoredSessionId();
+		if (stored) {
+			cachedSessionId = stored;
+			return stored;
+		}
+
+		const rpcClient = await ensureClient();
+		const response = await rpcClient.authenticate(buildAuthenticateRequest());
+		const sessionId = response.session?.id;
+		if (!sessionId) {
+			throw new Error('Failed to acquire session id from backend.');
+		}
+		cachedSessionId = sessionId;
+		persistSessionId(sessionId);
+		return sessionId;
+	})();
+
+	try {
+		return await sessionInit;
+	} finally {
+		sessionInit = null;
+	}
+}
+
+function loadStoredSessionId(): string | null {
+	if (!browser) return null;
+	try {
+		const stored = localStorage.getItem(SESSION_ID_STORAGE_KEY);
+		return stored && stored.length > 0 ? stored : null;
+	} catch {
+		return null;
+	}
+}
+
+function persistSessionId(id: string) {
+	if (!browser) return;
+	try {
+		localStorage.setItem(SESSION_ID_STORAGE_KEY, id);
+	} catch {
+		/* ignore */
+	}
+}
+
+function clearStoredSessionId() {
+	cachedSessionId = null;
+	if (!browser) return;
+	try {
+		localStorage.removeItem(SESSION_ID_STORAGE_KEY);
+	} catch {
+		/* ignore */
+	}
+}
+
+function buildAuthenticateRequest(): AuthenticateReq {
+	const clientId = resolveClientId();
+	const timite = create(TimiteSchema, {
+		id: deriveTimiteId(clientId),
+		nick: clientId
+	});
+	const clientInfo = create(ClientInfoSchema, {
+		platform: resolvePlatformLabel()
+	});
+	return create(AuthenticateReqSchema, { timite, clientInfo });
+}
+
+const FNV_OFFSET = 1469598103934665603n;
+const FNV_PRIME = 1099511628211n;
+
+function deriveTimiteId(input: string): bigint {
+	let hash = FNV_OFFSET;
+	for (let i = 0; i < input.length; i += 1) {
+		hash ^= BigInt(input.charCodeAt(i));
+		hash = BigInt.asUintN(64, hash * FNV_PRIME);
+	}
+	return hash;
+}
+
+function resolvePlatformLabel(): string {
+	if (!browser) return 'web-ui';
+	try {
+		return `web-ui:${navigator.userAgent}`;
+	} catch {
+		return 'web-ui';
+	}
+}
+
+function buildSessionHeaders(sessionId: string): HeadersInit {
+	return [[SESSION_HEADER, sessionId]];
+}
+
+function handleAuthFailure(error: unknown): boolean {
+	if (error instanceof ConnectError && error.code === Code.Unauthenticated) {
+		clearStoredSessionId();
+		return true;
+	}
+	return false;
 }
 
 function resolveBackendBaseUrl(): string | null {
@@ -240,15 +367,22 @@ export const apiService = {
 
 		try {
 			const rpcClient = await ensureClient();
+			const sessionId = await ensureSessionId();
 			ensureSubscription();
-			await rpcClient.sendMessage({
-				id: generateId(),
-				command: trimmed,
-				clientId: resolveClientId()
-			});
+			await rpcClient.sendMessage(
+				{
+					id: generateId(),
+					command: trimmed,
+					clientId: resolveClientId()
+				},
+				{
+					headers: buildSessionHeaders(sessionId)
+				}
+			);
 		} catch (error) {
 			console.error('Failed to send message to backend', error);
 			emitConnectionState('reconnecting');
+			handleAuthFailure(error);
 		}
 	},
 	subscribe(listener: ApiListener) {
@@ -265,6 +399,9 @@ export const apiService = {
 	},
 	getClientId(): string {
 		return resolveClientId();
+	},
+	getSessionId(): Promise<string> {
+		return ensureSessionId();
 	}
 };
 

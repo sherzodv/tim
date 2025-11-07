@@ -6,7 +6,9 @@ mod agents;
 pub mod flows;
 pub mod gpt;
 mod services;
+mod session;
 
+use std::sync::Arc;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
@@ -15,6 +17,7 @@ use tracing::info;
 
 use crate::api::tim_api_server::TimApiServer;
 use crate::services::TimApiService;
+use crate::session::{SessionLayer, SessionService};
 
 fn init_tracing() {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
@@ -38,8 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("invalid TIM_CODE_HOST or TIM_CODE_PORT");
 
-    let service = TimApiService::new();
-    let svc = TimApiServer::new(service);
+    let session_svc = Arc::new(SessionService::new());
+    let service = TimApiService::new(session_svc.clone());
+    let server = TimApiServer::new(service);
     let cors = CorsLayer::new()
         .allow_methods(Any)
         .allow_headers(Any)
@@ -54,8 +58,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Server::builder()
         .accept_http1(true)
         .layer(cors)
+        .layer(SessionLayer::new(session_svc.clone()))
         .layer(GrpcWebLayer::new())
-        .add_service(svc)
+        .add_service(server)
         .serve(addr)
         .await?;
 

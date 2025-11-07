@@ -5,17 +5,24 @@ use std::sync::{
 use std::time::Duration;
 
 use tokio::time::sleep;
-use tonic::transport::{Channel, Endpoint};
+use tonic::{
+    metadata::MetadataValue,
+    transport::{Channel, Endpoint},
+};
 use tracing::{debug, info, warn};
 
 use crate::api::tim_api_client::TimApiClient;
-use crate::api::{space_update::Event, SendMessageReq, SpaceUpdate, SubscribeToSpaceReq};
+use crate::api::{
+    space_update::Event, AuthenticateReq, ClientInfo, SendMessageReq, SpaceUpdate,
+    SubscribeToSpaceReq, Timite,
+};
 use crate::gpt::chatgpt::ChatGptClient;
 use crate::gpt::{
     GptChatRequest, GptClient, GptClientError, GptGenerationControls, GptMessage, GptMessageRole,
 };
 
 const DEFAULT_AGENT_CLIENT_ID: &str = "agent-chatgpt";
+const SESSION_METADATA_KEY: &str = "tim-session-id";
 
 pub fn spawn(endpoint: &str) -> bool {
     let bridge = match ChatBridge::from_env() {
@@ -60,10 +67,19 @@ async fn connect_and_listen(
     let endpoint = Endpoint::from_shared(config.endpoint.clone())?;
     let channel = endpoint.connect().await?;
     let mut client = TimApiClient::new(channel);
+
+    let session_id = authenticate_agent(&mut client, config).await?;
+    let session_header = MetadataValue::try_from(session_id.as_str())
+        .map_err(|_| AgentError::InvalidSessionHeader)?;
+
+    let mut subscribe_request = tonic::Request::new(SubscribeToSpaceReq {
+        client_id: config.client_id.clone(),
+    });
+    subscribe_request
+        .metadata_mut()
+        .insert(SESSION_METADATA_KEY, session_header.clone());
     let mut stream = client
-        .subscribe_to_space(SubscribeToSpaceReq {
-            client_id: config.client_id.clone(),
-        })
+        .subscribe_to_space(subscribe_request)
         .await?
         .into_inner();
 
@@ -84,6 +100,7 @@ async fn connect_and_listen(
                         &mut client,
                         &config.client_id,
                         &config.request_id_seed,
+                        &session_header,
                         reply.text,
                     )
                     .await?;
@@ -105,20 +122,45 @@ fn extract_message(update: &SpaceUpdate) -> Option<(String, String)> {
     }
 }
 
+async fn authenticate_agent(
+    client: &mut TimApiClient<Channel>,
+    config: &AgentConfig,
+) -> Result<String, AgentError> {
+    let request = AuthenticateReq {
+        timite: Some(Timite {
+            id: config.timite_id,
+            nick: config.client_id.clone(),
+        }),
+        client_info: Some(ClientInfo {
+            platform: config.platform.clone(),
+        }),
+    };
+
+    let response = client.authenticate(tonic::Request::new(request)).await?;
+    let session = response
+        .into_inner()
+        .session
+        .ok_or(AgentError::MissingSession)?;
+    Ok(session.id)
+}
+
 async fn send_reply(
     client: &mut TimApiClient<Channel>,
     client_id: &str,
     seed: &str,
+    session_header: &MetadataValue<tonic::metadata::Ascii>,
     message: String,
 ) -> Result<(), AgentError> {
     let id = next_request_id(seed);
-    client
-        .send_message(SendMessageReq {
-            id,
-            command: message,
-            client_id: client_id.to_string(),
-        })
-        .await?;
+    let mut request = tonic::Request::new(SendMessageReq {
+        id,
+        command: message,
+        client_id: client_id.to_string(),
+    });
+    request
+        .metadata_mut()
+        .insert(SESSION_METADATA_KEY, session_header.clone());
+    client.send_message(request).await?;
     Ok(())
 }
 
@@ -128,10 +170,23 @@ fn next_request_id(seed: &str) -> String {
     format!("{seed}:{value}")
 }
 
+fn hash_client_id(client_id: &str) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    for byte in client_id.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 struct AgentConfig {
     endpoint: String,
     client_id: String,
     request_id_seed: String,
+    timite_id: u64,
+    platform: String,
 }
 
 impl AgentConfig {
@@ -140,11 +195,16 @@ impl AgentConfig {
             std::env::var("OPENAI_TIM_AGENT_ID").unwrap_or_else(|_| DEFAULT_AGENT_CLIENT_ID.into());
         let request_id_seed =
             std::env::var("OPENAI_TIM_AGENT_REQUEST_SEED").unwrap_or_else(|_| client_id.clone());
+        let platform =
+            std::env::var("OPENAI_TIM_AGENT_PLATFORM").unwrap_or_else(|_| "agent-chatgpt".into());
+        let timite_id = hash_client_id(&client_id);
 
         Self {
             endpoint: endpoint.to_string(),
             client_id,
             request_id_seed,
+            timite_id,
+            platform,
         }
     }
 }
@@ -217,6 +277,8 @@ enum AgentError {
     Transport(tonic::transport::Error),
     Status(tonic::Status),
     Gpt(GptClientError),
+    MissingSession,
+    InvalidSessionHeader,
 }
 
 impl From<tonic::transport::Error> for AgentError {
@@ -243,6 +305,12 @@ impl std::fmt::Display for AgentError {
             AgentError::Transport(err) => write!(f, "transport error: {err}"),
             AgentError::Status(err) => write!(f, "gRPC status: {err}"),
             AgentError::Gpt(err) => write!(f, "assistant error: {err}"),
+            AgentError::MissingSession => {
+                write!(f, "authenticate response missing session payload")
+            }
+            AgentError::InvalidSessionHeader => {
+                write!(f, "failed to encode session metadata header")
+            }
         }
     }
 }

@@ -8,8 +8,12 @@ use tonic::{Request, Response, Status};
 use tracing::warn;
 
 use crate::api::tim_api_server::TimApi;
-use crate::api::{SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq};
+use crate::api::{
+    AuthenticateReq, AuthenticateRes, SendMessageReq, SendMessageRes, SpaceUpdate,
+    SubscribeToSpaceReq,
+};
 use crate::flows::update_decide_reciever_flow::SpaceSubscriber;
+use crate::session::SessionService;
 
 use super::messaging::SessionUpdates;
 use super::space_updates_service::{InMemorySpaceUpdatesService, SpaceUpdatesService};
@@ -21,12 +25,23 @@ const SPACE_UPDATES_BUFFER: usize = 32;
 pub struct TimApiService {
     space_updates: Arc<dyn SpaceUpdatesService>,
     event_counter: Arc<AtomicU64>,
+    sessions: Arc<SessionService>,
 }
 
 #[tonic::async_trait]
 impl TimApi for TimApiService {
     type SubscribeToSpaceStream =
         Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
+
+    async fn authenticate(
+        &self,
+        request: Request<AuthenticateReq>,
+    ) -> Result<Response<AuthenticateRes>, Status> {
+        let session = self.sessions.ensure_session(request.into_inner());
+        Ok(Response::new(AuthenticateRes {
+            session: Some(session),
+        }))
+    }
 
     async fn send_message(
         &self,
@@ -79,7 +94,7 @@ impl TimApi for TimApiService {
 }
 
 impl TimApiService {
-    pub fn new() -> Self {
+    pub fn new(sessions: Arc<SessionService>) -> Self {
         let space_updates: Arc<dyn SpaceUpdatesService> = Arc::new(
             InMemorySpaceUpdatesService::with_default_decider(SPACE_UPDATES_BUFFER),
         );
@@ -87,6 +102,7 @@ impl TimApiService {
         Self {
             space_updates,
             event_counter: Arc::new(AtomicU64::new(0)),
+            sessions,
         }
     }
 
