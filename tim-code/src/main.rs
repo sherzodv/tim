@@ -2,6 +2,7 @@ pub(crate) mod api {
     tonic::include_proto!("tim.api.g1");
 }
 
+mod agents;
 pub mod flows;
 pub mod gpt;
 mod services;
@@ -43,6 +44,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods(Any)
         .allow_headers(Any)
         .allow_origin(Any);
+
+    let agent_endpoint =
+        std::env::var("TIM_AGENT_ENDPOINT").unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
+    agents::spawn_all(&agent_endpoint);
 
     info!("Starting tim-code gRPC backend on {addr}");
 

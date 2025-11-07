@@ -1,9 +1,6 @@
 use crate::api::space_update::Event as SpaceUpdateEvent;
 use crate::api::{Message, SpaceNewMessage, SpaceUpdate};
 
-pub const SYSTEM_SENDER_ID: &str = "tim-code";
-pub const ASSISTANT_SENDER_ID: &str = "assistant";
-
 pub struct SessionUpdates;
 
 impl SessionUpdates {

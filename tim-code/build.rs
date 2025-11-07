@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(status.success(), "buf build failed");
 
     tonic_prost_build::configure()
-        .build_client(false)
+        .build_client(true)
         .build_server(true)
         .compile_protos(protos, &[&proto_root])?;
 

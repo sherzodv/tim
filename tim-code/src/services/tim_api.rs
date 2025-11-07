@@ -5,14 +5,13 @@ use std::time::Duration;
 
 use tokio::time::sleep;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, warn};
+use tracing::warn;
 
 use crate::api::tim_api_server::TimApi;
 use crate::api::{SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq};
 use crate::flows::update_decide_reciever_flow::SpaceSubscriber;
 
-use super::assistant::{ChatBridge, ChatBridgeInitError, ChatBridgeReply};
-use super::messaging::{SessionUpdates, ASSISTANT_SENDER_ID, SYSTEM_SENDER_ID};
+use super::messaging::SessionUpdates;
 use super::space_updates_service::{InMemorySpaceUpdatesService, SpaceUpdatesService};
 
 const BASE_DELAY_MILLIS: u64 = 120;
@@ -22,7 +21,6 @@ const SPACE_UPDATES_BUFFER: usize = 32;
 pub struct TimApiService {
     space_updates: Arc<dyn SpaceUpdatesService>,
     event_counter: Arc<AtomicU64>,
-    chat_bridge: Option<Arc<ChatBridge>>,
 }
 
 #[tonic::async_trait]
@@ -85,76 +83,18 @@ impl TimApiService {
         let space_updates: Arc<dyn SpaceUpdatesService> = Arc::new(
             InMemorySpaceUpdatesService::with_default_decider(SPACE_UPDATES_BUFFER),
         );
-        let chat_bridge = match ChatBridge::from_env() {
-            Ok(bridge) => {
-                info!(
-                    "ChatGPT integration enabled with model `{}`.",
-                    bridge.model_name()
-                );
-                Some(Arc::new(bridge))
-            }
-            Err(ChatBridgeInitError::MissingApiKey) => {
-                debug!(
-                    "ChatGPT integration disabled: set OPENAI_TIM_API_KEY to enable assistant responses."
-                );
-                None
-            }
-            Err(ChatBridgeInitError::Client(err)) => {
-                warn!("ChatGPT integration disabled: {err}");
-                None
-            }
-        };
 
         Self {
             space_updates,
             event_counter: Arc::new(AtomicU64::new(0)),
-            chat_bridge,
         }
     }
 
     async fn process_message(&self, client_id: String, request_id: String, message: String) {
         let messenger = SpaceMessenger::new(self, &request_id);
         messenger
-            .push_message(client_id.as_str(), message.clone(), 0.0)
+            .push_message(client_id.as_str(), message, 0.0)
             .await;
-
-        if let Some(bridge) = self.chat_bridge() {
-            match bridge.send(&message).await {
-                Ok(reply) => self.deliver_assistant_reply(&messenger, reply).await,
-                Err(err) => {
-                    let notice = format!("Assistant request failed: {err}.");
-                    messenger.push_message(SYSTEM_SENDER_ID, notice, 1.0).await;
-                }
-            }
-        } else {
-            let notice = "Assistant is not configured. Set OPENAI_TIM_API_KEY to enable responses.";
-            messenger.push_message(SYSTEM_SENDER_ID, notice, 1.0).await;
-        }
-    }
-
-    async fn deliver_assistant_reply(
-        &self,
-        messenger: &SpaceMessenger<'_>,
-        reply: ChatBridgeReply,
-    ) {
-        let ChatBridgeReply {
-            text,
-            usage,
-            provider_request_id,
-        } = reply;
-
-        if let Some(request_ref) = provider_request_id {
-            debug!("assistant request completed: {request_ref}");
-        }
-
-        if let Some(usage) = usage {
-            debug!(
-                "assistant usage: prompt={} completion={} total={}",
-                usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
-            );
-        }
-
-        messenger.push_message(ASSISTANT_SENDER_ID, text, 1.0).await;
     }
 
     async fn dispatch_update(&self, update: SpaceUpdate, delay_multiplier: f64) {
@@ -174,10 +114,6 @@ impl TimApiService {
     fn next_event_id(&self, seed: &str) -> String {
         let value = self.event_counter.fetch_add(1, Ordering::Relaxed);
         format!("{seed}:{value}")
-    }
-
-    fn chat_bridge(&self) -> Option<Arc<ChatBridge>> {
-        self.chat_bridge.clone()
     }
 }
 
