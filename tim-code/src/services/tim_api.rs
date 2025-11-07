@@ -371,21 +371,19 @@ impl CommandRouter {
     }
 
     fn messenger(&self) -> CommandMessenger<'_> {
-        CommandMessenger::new(&self.service, &self.client_id, &self.request_id)
+        CommandMessenger::new(&self.service, &self.request_id)
     }
 }
 
 struct CommandMessenger<'a> {
     service: &'a TimApiService,
-    client_id: &'a str,
     request_id: &'a str,
 }
 
 impl<'a> CommandMessenger<'a> {
-    fn new(service: &'a TimApiService, client_id: &'a str, request_id: &'a str) -> Self {
+    fn new(service: &'a TimApiService, request_id: &'a str) -> Self {
         Self {
             service,
-            client_id,
             request_id,
         }
     }

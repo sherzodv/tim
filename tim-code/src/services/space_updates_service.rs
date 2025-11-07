@@ -84,6 +84,7 @@ impl SpaceUpdatesService for InMemorySpaceUpdatesService {
                 .collect::<Vec<_>>()
         };
 
+        let mut had_error = false;
         for (client_id, sender, subscriber) in snapshot {
             if !self.decider.should_deliver(&subscriber, &update) {
                 continue;
@@ -91,10 +92,15 @@ impl SpaceUpdatesService for InMemorySpaceUpdatesService {
 
             if sender.send(Ok(update.clone())).await.is_err() {
                 self.unsubscribe(&client_id);
+                had_error = true;
             }
         }
 
-        Ok(())
+        if had_error {
+            Err(SpaceUpdatesPublishError::DispatcherClosed)
+        } else {
+            Ok(())
+        }
     }
 
     fn subscribe(
