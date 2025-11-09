@@ -1,10 +1,11 @@
 mod agent;
 mod llm;
+mod tim_client;
 
-use std::env;
-
-use crate::agent::{Agent, AgentConf};
 use crate::llm::{LlmConf, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
+use crate::tim_client::TimClientConf;
+use std::env;
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,41 +15,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let default_model =
         env::var("OPENAI_CHAT_MODEL").unwrap_or_else(|_| OPENAI_DEFAULT_MODEL.to_string());
 
-    let jarvis_conf = AgentConf {
+    let jarvis = agent::spawn(TimClientConf {
         timite_id: 1,
-        sysp: "You are Jarvis, an engineering aide. Respond with one short sentence. Plan smth interesting and let Alice do it.".to_string(),
-        userp: "Respond as Jarvis.".to_string(),
         nick: "jarvis".to_string(),
         provider: "openai:jarvis".to_string(),
+        endpoint: "http://127.0.0.1:8787".to_string(),
+    }, LlmConf {
         initial_msg: Some("Morning Alice, status update?".to_string()),
+        sysp: "You are Jarvis, an engineering aide. Respond with one short sentence. Plan smth interesting and let Alice do it.".to_string(),
+        userp: "Respond as Jarvis.".to_string(),
         history_limit: 12,
-        response_delay_ms: 900,
-        llm: LlmConf {
-            api_key: api_key.clone(),
-            endpoint: endpoint.clone(),
-            model: env::var("OPENAI_JARVIS_MODEL").unwrap_or_else(|_| default_model.clone()),
-            temperature: 0.8,
-        },
-    };
+        response_delay: Duration::from_millis(900),
+        api_key: api_key.clone(),
+        endpoint: endpoint.clone(),
+        model: env::var("OPENAI_JARVIS_MODEL").unwrap_or_else(|_| default_model.clone()),
+        temperature: 0.8,
+    });
 
-    let alice_conf = AgentConf {
-        timite_id: 2,
-        sysp: "You are Alice, an optimistic assistant. Keep replies brief.".to_string(),
-        userp: "Reply as Alice.".to_string(),
-        nick: "alice".to_string(),
-        provider: "openai:alice".to_string(),
-        initial_msg: Some("Jarvis, I can take the next task, thoughts?".to_string()),
-        history_limit: 10,
-        response_delay_ms: 1100,
-        llm: LlmConf {
+    let alice = agent::spawn(
+        TimClientConf {
+            timite_id: 2,
+            nick: "alice".to_string(),
+            provider: "openai:alice".to_string(),
+            endpoint: "http://127.0.0.1:8787".to_string(),
+        },
+        LlmConf {
+            initial_msg: Some("Jarvis, I can take the next task, thoughts?".to_string()),
+            sysp: "You are Alice, an optimistic assistant. Keep replies brief.".to_string(),
+            userp: "Reply as Alice.".to_string(),
+            history_limit: 10,
+            response_delay: Duration::from_millis(1100),
             api_key,
             endpoint,
             model: env::var("OPENAI_ALICE_MODEL").unwrap_or_else(|_| default_model),
             temperature: 0.6,
         },
-    };
+    );
 
-    tokio::try_join!(Agent::spawn(jarvis_conf), Agent::spawn(alice_conf))?;
+    tokio::try_join!(jarvis, alice)?;
 
     Ok(())
 }

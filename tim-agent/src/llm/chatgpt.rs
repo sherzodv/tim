@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{Llm, LlmConf, LlmError, LlmReq, LlmRes};
+use super::{Llm, LlmError, LlmReq, LlmRes};
 
 pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -29,27 +29,32 @@ impl fmt::Debug for ChatGpt {
 }
 
 impl ChatGpt {
-    pub fn new(cfg: LlmConf) -> Result<Self, LlmError> {
-        if cfg.api_key.trim().is_empty() {
+    pub fn new(
+        api_key: String,
+        endpoint: String,
+        model: String,
+        temperature: f32,
+    ) -> Result<Self, LlmError> {
+        if api_key.trim().is_empty() {
             return Err(LlmError::MissingApiKey);
         }
-        let endpoint = if cfg.endpoint.trim().is_empty() {
+        let endpoint = if endpoint.trim().is_empty() {
             OPENAI_DEFAULT_ENDPOINT.to_string()
         } else {
-            cfg.endpoint
+            endpoint
         };
-        let model = if cfg.model.trim().is_empty() {
+        let model = if model.trim().is_empty() {
             OPENAI_DEFAULT_MODEL.to_string()
         } else {
-            cfg.model
+            model
         };
 
         Ok(Self {
             client: Client::new(),
-            api_key: cfg.api_key,
+            api_key,
             endpoint,
             model,
-            temperature: cfg.temperature.max(0.0),
+            temperature: temperature.max(0.0),
         })
     }
 }
