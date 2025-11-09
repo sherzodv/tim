@@ -67,7 +67,7 @@ impl Agent {
         let endpoint = Endpoint::from_static("http://localhost:8787");
         let channel = endpoint.connect().await?;
         let mut client = TimApiClient::new(channel);
-        let llm: Arc<dyn Llm> = Arc::new(ChatGpt::new());
+        let llm: Arc<dyn Llm> = Arc::new(ChatGpt::new()?);
         let agent = Agent { sysp, userp, llm };
 
         let auth_req = AuthenticateReq {
