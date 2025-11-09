@@ -2,22 +2,21 @@ pub(crate) mod api {
     tonic::include_proto!("tim.api.g1");
 }
 
-mod agents;
-pub mod flows;
-pub mod gpt;
-mod services;
-mod session;
+mod tim_api;
+mod tim_session;
+mod tim_space;
 
-use std::sync::Arc;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::api::tim_api_server::TimApiServer;
-use crate::services::TimApiService;
-use crate::session::{SessionLayer, SessionService};
+use crate::tim_api::TimApiService;
+use crate::tim_session::{SessionLayer, TimSessionService};
+use crate::tim_space::TimSpace;
 
 fn init_tracing() {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
@@ -41,17 +40,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("invalid TIM_CODE_HOST or TIM_CODE_PORT");
 
-    let session_svc = Arc::new(SessionService::new());
-    let service = TimApiService::new(session_svc.clone());
+    let session_svc = Arc::new(TimSessionService::new());
+    let space_svc = Arc::new(TimSpace::new());
+    let service = TimApiService::new(session_svc.clone(), space_svc.clone());
     let server = TimApiServer::new(service);
     let cors = CorsLayer::new()
         .allow_methods(Any)
         .allow_headers(Any)
         .allow_origin(Any);
-
-    let agent_endpoint =
-        std::env::var("TIM_AGENT_ENDPOINT").unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
-    agents::spawn_all(&agent_endpoint);
 
     info!("Starting tim-code gRPC backend on {addr}");
 

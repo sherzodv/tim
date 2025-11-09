@@ -14,24 +14,34 @@ message ClientInfo {
 }
 
 message Session {
-  string id = 1;
+  uint64 id = 1;
   google.protobuf.Timestamp created_at = 2;
 }
 
+message Message {
+  uint64 id = 1;
+  uint64 sender_id = 2;
+  string content = 3;
+}
+
+// --[ Updates: Space updates ]--
+
 message SpaceUpdate {
-  string id = 1;
+  uint64 id = 1;
   oneof event {
     SpaceNewMessage space_new_message = 7;
   }
 }
 
-message Message {
-  string sender_id = 1;
-  string content = 2;
-}
-
 message SpaceNewMessage {
   Message message = 1;
+}
+
+// --[ RPC req/res ]--
+
+message Error {
+  uint64 code = 1;
+  string description = 2;
 }
 
 message AuthenticateReq {
@@ -44,17 +54,15 @@ message AuthenticateRes {
 }
 
 message SendMessageReq {
-  string id = 1;
-  string command = 2;
-  string client_id = 3;
+  string content = 2;
 }
 
 message SendMessageRes {
-  string id = 1;
+  optional Error error = 1;
 }
 
 message SubscribeToSpaceReq {
-  string client_id = 1;
+   bool receive_own_messages = 1;
 }
 
 service TimApi {

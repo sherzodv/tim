@@ -1,0 +1,107 @@
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::RwLock;
+
+use tokio::sync::mpsc;
+
+use crate::api::{
+    space_update, Message, SendMessageReq, SendMessageRes, SpaceNewMessage, SpaceUpdate,
+    SubscribeToSpaceReq,
+};
+use crate::tim_session::TimSession;
+
+const BUFFER_SIZE: usize = 10;
+
+#[derive(Debug, Clone)]
+struct Subscriber {
+    receive_own_messages: bool,
+    chan: mpsc::Sender<SpaceUpdate>,
+    session: TimSession,
+}
+
+pub struct TimSpace {
+    msg_counter: AtomicU64,
+    upd_counter: AtomicU64,
+    subscribers: RwLock<HashMap<u64, Subscriber>>,
+}
+
+fn update_new_message(
+    upd_id: u64,
+    msg_id: u64,
+    req: &SendMessageReq,
+    session: &TimSession,
+) -> SpaceUpdate {
+    SpaceUpdate {
+        id: upd_id,
+        event: Some(space_update::Event::SpaceNewMessage(SpaceNewMessage {
+            message: Some(Message {
+                id: msg_id,
+                sender_id: session.timite.id,
+                content: req.content.to_string(),
+            }),
+        })),
+    }
+}
+
+impl TimSpace {
+    pub fn new() -> TimSpace {
+        TimSpace {
+            msg_counter: AtomicU64::new(0),
+            upd_counter: AtomicU64::new(0),
+            subscribers: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn process(
+        &self,
+        req: SendMessageReq,
+        session: TimSession,
+    ) -> Result<SendMessageRes, String> {
+        let snapshot = {
+            let guard = self
+                .subscribers
+                .read()
+                .expect("space updates subscribers lock poisoned");
+            guard
+                .iter()
+                .map(|(_, entry)| entry.clone())
+                .collect::<Vec<_>>()
+        };
+
+        for sub in snapshot {
+            if !sub.receive_own_messages && sub.session.timite.id == session.timite.id {
+                continue;
+            }
+            let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
+            let msg_id = self.msg_counter.fetch_add(1, Ordering::Relaxed);
+            sub.chan
+                .send(update_new_message(upd_id, msg_id, &req, &session))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(SendMessageRes { error: None })
+    }
+
+    pub fn subscribe(
+        &self,
+        req: &SubscribeToSpaceReq,
+        session: &TimSession,
+    ) -> mpsc::Receiver<SpaceUpdate> {
+        let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
+        let mut guard = self
+            .subscribers
+            .write()
+            .expect("space updates subscribers lock poisoned");
+        guard.insert(
+            session.id,
+            Subscriber {
+                receive_own_messages: req.receive_own_messages,
+                chan: sender,
+                session: session.clone(),
+            },
+        );
+        receiver
+    }
+}
