@@ -1,7 +1,7 @@
+use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::fmt;
-use tracing::{instrument, info};
+use tracing::{info, instrument};
 
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
@@ -32,7 +32,7 @@ impl TimApi for TimApiService {
     type SubscribeToSpaceStream =
         Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
 
-    #[instrument(level="info")]
+    #[instrument(level = "info")]
     async fn authenticate(
         &self,
         request: Request<AuthenticateReq>,
@@ -53,7 +53,10 @@ impl TimApi for TimApiService {
     ) -> Result<Response<SendMessageRes>, Status> {
         let session = self.require_session(&req)?;
         let payload = req.into_inner();
-        info!("message received {}", &payload.content);
+        info!(
+            "message received {}: {}",
+            &session.timite.nick, &payload.content
+        );
         let result = self
             .space
             .process(payload, session)

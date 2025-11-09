@@ -1,14 +1,13 @@
-use std::env;
 use std::fmt;
 
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{Llm, LlmError, LlmReq, LlmRes};
+use super::{Llm, LlmConf, LlmError, LlmReq, LlmRes};
 
-const DEFAULT_OPENAI_URL: &str = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
+pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
 
 #[derive(Clone)]
 pub struct ChatGpt {
@@ -16,6 +15,7 @@ pub struct ChatGpt {
     api_key: String,
     endpoint: String,
     model: String,
+    temperature: f32,
 }
 
 impl fmt::Debug for ChatGpt {
@@ -23,25 +23,33 @@ impl fmt::Debug for ChatGpt {
         f.debug_struct("ChatGpt")
             .field("endpoint", &self.endpoint)
             .field("model", &self.model)
+            .field("temperature", &self.temperature)
             .finish()
     }
 }
 
 impl ChatGpt {
-    pub fn new() -> Result<Self, LlmError> {
-        let api_key = env::var("OPENAI_API_KEY")
-            .or_else(|_| env::var("TIM_OPENAI_API_KEY"))
-            .map_err(|_| LlmError::MissingApiKey)?;
-        let endpoint =
-            env::var("OPENAI_API_BASE").unwrap_or_else(|_| DEFAULT_OPENAI_URL.to_string());
-        let model =
-            env::var("OPENAI_CHAT_MODEL").unwrap_or_else(|_| DEFAULT_OPENAI_MODEL.to_string());
+    pub fn new(cfg: LlmConf) -> Result<Self, LlmError> {
+        if cfg.api_key.trim().is_empty() {
+            return Err(LlmError::MissingApiKey);
+        }
+        let endpoint = if cfg.endpoint.trim().is_empty() {
+            OPENAI_DEFAULT_ENDPOINT.to_string()
+        } else {
+            cfg.endpoint
+        };
+        let model = if cfg.model.trim().is_empty() {
+            OPENAI_DEFAULT_MODEL.to_string()
+        } else {
+            cfg.model
+        };
 
         Ok(Self {
             client: Client::new(),
-            api_key,
+            api_key: cfg.api_key,
             endpoint,
             model,
+            temperature: cfg.temperature.max(0.0),
         })
     }
 }
@@ -93,7 +101,7 @@ impl Llm for ChatGpt {
                     content: req.msg.trim().to_string(),
                 },
             ],
-            temperature: 0.7,
+            temperature: self.temperature,
         };
 
         let response = self

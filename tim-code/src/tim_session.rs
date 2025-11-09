@@ -35,7 +35,6 @@ fn to_proto_timestamp(dt: &DateTime<Utc>) -> Timestamp {
     }
 }
 impl TimSessionService {
-
     pub fn new() -> TimSessionService {
         TimSessionService {
             sid_counter: Arc::new(AtomicU64::new(1)),

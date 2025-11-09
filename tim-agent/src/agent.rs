@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tonic::metadata::errors::InvalidMetadataValue;
@@ -14,10 +15,9 @@ use tim_api::{AuthenticateReq, ClientInfo, SendMessageReq, Timite};
 
 use crate::agent::tim_api::space_update::Event;
 use crate::agent::tim_api::{SpaceNewMessage, SubscribeToSpaceReq};
-use crate::llm::{ChatGpt, Llm, LlmError, LlmReq};
+use crate::llm::{ChatGpt, Llm, LlmConf, LlmError, LlmReq};
 
 const SESSION_METADATA_KEY: &str = "tim-session-id";
-const RESPONSE_DELAY: Duration = Duration::from_millis(750);
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -41,6 +41,9 @@ pub struct Agent {
     sysp: String,
     userp: String,
     llm: Arc<dyn Llm>,
+    history: VecDeque<DialogTurn>,
+    history_limit: usize,
+    response_delay: Duration,
 }
 
 #[derive(Clone)]
@@ -51,6 +54,20 @@ pub struct AgentConf {
     pub nick: String,
     pub provider: String,
     pub initial_msg: Option<String>,
+    pub history_limit: usize,
+    pub response_delay_ms: u64,
+    pub llm: LlmConf,
+}
+
+#[derive(Clone, Copy)]
+enum DialogRole {
+    Peer,
+    Agent,
+}
+
+struct DialogTurn {
+    role: DialogRole,
+    content: String,
 }
 
 impl Agent {
@@ -62,13 +79,25 @@ impl Agent {
             nick,
             provider,
             initial_msg,
+            history_limit: history_capacity,
+            response_delay_ms,
+            llm: llm_conf,
         } = conf;
 
         let endpoint = Endpoint::from_static("http://localhost:8787");
         let channel = endpoint.connect().await?;
         let mut client = TimApiClient::new(channel);
-        let llm: Arc<dyn Llm> = Arc::new(ChatGpt::new()?);
-        let agent = Agent { sysp, userp, llm };
+        let llm: Arc<dyn Llm> = Arc::new(ChatGpt::new(llm_conf)?);
+        let history_limit = history_capacity.max(1);
+        let response_delay = Duration::from_millis(response_delay_ms);
+        let mut agent = Agent {
+            sysp,
+            userp,
+            llm,
+            history: VecDeque::with_capacity(history_limit),
+            history_limit,
+            response_delay,
+        };
 
         let auth_req = AuthenticateReq {
             timite: Some(Timite {
@@ -139,12 +168,21 @@ impl Agent {
         Ok(())
     }
 
-    pub async fn on_message(&self, msg: &str) -> Result<String, AgentError> {
-        sleep(RESPONSE_DELAY).await;
+    pub async fn on_message(&mut self, msg: &str) -> Result<String, AgentError> {
+        if !self.response_delay.is_zero() {
+            sleep(self.response_delay).await;
+        }
+        self.push_history(DialogRole::Peer, msg);
+        let context = self.render_history();
+        let prompt_body = if context.is_empty() {
+            msg.trim().to_string()
+        } else {
+            format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
+        };
         let req = LlmReq {
             sysp: &self.sysp,
             userp: &self.userp,
-            msg,
+            msg: &prompt_body,
         };
         debug!(target: "tim_agent::llm", prompt = msg, "Dispatching LLM chat request");
         let answer = self.llm.chat(&req).await?;
@@ -153,6 +191,39 @@ impl Agent {
             response = answer.message.as_str(),
             "Received LLM chat response"
         );
+        self.push_history(DialogRole::Agent, &answer.message);
         Ok(answer.message)
+    }
+
+    fn push_history(&mut self, role: DialogRole, content: &str) {
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if self.history.len() == self.history_limit {
+            self.history.pop_front();
+        }
+        self.history.push_back(DialogTurn {
+            role,
+            content: trimmed.to_string(),
+        });
+    }
+
+    fn render_history(&self) -> String {
+        if self.history.is_empty() {
+            return String::new();
+        }
+        let mut buf = String::new();
+        for turn in &self.history {
+            let role = match turn.role {
+                DialogRole::Peer => "Peer",
+                DialogRole::Agent => "Agent",
+            };
+            buf.push_str(role);
+            buf.push_str(": ");
+            buf.push_str(&turn.content);
+            buf.push('\n');
+        }
+        buf.trim_end().to_string()
     }
 }

@@ -1,6 +1,6 @@
 pub mod chatgpt;
 
-pub use chatgpt::ChatGpt;
+pub use chatgpt::{ChatGpt, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
 
 use async_trait::async_trait;
 
@@ -12,6 +12,14 @@ pub struct LlmReq<'a> {
 
 pub struct LlmRes {
     pub message: String,
+}
+
+#[derive(Clone)]
+pub struct LlmConf {
+    pub api_key: String,
+    pub endpoint: String,
+    pub model: String,
+    pub temperature: f32,
 }
 
 #[derive(Debug, thiserror::Error)]
