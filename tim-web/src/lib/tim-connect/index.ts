@@ -66,10 +66,7 @@ class TimConnectImpl implements TimConnect {
 		while (!signal.aborted) {
 			try {
 				this.setPhase(attempt === 0 ? 'connecting' : 'reconnecting', handler);
-				const stream = await this.client.subscribeToSpace(
-					this.receiveOwnMessages,
-					signal
-				);
+				const stream = await this.client.subscribeToSpace(this.receiveOwnMessages, signal);
 				this.setPhase('open', handler);
 				attempt = 0;
 				for await (const update of stream) {

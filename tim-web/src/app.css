@@ -28,9 +28,21 @@
 	--scrollbar-thumb-hover: rgba(55, 80, 110, 0.9);
 	--scrollbar-track: rgba(255, 255, 255, 0.06);
 	--background-color: #0b0e11;
-	--background-gradient-1: radial-gradient(circle at top, rgba(95, 200, 255, 0.12), transparent 45%);
-	--background-gradient-2: radial-gradient(circle at bottom left, rgba(53, 94, 126, 0.18), transparent 55%);
-	--background-gradient-3: linear-gradient(180deg, rgba(8, 11, 14, 0.95) 0%, rgba(6, 8, 11, 0.95) 100%);
+	--background-gradient-1: radial-gradient(
+		circle at top,
+		rgba(95, 200, 255, 0.12),
+		transparent 45%
+	);
+	--background-gradient-2: radial-gradient(
+		circle at bottom left,
+		rgba(53, 94, 126, 0.18),
+		transparent 55%
+	);
+	--background-gradient-3: linear-gradient(
+		180deg,
+		rgba(8, 11, 14, 0.95) 0%,
+		rgba(6, 8, 11, 0.95) 100%
+	);
 }
 
 :root[data-theme='day'] {
@@ -52,9 +64,21 @@
 	--scrollbar-thumb-hover: rgba(118, 138, 170, 0.7);
 	--scrollbar-track: rgba(0, 0, 0, 0.06);
 	--background-color: #e8f1fd;
-	--background-gradient-1: radial-gradient(circle at top, rgba(255, 255, 255, 0.85), transparent 50%);
-	--background-gradient-2: radial-gradient(circle at bottom left, rgba(188, 208, 237, 0.45), transparent 65%);
-	--background-gradient-3: linear-gradient(180deg, rgba(233, 239, 248, 0.95) 0%, rgba(215, 227, 242, 0.95) 100%);
+	--background-gradient-1: radial-gradient(
+		circle at top,
+		rgba(255, 255, 255, 0.85),
+		transparent 50%
+	);
+	--background-gradient-2: radial-gradient(
+		circle at bottom left,
+		rgba(188, 208, 237, 0.45),
+		transparent 65%
+	);
+	--background-gradient-3: linear-gradient(
+		180deg,
+		rgba(233, 239, 248, 0.95) 0%,
+		rgba(215, 227, 242, 0.95) 100%
+	);
 }
 
 *,
@@ -72,7 +96,8 @@ body {
 body {
 	margin: 0;
 	background-color: var(--background-color);
-	background-image: var(--background-gradient-1), var(--background-gradient-2), var(--background-gradient-3);
+	background-image:
+		var(--background-gradient-1), var(--background-gradient-2), var(--background-gradient-3);
 	color: var(--shell-text);
 	font-family: var(--mono);
 	line-height: 1.4;

@@ -1,25 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createTimClient, createWebTimClientConf } from '$lib/tim-client';
-	import { createTimConnect } from '$lib/tim-connect';
-	import { createTimSpace } from '$lib/tim-space';
-
-	const timClient = createTimClient(createWebTimClientConf());
-	const timConnect = createTimConnect(timClient);
-	const timSpace = createTimSpace(timClient);
+	import WorkSpace from '$lib/ui/work-space/WorkSpace.svelte';
 
 	onMount(() => {
-		timConnect.start(timSpace).catch((error) => {
-			console.error('Failed to start TimConnect', error);
-		});
-		return () => {
-			timConnect.stop();
-		};
+		console.info('[Tim] UI mounted');
 	});
 </script>
 
 <svelte:head>
-		<title>Tim</title>
-	</svelte:head>
+	<title>Tim</title>
+</svelte:head>
 
-	<main class="blank-canvas" aria-label="Empty workspace"></main>
+<main class="blank-canvas" aria-label="Workspace">
+	<WorkSpace />
+</main>

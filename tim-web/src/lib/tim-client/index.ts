@@ -77,10 +77,7 @@ export class TimClient {
 		});
 	}
 
-	async subscribeToSpace(
-		receiveOwnMessages: boolean,
-		signal: AbortSignal
-	) {
+	async subscribeToSpace(receiveOwnMessages: boolean, signal: AbortSignal) {
 		const sessionId = await this.ensureSession();
 		const request = buildSubscribeRequest(receiveOwnMessages);
 		return this.client.subscribeToSpace(request, {
@@ -99,9 +96,7 @@ export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
 
 export const createWebTimClientConf = (): TimClientConf => {
 	const platform =
-		browser && typeof navigator !== 'undefined'
-			? `web:${navigator.userAgent}`
-			: 'web';
+		browser && typeof navigator !== 'undefined' ? `web:${navigator.userAgent}` : 'web';
 	return {
 		timiteId: BigInt(Date.now()),
 		nick: `web-${Math.random().toString(36).slice(2, 7)}`,

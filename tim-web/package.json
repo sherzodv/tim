@@ -17,7 +17,8 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "^2.10.0",
 		"@connectrpc/connect": "^2.1.0",
-		"@connectrpc/connect-web": "^2.1.0"
+		"@connectrpc/connect-web": "^2.1.0",
+		"@tanstack/svelte-virtual": "^3.13.12"
 	},
 	"devDependencies": {
 		"@bufbuild/buf": "^1.59.0",
