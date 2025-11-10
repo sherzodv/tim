@@ -5,6 +5,7 @@ pub(crate) mod api {
 mod tim_api;
 mod tim_session;
 mod tim_space;
+mod tim_storage;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
