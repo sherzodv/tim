@@ -88,6 +88,11 @@ export class TimClient {
 			headers: buildSessionHeaders(sessionId)
 		});
 	}
+
+	resetSession() {
+		this.sessionId = null;
+		this.sessionInit = null;
+	}
 }
 
 export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
