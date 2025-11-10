@@ -1,17 +1,17 @@
 <script lang="ts">
-	import type { WorkLogItemMessage } from '../types';
+	import type { WorkLogItemSysMessage } from '../types';
 
-	export let item: WorkLogItemMessage;
+	let { item }: { item: WorkLogItemSysMessage } = $props();
 </script>
 
-<article class="work-log-item message" data-kind="message" aria-label="Message">
+<article class="work-log-item message" data-kind="sysmsg" aria-label="System message">
 	<header>
-		<span class="author">author</span>
+		<span class="author">{item.author}</span>
 		<time datetime="">
 			{item.kind}
 		</time>
 	</header>
-	<p class="content">content</p>
+	<p class="content">{item.content}</p>
 </article>
 
 <style>

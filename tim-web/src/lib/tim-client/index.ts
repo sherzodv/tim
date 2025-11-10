@@ -1,4 +1,3 @@
-import { browser } from '$app/environment';
 import { createClient, type Client } from '@connectrpc/connect';
 import { createGrpcWebTransport } from '@connectrpc/connect-web';
 import { ConnectError, Code } from '@connectrpc/connect';
@@ -93,16 +92,6 @@ export class TimClient {
 }
 
 export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
-
-export const createWebTimClientConf = (): TimClientConf => {
-	const platform =
-		browser && typeof navigator !== 'undefined' ? `web:${navigator.userAgent}` : 'web';
-	return {
-		timiteId: BigInt(Date.now()),
-		nick: `web-${Math.random().toString(36).slice(2, 7)}`,
-		platform
-	};
-};
 
 function buildAuthenticateRequest(identity: TimClientConf): AuthenticateReq {
 	const timite = create(TimiteSchema, {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { WorkLogItemMessage } from '../types';
 
-	export let item: WorkLogItemMessage;
+	let { item }: { item: WorkLogItemMessage } = $props();
 </script>
 
 <article class="work-log-item message" data-kind="message" aria-label="Message">

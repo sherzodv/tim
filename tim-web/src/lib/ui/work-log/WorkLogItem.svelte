@@ -3,12 +3,11 @@
 	import Message from './item/Message.svelte';
 	import SysMessage from './item/SysMessage.svelte';
 
-	export let item: WorkLogItem;
-
-	const map = {
-		msg: Message,
-		sysmsg: SysMessage
-	} as const;
+	let { item }: { item: WorkLogItem } = $props();
 </script>
 
-<svelte:component this={map[item.kind]} item={item as any} />
+{#if item.kind === 'msg'}
+	<Message {item} />
+{:else}
+	<SysMessage {item} />
+{/if}

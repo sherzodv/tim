@@ -1,24 +1,13 @@
 <script lang="ts">
 	import WorkLog from '../work-log/WorkLog.svelte';
-	import type { WorkLogItem } from '../work-log/types';
+	import type { TimSpace } from '../../tim-space';
+	import type { TimSpaceStorage } from '../../tim-space/storage';
 
-	let sampleItems: WorkLogItem[] = $state([]);
-
-	let idx = 0;
-	setInterval(() => {
-		idx += 1;
-		sampleItems.push({
-			id: BigInt(idx),
-			kind: idx % 2 === 0 ? 'msg' : 'sysmsg',
-			author: idx % 2 === 0 ? 'alice' : 'jarvis',
-			content: `Placeholder message #${idx}`
-		});
-		sampleItems = sampleItems;
-	}, 500);
+	let { space, storage }: { space: TimSpace; storage: TimSpaceStorage } = $props();
 </script>
 
-<section class="work-space" aria-label="Workspace">
-	<WorkLog items={sampleItems} />
+<section class="work-space" aria-label="Workspace" data-space-active={space ? 'true' : 'false'}>
+	<WorkLog items={$storage} />
 </section>
 
 <style>
