@@ -1,4 +1,6 @@
 # Project-wide ignores
+#
+**/.tim/
 
 # OS
 .DS_Store

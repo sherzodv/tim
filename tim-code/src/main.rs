@@ -18,6 +18,7 @@ use crate::api::tim_api_server::TimApiServer;
 use crate::tim_api::TimApiService;
 use crate::tim_session::{SessionLayer, TimSessionService};
 use crate::tim_space::TimSpace;
+use crate::tim_storage::RocksDbStorage;
 
 fn init_tracing() {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
@@ -41,7 +42,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("invalid TIM_CODE_HOST or TIM_CODE_PORT");
 
-    let session_svc = Arc::new(TimSessionService::new());
+    let data_dir = std::env::var("TIM_DATA_DIR").unwrap_or_else(|_| "./.tim".to_string());
+    let storage = Arc::new(RocksDbStorage::new(&data_dir)?);
+    let session_svc = Arc::new(TimSessionService::new(storage.clone()));
     let space_svc = Arc::new(TimSpace::new());
     let service = TimApiService::new(session_svc.clone(), space_svc.clone());
     let server = TimApiServer::new(service);

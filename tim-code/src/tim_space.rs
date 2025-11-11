@@ -6,10 +6,9 @@ use std::sync::RwLock;
 use tokio::sync::mpsc;
 
 use crate::api::{
-    space_update, Message, SendMessageReq, SendMessageRes, SpaceNewMessage, SpaceUpdate,
+    space_update, Message, SendMessageReq, SendMessageRes, Session, SpaceNewMessage, SpaceUpdate,
     SubscribeToSpaceReq,
 };
-use crate::tim_session::TimSession;
 
 const BUFFER_SIZE: usize = 10;
 
@@ -17,7 +16,7 @@ const BUFFER_SIZE: usize = 10;
 struct Subscriber {
     receive_own_messages: bool,
     chan: mpsc::Sender<SpaceUpdate>,
-    session: TimSession,
+    session: Session,
 }
 
 pub struct TimSpace {
@@ -30,14 +29,14 @@ fn update_new_message(
     upd_id: u64,
     msg_id: u64,
     req: &SendMessageReq,
-    session: &TimSession,
+    session: &Session,
 ) -> SpaceUpdate {
     SpaceUpdate {
         id: upd_id,
         event: Some(space_update::Event::SpaceNewMessage(SpaceNewMessage {
             message: Some(Message {
                 id: msg_id,
-                sender_id: session.timite.id,
+                sender_id: session.timite_id,
                 content: req.content.to_string(),
             }),
         })),
@@ -56,7 +55,7 @@ impl TimSpace {
     pub async fn process(
         &self,
         req: SendMessageReq,
-        session: TimSession,
+        session: Session,
     ) -> Result<SendMessageRes, String> {
         let snapshot = {
             let guard = self
@@ -70,7 +69,7 @@ impl TimSpace {
         };
 
         for sub in snapshot {
-            if !sub.receive_own_messages && sub.session.timite.id == session.timite.id {
+            if !sub.receive_own_messages && sub.session.timite_id == session.timite_id {
                 continue;
             }
             let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
@@ -87,7 +86,7 @@ impl TimSpace {
     pub fn subscribe(
         &self,
         req: &SubscribeToSpaceReq,
-        session: &TimSession,
+        session: &Session,
     ) -> mpsc::Receiver<SpaceUpdate> {
         let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
         let mut guard = self

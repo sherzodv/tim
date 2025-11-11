@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use prost_types::Timestamp;
 use rand::Rng;
@@ -11,7 +10,8 @@ use std::task::{Context, Poll};
 use tonic::body::Body as GrpcBody;
 use tower::{Layer, Service};
 
-use crate::api::{Session, Timite, TrustedConnectReq};
+use crate::api::{Session, TrustedConnectReq};
+use crate::tim_storage::TimStorage;
 
 const SESSION_METADATA_KEY: &str = "tim-session-key";
 
@@ -21,29 +21,20 @@ fn generate_session_key() -> String {
     hex::encode(random_bytes)
 }
 
-#[derive(Clone, Debug)]
-pub struct TimSession {
-    pub key: String,
-    pub timite: Timite,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Clone)]
-pub struct TimSessionService {
-    store: Arc<RwLock<HashMap<String, TimSession>>>,
-}
-
 fn to_proto_timestamp(dt: &DateTime<Utc>) -> Timestamp {
     Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,
     }
 }
+
+#[derive(Clone)]
+pub struct TimSessionService {
+    storage: Arc<dyn TimStorage>,
+}
 impl TimSessionService {
-    pub fn new() -> TimSessionService {
-        TimSessionService {
-            store: Arc::new(RwLock::new(HashMap::new())),
-        }
+    pub fn new(storage: Arc<dyn TimStorage>) -> TimSessionService {
+        TimSessionService { storage }
     }
 
     pub fn create(&self, req: TrustedConnectReq) -> Result<Session, String> {
@@ -52,31 +43,22 @@ impl TimSessionService {
         let key = generate_session_key();
         let created_at = Utc::now();
 
-        let session = TimSession {
-            key: key.clone(),
-            timite: timite.clone(),
-            created_at,
-        };
-
-        self.store
-            .write()
-            .expect("session store poisoned")
-            .insert(key.clone(), session);
-
-        Ok(Session {
+        let session = Session {
             key,
             timite_id: timite.id,
             created_at: Some(to_proto_timestamp(&created_at)),
             client_info: Some(client_info),
-        })
+        };
+
+        self.storage
+            .store_session(&session)
+            .map_err(|e| e.to_string())?;
+
+        Ok(session)
     }
 
-    pub fn get(&self, session_key: &str) -> Option<TimSession> {
-        self.store
-            .read()
-            .expect("session store poisoned")
-            .get(session_key)
-            .cloned()
+    pub fn get(&self, session_key: &str) -> Option<Session> {
+        self.storage.find_session(session_key).ok()
     }
 }
 

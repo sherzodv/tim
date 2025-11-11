@@ -9,10 +9,10 @@ use tonic::{Request, Response, Status};
 
 use crate::api::tim_api_server::TimApi;
 use crate::api::{
-    SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
+    SendMessageReq, SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
     TrustedConnectRes,
 };
-use crate::tim_session::{TimSession, TimSessionService};
+use crate::tim_session::TimSessionService;
 use crate::tim_space::TimSpace;
 
 #[derive(Clone)]
@@ -53,8 +53,8 @@ impl TimApi for TimApiService {
         let session = self.require_session(&req)?;
         let payload = req.into_inner();
         info!(
-            "message received {}: {}",
-            &session.timite.nick, &payload.content
+            "message received from timite {}: {}",
+            session.timite_id, &payload.content
         );
         let result = self
             .space
@@ -82,9 +82,9 @@ impl TimApiService {
         Self { sessions, space }
     }
 
-    fn require_session<T>(&self, req: &Request<T>) -> Result<TimSession, Status> {
+    fn require_session<T>(&self, req: &Request<T>) -> Result<Session, Status> {
         req.extensions()
-            .get::<TimSession>()
+            .get::<Session>()
             .cloned()
             .ok_or_else(|| Status::unauthenticated("No session"))
     }
