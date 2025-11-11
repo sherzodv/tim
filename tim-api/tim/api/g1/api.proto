@@ -14,8 +14,10 @@ message ClientInfo {
 }
 
 message Session {
-  uint64 id = 1;
-  google.protobuf.Timestamp created_at = 2;
+  string key = 1;  // secret
+  uint64 timite_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  ClientInfo client_info = 4;
 }
 
 message Message {

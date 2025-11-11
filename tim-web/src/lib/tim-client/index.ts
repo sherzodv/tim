@@ -14,7 +14,7 @@ import {
 	type SubscribeToSpaceReq
 } from '../../gen/tim/api/g1/api_pb';
 
-const SESSION_HEADER = 'tim-session-id' as const;
+const SESSION_HEADER = 'tim-session-key' as const;
 const BASE_URL = import.meta.env.VITE_TIM_CODE_URL ?? 'http://127.0.0.1:8787';
 
 export type TimClientConf = {
@@ -26,8 +26,8 @@ export type TimClientConf = {
 export class TimClient {
 	private readonly client: Client<typeof TimApi>;
 	private readonly conf: TimClientConf;
-	private sessionId: bigint | null = null;
-	private sessionInit: Promise<bigint> | null = null;
+	private sessionKey: string | null = null;
+	private sessionInit: Promise<string> | null = null;
 
 	constructor(conf: TimClientConf) {
 		this.conf = conf;
@@ -39,54 +39,54 @@ export class TimClient {
 		);
 	}
 
-	private async ensureSession(): Promise<bigint> {
-		if (this.sessionId !== null) {
-			return this.sessionId;
+	private async ensureSession(): Promise<string> {
+		if (this.sessionKey !== null) {
+			return this.sessionKey;
 		}
 		if (this.sessionInit) {
 			return this.sessionInit;
 		}
 		this.sessionInit = this.acquireSession();
 		try {
-			this.sessionId = await this.sessionInit;
-			return this.sessionId;
+			this.sessionKey = await this.sessionInit;
+			return this.sessionKey;
 		} finally {
 			this.sessionInit = null;
 		}
 	}
 
-	private async acquireSession(): Promise<bigint> {
+	private async acquireSession(): Promise<string> {
 		const request = buildAuthenticateRequest(this.conf);
 		const response = await this.client.authenticate(request);
-		const sessionId = response.session?.id;
-		if (sessionId === undefined) {
-			throw new ConnectError('missing session id in authenticate response', Code.Internal);
+		const sessionKey = response.session?.key;
+		if (sessionKey === undefined) {
+			throw new ConnectError('missing session key in authenticate response', Code.Internal);
 		}
-		return sessionId;
+		return sessionKey;
 	}
 
 	async sendMessage(content: string): Promise<void> {
 		const trimmed = content.trim();
 		if (!trimmed) return;
 
-		const sessionId = await this.ensureSession();
+		const sessionKey = await this.ensureSession();
 		const request = buildSendMessageRequest(trimmed);
 		await this.client.sendMessage(request, {
-			headers: buildSessionHeaders(sessionId)
+			headers: buildSessionHeaders(sessionKey)
 		});
 	}
 
 	async subscribeToSpace(receiveOwnMessages: boolean, signal: AbortSignal) {
-		const sessionId = await this.ensureSession();
+		const sessionKey = await this.ensureSession();
 		const request = buildSubscribeRequest(receiveOwnMessages);
 		return this.client.subscribeToSpace(request, {
 			signal,
-			headers: buildSessionHeaders(sessionId)
+			headers: buildSessionHeaders(sessionKey)
 		});
 	}
 
 	resetSession() {
-		this.sessionId = null;
+		this.sessionKey = null;
 		this.sessionInit = null;
 	}
 }

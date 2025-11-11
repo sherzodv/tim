@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 
 use prost_types::Timestamp;
+use rand::Rng;
 
 use chrono::{DateTime, Utc};
 use futures::future::{Either, Ready};
@@ -13,19 +13,24 @@ use tower::{Layer, Service};
 
 use crate::api::{AuthenticateReq, Session, Timite};
 
-const SESSION_METADATA_KEY: &str = "tim-session-id";
+const SESSION_METADATA_KEY: &str = "tim-session-key";
+
+fn generate_session_key() -> String {
+    let mut rng = rand::thread_rng();
+    let random_bytes: [u8; 32] = rng.gen();
+    hex::encode(random_bytes)
+}
 
 #[derive(Clone, Debug)]
 pub struct TimSession {
-    pub id: u64,
+    pub key: String,
     pub timite: Timite,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Clone)]
 pub struct TimSessionService {
-    sid_counter: Arc<AtomicU64>,
-    store: Arc<RwLock<HashMap<u64, TimSession>>>,
+    store: Arc<RwLock<HashMap<String, TimSession>>>,
 }
 
 fn to_proto_timestamp(dt: &DateTime<Utc>) -> Timestamp {
@@ -37,37 +42,41 @@ fn to_proto_timestamp(dt: &DateTime<Utc>) -> Timestamp {
 impl TimSessionService {
     pub fn new() -> TimSessionService {
         TimSessionService {
-            sid_counter: Arc::new(AtomicU64::new(1)),
             store: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub fn create(&self, req: AuthenticateReq) -> Result<Session, String> {
+        let timite = req.timite.ok_or("timite expected")?;
+        let client_info = req.client_info.ok_or("client_info expected")?;
+        let key = generate_session_key();
+        let created_at = Utc::now();
+
         let session = TimSession {
-            id: self
-                .sid_counter
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            timite: req.timite.ok_or("termite expected")?,
-            created_at: Utc::now(),
+            key: key.clone(),
+            timite: timite.clone(),
+            created_at,
         };
 
         self.store
             .write()
             .expect("session store poisoned")
-            .insert(session.id, session.clone());
+            .insert(key.clone(), session);
 
         Ok(Session {
-            id: session.id,
-            created_at: Some(to_proto_timestamp(&session.created_at)),
+            key,
+            timite_id: timite.id,
+            created_at: Some(to_proto_timestamp(&created_at)),
+            client_info: Some(client_info),
         })
     }
 
-    pub fn get(&self, session_id: u64) -> Option<TimSession> {
+    pub fn get(&self, session_key: &str) -> Option<TimSession> {
         self.store
             .read()
             .expect("session store poisoned")
-            .get(&session_id)
-            .map(|record| record.clone())
+            .get(session_key)
+            .cloned()
     }
 }
 
@@ -117,7 +126,7 @@ where
                 .headers()
                 .get(SESSION_METADATA_KEY)
                 .and_then(|value| value.to_str().ok())
-                .and_then(|session_id| self.sessions.get(session_id.parse().ok()?));
+                .and_then(|session_key| self.sessions.get(session_key));
             if let Some(context) = context_opt {
                 req.extensions_mut().insert(context);
             }

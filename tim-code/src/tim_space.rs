@@ -23,7 +23,7 @@ struct Subscriber {
 pub struct TimSpace {
     msg_counter: AtomicU64,
     upd_counter: AtomicU64,
-    subscribers: RwLock<HashMap<u64, Subscriber>>,
+    subscribers: RwLock<HashMap<String, Subscriber>>,
 }
 
 fn update_new_message(
@@ -95,7 +95,7 @@ impl TimSpace {
             .write()
             .expect("space updates subscribers lock poisoned");
         guard.insert(
-            session.id,
+            session.key.clone(),
             Subscriber {
                 receive_own_messages: req.receive_own_messages,
                 chan: sender,

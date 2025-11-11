@@ -14,7 +14,7 @@ pub use tim_api::{
     SubscribeToSpaceReq, Timite,
 };
 
-pub const SESSION_METADATA_KEY: &str = "tim-session-id";
+pub const SESSION_METADATA_KEY: &str = "tim-session-key";
 
 pub struct TimClientConf {
     pub endpoint: String,
@@ -65,17 +65,17 @@ impl TimClient {
             .await?
             .into_inner();
 
-        let session_id = auth_res
+        let session_key = auth_res
             .session
             .as_ref()
-            .map(|s| s.id)
+            .map(|s| s.key.clone())
             .ok_or(TimClientError::MissingSession)?;
 
-        let token = MetadataValue::try_from(session_id.to_string())?;
+        let token = MetadataValue::try_from(session_key)?;
 
         Ok(TimClient {
             client: client.clone(),
-            token: token,
+            token,
         })
     }
 
