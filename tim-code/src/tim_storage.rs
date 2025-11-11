@@ -1,4 +1,5 @@
-use crate::api::Timite;
+use crate::api::{Session, Timite};
+use prost::Message;
 use rocksdb::{Error as RocksError, Options, DB};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -16,6 +17,10 @@ mod key {
 
     pub fn timite_counter() -> &'static [u8] {
         b"cnt:t:id"
+    }
+
+    pub fn session(key: &str) -> Vec<u8> {
+        format!("s:{}", key).into_bytes()
     }
 }
 
@@ -51,14 +56,22 @@ pub enum TimStorageError {
     #[error("Serialization error: {0}")]
     Serialization(#[from] bincode::Error),
 
+    #[error("Protobuf decode error: {0}")]
+    ProtobufDecode(#[from] prost::DecodeError),
+
     #[error("Timite not found")]
     NotFound,
+
+    #[error("Session not found")]
+    SessionNotFound,
 }
 
 pub trait TimStorage: Send + Sync {
     fn register(&self, nick: &str) -> Result<u64, TimStorageError>;
     fn find_timite_by_id(&self, timite_id: u64) -> Result<Timite, TimStorageError>;
     fn find_timite_by_nick(&self, nick: &str) -> Result<Timite, TimStorageError>;
+    fn store_session(&self, session: &Session) -> Result<(), TimStorageError>;
+    fn find_session(&self, key: &str) -> Result<Session, TimStorageError>;
 }
 
 pub struct RocksDbStorage {
@@ -148,11 +161,29 @@ impl TimStorage for RocksDbStorage {
         // Fetch full data using primary key
         self.find_timite_by_id(id)
     }
+
+    fn store_session(&self, session: &Session) -> Result<(), TimStorageError> {
+        let bytes = session.encode_to_vec();
+        self.db.put(key::session(&session.key), bytes)?;
+        Ok(())
+    }
+
+    fn find_session(&self, key: &str) -> Result<Session, TimStorageError> {
+        match self.db.get(key::session(key))? {
+            Some(bytes) => {
+                let session = Session::decode(&bytes[..])?;
+                Ok(session)
+            }
+            None => Err(TimStorageError::SessionNotFound),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::{ClientInfo, Session};
+    use prost_types::Timestamp;
     use tempfile::TempDir;
 
     #[test]
@@ -181,5 +212,94 @@ mod tests {
         // Register different nick
         let id3 = storage.register("bob").unwrap();
         assert_eq!(id3, 2);
+    }
+
+    #[test]
+    fn test_store_and_find_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = RocksDbStorage::new(temp_dir.path()).unwrap();
+
+        // Create a session
+        let session = Session {
+            key: "test-session-key-123".to_string(),
+            timite_id: 42,
+            created_at: Some(Timestamp {
+                seconds: 1234567890,
+                nanos: 123456789,
+            }),
+            client_info: Some(ClientInfo {
+                platform: "web".to_string(),
+            }),
+        };
+
+        // Store the session
+        storage.store_session(&session).unwrap();
+
+        // Find the session
+        let found = storage.find_session("test-session-key-123").unwrap();
+        assert_eq!(found.key, "test-session-key-123");
+        assert_eq!(found.timite_id, 42);
+        assert_eq!(found.created_at.as_ref().unwrap().seconds, 1234567890);
+        assert_eq!(found.created_at.as_ref().unwrap().nanos, 123456789);
+        assert_eq!(
+            found.client_info.as_ref().unwrap().platform,
+            "web".to_string()
+        );
+    }
+
+    #[test]
+    fn test_find_nonexistent_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = RocksDbStorage::new(temp_dir.path()).unwrap();
+
+        // Try to find a session that doesn't exist
+        let result = storage.find_session("nonexistent-key");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(TimStorageError::SessionNotFound)));
+    }
+
+    #[test]
+    fn test_overwrite_session() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = RocksDbStorage::new(temp_dir.path()).unwrap();
+
+        let key = "overwrite-test-key";
+
+        // Store first session
+        let session1 = Session {
+            key: key.to_string(),
+            timite_id: 1,
+            created_at: Some(Timestamp {
+                seconds: 1000,
+                nanos: 0,
+            }),
+            client_info: Some(ClientInfo {
+                platform: "mobile".to_string(),
+            }),
+        };
+        storage.store_session(&session1).unwrap();
+
+        // Store second session with same key
+        let session2 = Session {
+            key: key.to_string(),
+            timite_id: 2,
+            created_at: Some(Timestamp {
+                seconds: 2000,
+                nanos: 0,
+            }),
+            client_info: Some(ClientInfo {
+                platform: "desktop".to_string(),
+            }),
+        };
+        storage.store_session(&session2).unwrap();
+
+        // Find should return the latest session
+        let found = storage.find_session(key).unwrap();
+        assert_eq!(found.timite_id, 2);
+        assert_eq!(found.created_at.as_ref().unwrap().seconds, 2000);
+        assert_eq!(
+            found.client_info.as_ref().unwrap().platform,
+            "desktop".to_string()
+        );
     }
 }
