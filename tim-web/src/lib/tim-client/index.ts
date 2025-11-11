@@ -4,12 +4,12 @@ import { ConnectError, Code } from '@connectrpc/connect';
 import { create } from '@bufbuild/protobuf';
 import {
 	TimApi,
-	AuthenticateReqSchema,
+	TrustedConnectReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
 	SubscribeToSpaceReqSchema,
 	TimiteSchema,
-	type AuthenticateReq,
+	type TrustedConnectReq,
 	type SendMessageReq,
 	type SubscribeToSpaceReq
 } from '../../gen/tim/api/g1/api_pb';
@@ -56,11 +56,11 @@ export class TimClient {
 	}
 
 	private async acquireSession(): Promise<string> {
-		const request = buildAuthenticateRequest(this.conf);
-		const response = await this.client.authenticate(request);
+		const request = buildTrustedConnectRequest(this.conf);
+		const response = await this.client.trustedConnect(request);
 		const sessionKey = response.session?.key;
 		if (sessionKey === undefined) {
-			throw new ConnectError('missing session key in authenticate response', Code.Internal);
+			throw new ConnectError('missing session key in trusted connect response', Code.Internal);
 		}
 		return sessionKey;
 	}
@@ -93,7 +93,7 @@ export class TimClient {
 
 export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
 
-function buildAuthenticateRequest(identity: TimClientConf): AuthenticateReq {
+function buildTrustedConnectRequest(identity: TimClientConf): TrustedConnectReq {
 	const timite = create(TimiteSchema, {
 		id: identity.timiteId,
 		nick: identity.nick
@@ -101,7 +101,7 @@ function buildAuthenticateRequest(identity: TimClientConf): AuthenticateReq {
 	const clientInfo = create(ClientInfoSchema, {
 		platform: identity.platform
 	});
-	return create(AuthenticateReqSchema, {
+	return create(TrustedConnectReqSchema, {
 		timite,
 		clientInfo
 	});

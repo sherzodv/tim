@@ -46,12 +46,12 @@ message Error {
   string description = 2;
 }
 
-message AuthenticateReq {
+message TrustedConnectReq {
   Timite timite = 1;
   ClientInfo client_info = 2;
 }
 
-message AuthenticateRes {
+message TrustedConnectRes {
   Session session = 1;
 }
 
@@ -68,7 +68,7 @@ message SubscribeToSpaceReq {
 }
 
 service TimApi {
-  rpc Authenticate(AuthenticateReq) returns (AuthenticateRes);
+  rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);
 }

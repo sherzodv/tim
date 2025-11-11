@@ -10,8 +10,8 @@ pub mod tim_api {
 
 use tim_api::tim_api_client::TimApiClient;
 pub use tim_api::{
-    space_update::Event, AuthenticateReq, ClientInfo, SendMessageReq, SpaceNewMessage, SpaceUpdate,
-    SubscribeToSpaceReq, Timite,
+    space_update::Event, ClientInfo, SendMessageReq, SpaceNewMessage, SpaceUpdate,
+    SubscribeToSpaceReq, Timite, TrustedConnectReq,
 };
 
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
@@ -31,7 +31,7 @@ pub enum TimClientError {
     #[error("tim gprc error: {0}")]
     TimGrpc(#[from] tonic::Status),
 
-    #[error("missing session id in authenticate response")]
+    #[error("missing session key in trusted connect response")]
     MissingSession,
 
     #[error("invalid session metadata value: {0}")]
@@ -50,7 +50,7 @@ impl TimClient {
         let channel = endpoint.connect().await?;
         let mut client = TimApiClient::new(channel);
 
-        let auth_req = AuthenticateReq {
+        let connect_req = TrustedConnectReq {
             timite: Some(Timite {
                 id: conf.timite_id,
                 nick: conf.nick.to_string(),
@@ -60,12 +60,12 @@ impl TimClient {
             }),
         };
 
-        let auth_res = client
-            .authenticate(tonic::Request::new(auth_req))
+        let connect_res = client
+            .trusted_connect(tonic::Request::new(connect_req))
             .await?
             .into_inner();
 
-        let session_key = auth_res
+        let session_key = connect_res
             .session
             .as_ref()
             .map(|s| s.key.clone())

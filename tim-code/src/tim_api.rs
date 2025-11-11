@@ -9,8 +9,8 @@ use tonic::{Request, Response, Status};
 
 use crate::api::tim_api_server::TimApi;
 use crate::api::{
-    AuthenticateReq, AuthenticateRes, SendMessageReq, SendMessageRes, SpaceUpdate,
-    SubscribeToSpaceReq,
+    SendMessageReq, SendMessageRes, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
+    TrustedConnectRes,
 };
 use crate::tim_session::{TimSession, TimSessionService};
 use crate::tim_space::TimSpace;
@@ -33,16 +33,15 @@ impl TimApi for TimApiService {
         Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
 
     #[instrument(level = "info")]
-    async fn authenticate(
+    async fn trusted_connect(
         &self,
-        request: Request<AuthenticateReq>,
-    ) -> Result<Response<AuthenticateRes>, Status> {
-        info!("Attempting authentication");
+        request: Request<TrustedConnectReq>,
+    ) -> Result<Response<TrustedConnectRes>, Status> {
         let session = self
             .sessions
             .create(request.into_inner())
             .map_err(|e| Status::internal(e))?;
-        Ok(Response::new(AuthenticateRes {
+        Ok(Response::new(TrustedConnectRes {
             session: Some(session),
         }))
     }

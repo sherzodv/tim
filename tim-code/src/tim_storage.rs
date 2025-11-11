@@ -1,6 +1,6 @@
 use crate::api::Timite;
-use rocksdb::{DB, Options, Error as RocksError};
-use serde::{Serialize, Deserialize};
+use rocksdb::{Error as RocksError, Options, DB};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -74,8 +74,7 @@ impl RocksDbStorage {
         let db = DB::open(&opts, path)?;
 
         // Load the current ID counter from storage
-        let counter = Self::get_value::<u64>(&db, key::timite_counter())?
-            .unwrap_or(1);
+        let counter = Self::get_value::<u64>(&db, key::timite_counter())?.unwrap_or(1);
 
         Ok(Self {
             db: Arc::new(db),

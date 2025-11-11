@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 use tonic::body::Body as GrpcBody;
 use tower::{Layer, Service};
 
-use crate::api::{AuthenticateReq, Session, Timite};
+use crate::api::{Session, Timite, TrustedConnectReq};
 
 const SESSION_METADATA_KEY: &str = "tim-session-key";
 
@@ -46,7 +46,7 @@ impl TimSessionService {
         }
     }
 
-    pub fn create(&self, req: AuthenticateReq) -> Result<Session, String> {
+    pub fn create(&self, req: TrustedConnectReq) -> Result<Session, String> {
         let timite = req.timite.ok_or("timite expected")?;
         let client_info = req.client_info.ok_or("client_info expected")?;
         let key = generate_session_key();
@@ -121,7 +121,7 @@ where
 
     fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
         let path = req.uri().path();
-        if path != "/tim.api.g1.TimApi/Authenticate" {
+        if path != "/tim.api.g1.TimApi/TrustedConnect" {
             let context_opt = req
                 .headers()
                 .get(SESSION_METADATA_KEY)
