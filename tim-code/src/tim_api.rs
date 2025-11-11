@@ -1,91 +1,106 @@
-use std::fmt;
-use std::pin::Pin;
 use std::sync::Arc;
-use tracing::{info, instrument};
+use tokio::sync::mpsc;
+use tracing::debug;
 
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status};
-
-use crate::api::tim_api_server::TimApi;
 use crate::api::{
     SendMessageReq, SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
-    TrustedConnectRes,
+    TrustedConnectRes, TrustedRegisterReq, TrustedRegisterRes,
 };
-use crate::tim_session::TimSessionService;
-use crate::tim_space::TimSpace;
+use crate::tim_session::{TimSession, TimSessionError};
+use crate::tim_space::{TimSpace, TimSpaceError};
+use crate::tim_timite::{TimTimite, TimTimiteError};
+
+#[derive(Debug, thiserror::Error)]
+pub enum TimApiError {
+    #[error("Session error: {0}")]
+    SessionError(#[from] TimSessionError),
+
+    #[error("Timite error: {0}")]
+    TimiteError(#[from] TimTimiteError),
+
+    #[error("Space error: {0}")]
+    SpaceError(#[from] TimSpaceError),
+
+    #[error("Invalid args error: {0}")]
+    InvalidArgError(String),
+}
 
 #[derive(Clone)]
-pub struct TimApiService {
-    sessions: Arc<TimSessionService>,
-    space: Arc<TimSpace>,
+pub struct TimApi {
+    t_session: Arc<TimSession>,
+    t_space: Arc<TimSpace>,
+    t_timite: Arc<TimTimite>,
 }
 
-impl fmt::Debug for TimApiService {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TimApi").finish()
+impl TimApi {
+    pub fn new(
+        t_session: Arc<TimSession>,
+        t_space: Arc<TimSpace>,
+        t_timite: Arc<TimTimite>,
+    ) -> Self {
+        Self {
+            t_session: t_session,
+            t_space: t_space,
+            t_timite: t_timite,
+        }
     }
-}
 
-#[tonic::async_trait]
-impl TimApi for TimApiService {
-    type SubscribeToSpaceStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
-
-    #[instrument(level = "info")]
-    async fn trusted_connect(
+    pub async fn trusted_register(
         &self,
-        request: Request<TrustedConnectReq>,
-    ) -> Result<Response<TrustedConnectRes>, Status> {
-        let session = self
-            .sessions
-            .create(request.into_inner())
-            .map_err(|e| Status::internal(e))?;
-        Ok(Response::new(TrustedConnectRes {
+        req: &TrustedRegisterReq,
+    ) -> Result<TrustedRegisterRes, TimApiError> {
+        let timite = self.t_timite.create(&req.nick)?;
+
+        let info = req
+            .client_info
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("client info required".into()))?;
+
+        let session = self.t_session.create(&timite, info)?;
+
+        Ok(TrustedRegisterRes {
             session: Some(session),
-        }))
+        })
     }
 
-    async fn send_message(
+    pub async fn trusted_connect(
         &self,
-        req: Request<SendMessageReq>,
-    ) -> Result<Response<SendMessageRes>, Status> {
-        let session = self.require_session(&req)?;
-        let payload = req.into_inner();
-        info!(
+        req: &TrustedConnectReq,
+    ) -> Result<TrustedConnectRes, TimApiError> {
+        let timite = req
+            .timite
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("timite required".into()))?;
+
+        let info = req
+            .client_info
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("client info required".into()))?;
+
+        let session = self.t_session.create(&timite, info)?;
+
+        Ok(TrustedConnectRes {
+            session: Some(session),
+        })
+    }
+
+    pub async fn send_message(
+        &self,
+        req: &SendMessageReq,
+        session: &Session,
+    ) -> Result<SendMessageRes, TimApiError> {
+        debug!(
             "message received from timite {}: {}",
-            session.timite_id, &payload.content
+            session.timite_id, &req.content
         );
-        let result = self
-            .space
-            .process(payload, session)
-            .await
-            .map_err(|e| Status::internal(e))?;
-        Ok(Response::new(result))
+        Ok(self.t_space.process(req, session).await?)
     }
 
-    async fn subscribe_to_space(
+    pub fn subscribe(
         &self,
-        req: Request<SubscribeToSpaceReq>,
-    ) -> Result<Response<Self::SubscribeToSpaceStream>, Status> {
-        let session = self.require_session(&req)?;
-        let stream = self.space.subscribe(&req.into_inner(), &session);
-        Ok(Response::new(
-            Box::pin(ReceiverStream::new(stream).map(Ok::<SpaceUpdate, Status>))
-                as Self::SubscribeToSpaceStream,
-        ))
-    }
-}
-
-impl TimApiService {
-    pub fn new(sessions: Arc<TimSessionService>, space: Arc<TimSpace>) -> Self {
-        Self { sessions, space }
-    }
-
-    fn require_session<T>(&self, req: &Request<T>) -> Result<Session, Status> {
-        req.extensions()
-            .get::<Session>()
-            .cloned()
-            .ok_or_else(|| Status::unauthenticated("No session"))
+        req: &SubscribeToSpaceReq,
+        session: &Session,
+    ) -> mpsc::Receiver<SpaceUpdate> {
+        self.t_space.subscribe(req, &session)
     }
 }

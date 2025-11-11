@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::RwLock;
 
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
 
 use crate::api::{
     space_update, Message, SendMessageReq, SendMessageRes, Session, SpaceNewMessage, SpaceUpdate,
@@ -11,6 +12,15 @@ use crate::api::{
 };
 
 const BUFFER_SIZE: usize = 10;
+
+#[derive(Debug, thiserror::Error)]
+pub enum TimSpaceError {
+    #[error("Lock poisoned: {0}")]
+    LockPoisoned(String),
+
+    #[error("Send failed: {0}")]
+    ChannelError(#[from] SendError<SpaceUpdate>),
+}
 
 #[derive(Debug, Clone)]
 struct Subscriber {
@@ -54,9 +64,9 @@ impl TimSpace {
 
     pub async fn process(
         &self,
-        req: SendMessageReq,
-        session: Session,
-    ) -> Result<SendMessageRes, String> {
+        req: &SendMessageReq,
+        session: &Session,
+    ) -> Result<SendMessageRes, TimSpaceError> {
         let snapshot = {
             let guard = self
                 .subscribers
@@ -76,8 +86,7 @@ impl TimSpace {
             let msg_id = self.msg_counter.fetch_add(1, Ordering::Relaxed);
             sub.chan
                 .send(update_new_message(upd_id, msg_id, &req, &session))
-                .await
-                .map_err(|e| e.to_string())?;
+                .await?;
         }
 
         Ok(SendMessageRes { error: None })

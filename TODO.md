@@ -1,2 +1,3 @@
-* buf lint in all builds - DONE
-* buf breaking --against '.git#branch=master' in all builds
+- [x] buf lint in all builds
+- [ ] buf breaking --against '.git#branch=master' in all builds
+- [ ] #[instrument] TimApi calls: tracing + metrics

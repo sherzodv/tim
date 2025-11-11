@@ -46,6 +46,15 @@ message Error {
   string description = 2;
 }
 
+message TrustedRegisterReq {
+  string nick = 1;
+  ClientInfo client_info = 2;
+}
+
+message TrustedRegisterRes {
+  Session session = 1;
+}
+
 message TrustedConnectReq {
   Timite timite = 1;
   ClientInfo client_info = 2;
@@ -67,7 +76,8 @@ message SubscribeToSpaceReq {
    bool receive_own_messages = 1;
 }
 
-service TimApi {
+service TimGrpcApi {
+  rpc TrustedRegister(TrustedRegisterReq) returns (TrustedRegisterRes);
   rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);

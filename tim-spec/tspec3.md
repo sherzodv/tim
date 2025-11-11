@@ -36,3 +36,20 @@ Write tests. Review iterations.
 Switch TimSessionService to TimStorage for session storage.
 
 No tests. Review iterations.
+
+### Step 5: Client session flow
+
+Clients need to save a session in a persistent store and reuse accross multiple runs.
+
+Initially client sends trusted register to establish a session.
+
+TimApi:
+  TrustedRegister:
+    TrustedRegisterReq:
+      string nick;
+      ClientInfo client_info;
+
+    TrustedRegisterRes:
+      Session session;
+
+Subsequent connections to server are done via TrustedConnect.
