@@ -6,10 +6,14 @@ use std::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::api::{
-    space_update, Message, SendMessageReq, SendMessageRes, Session, SpaceNewMessage, SpaceUpdate,
-    SubscribeToSpaceReq,
-};
+use crate::api::space_update;
+use crate::api::Message;
+use crate::api::SendMessageReq;
+use crate::api::SendMessageRes;
+use crate::api::Session;
+use crate::api::SpaceNewMessage;
+use crate::api::SpaceUpdate;
+use crate::api::SubscribeToSpaceReq;
 
 const BUFFER_SIZE: usize = 10;
 

@@ -1,12 +1,11 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use crate::{
-    api::{Capability, Timite},
-    tim_storage::{TimStorage, TimStorageError},
-};
+use crate::api::Capability;
+use crate::api::Timite;
+use crate::tim_storage::TimStorage;
+use crate::tim_storage::TimStorageError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimTimiteError {

@@ -1,18 +1,25 @@
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use tracing::error;
+use std::task::Context;
+use std::task::Poll;
 
+use chrono::DateTime;
+use chrono::Utc;
+use futures::future::Either;
+use futures::future::Ready;
+use http::Request;
+use http::Response;
 use prost_types::Timestamp;
 use rand::Rng;
-
-use chrono::{DateTime, Utc};
-use futures::future::{Either, Ready};
-use http::{Request, Response};
 use tonic::body::Body as GrpcBody;
-use tower::{Layer, Service};
+use tower::Layer;
+use tower::Service;
+use tracing::error;
 
-use crate::api::{ClientInfo, Session, Timite};
-use crate::tim_storage::{TimStorage, TimStorageError};
+use crate::api::ClientInfo;
+use crate::api::Session;
+use crate::api::Timite;
+use crate::tim_storage::TimStorage;
+use crate::tim_storage::TimStorageError;
 
 const SESSION_METADATA_KEY: &str = "tim-session-key";
 

@@ -1,7 +1,12 @@
-use prost::Message;
-use rocksdb::{ColumnFamily, DBAccess, DBRawIteratorWithThreadMode, Options, DB};
 use std::path::Path;
 use std::sync::Arc;
+
+use prost::Message;
+use rocksdb::ColumnFamily;
+use rocksdb::DBAccess;
+use rocksdb::DBRawIteratorWithThreadMode;
+use rocksdb::Options;
+use rocksdb::DB;
 
 #[derive(Debug, thiserror::Error)]
 pub enum KvStoreError {

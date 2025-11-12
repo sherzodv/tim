@@ -1,16 +1,28 @@
 use std::sync::Arc;
+
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::api::{
-    DeclareCapabilitiesReq, DeclareCapabilitiesRes, ListCapabilitiesRes, SendMessageReq,
-    SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
-    TrustedConnectRes, TrustedRegisterReq, TrustedRegisterRes,
-};
-use crate::tim_capability::{TimCapability, TimCapabilityError};
-use crate::tim_session::{TimSession, TimSessionError};
-use crate::tim_space::{TimSpace, TimSpaceError};
-use crate::tim_timite::{TimTimite, TimTimiteError};
+use crate::api::DeclareCapabilitiesReq;
+use crate::api::DeclareCapabilitiesRes;
+use crate::api::ListCapabilitiesRes;
+use crate::api::SendMessageReq;
+use crate::api::SendMessageRes;
+use crate::api::Session;
+use crate::api::SpaceUpdate;
+use crate::api::SubscribeToSpaceReq;
+use crate::api::TrustedConnectReq;
+use crate::api::TrustedConnectRes;
+use crate::api::TrustedRegisterReq;
+use crate::api::TrustedRegisterRes;
+use crate::tim_capability::TimCapability;
+use crate::tim_capability::TimCapabilityError;
+use crate::tim_session::TimSession;
+use crate::tim_session::TimSessionError;
+use crate::tim_space::TimSpace;
+use crate::tim_space::TimSpaceError;
+use crate::tim_timite::TimTimite;
+use crate::tim_timite::TimTimiteError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimApiError {

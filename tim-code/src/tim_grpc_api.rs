@@ -3,14 +3,24 @@ use std::sync::Arc;
 
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status};
+use tonic::Request;
+use tonic::Response;
+use tonic::Status;
 
 use crate::api::tim_grpc_api_server::TimGrpcApi;
-use crate::api::{
-    DeclareCapabilitiesReq, DeclareCapabilitiesRes, ListCapabilitiesReq, ListCapabilitiesRes,
-    SendMessageReq, SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
-    TrustedConnectRes, TrustedRegisterReq, TrustedRegisterRes,
-};
+use crate::api::DeclareCapabilitiesReq;
+use crate::api::DeclareCapabilitiesRes;
+use crate::api::ListCapabilitiesReq;
+use crate::api::ListCapabilitiesRes;
+use crate::api::SendMessageReq;
+use crate::api::SendMessageRes;
+use crate::api::Session;
+use crate::api::SpaceUpdate;
+use crate::api::SubscribeToSpaceReq;
+use crate::api::TrustedConnectReq;
+use crate::api::TrustedConnectRes;
+use crate::api::TrustedRegisterReq;
+use crate::api::TrustedRegisterRes;
 use crate::tim_api::TimApi;
 
 #[derive(Clone)]

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use crate::{
-    api::TimiteCapabilities,
-    tim_storage::{TimStorage, TimStorageError},
-};
+use crate::api::TimiteCapabilities;
+use crate::tim_storage::TimStorage;
+use crate::tim_storage::TimStorageError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimCapabilityError {
