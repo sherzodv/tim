@@ -16,7 +16,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("OPENAI_CHAT_MODEL").unwrap_or_else(|_| OPENAI_DEFAULT_MODEL.to_string());
 
     let jarvis = agent::spawn(TimClientConf {
-        timite_id: 1,
         nick: "jarvis".to_string(),
         provider: "openai:jarvis".to_string(),
         endpoint: "http://127.0.0.1:8787".to_string(),
@@ -34,7 +33,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let alice = agent::spawn(
         TimClientConf {
-            timite_id: 2,
             nick: "alice".to_string(),
             provider: "openai:alice".to_string(),
             endpoint: "http://127.0.0.1:8787".to_string(),

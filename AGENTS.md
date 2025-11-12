@@ -32,7 +32,7 @@
 
 ---
 
-## Current Mission
+## Current Focus
 
 - **Goal:** Prototype technical architecture and social/game mechanics.
 - **Priority:** learning speed > completeness, correctness > coverage.

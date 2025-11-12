@@ -7,7 +7,6 @@
 	import { createTimSpaceStorage } from '$lib/tim-space/storage';
 
 	const timClient = createTimClient({
-		timiteId: 100n,
 		nick: 'bob',
 		platform: 'browser'
 	});

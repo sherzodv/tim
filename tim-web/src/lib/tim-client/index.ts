@@ -3,13 +3,12 @@ import { createGrpcWebTransport } from '@connectrpc/connect-web';
 import { ConnectError, Code } from '@connectrpc/connect';
 import { create } from '@bufbuild/protobuf';
 import {
-	TimApi,
-	TrustedConnectReqSchema,
+	TimGrpcApi,
+	TrustedRegisterReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
 	SubscribeToSpaceReqSchema,
-	TimiteSchema,
-	type TrustedConnectReq,
+	type TrustedRegisterReq,
 	type SendMessageReq,
 	type SubscribeToSpaceReq
 } from '../../gen/tim/api/g1/api_pb';
@@ -18,13 +17,12 @@ const SESSION_HEADER = 'tim-session-key' as const;
 const BASE_URL = import.meta.env.VITE_TIM_CODE_URL ?? 'http://127.0.0.1:8787';
 
 export type TimClientConf = {
-	timiteId: bigint;
 	nick: string;
 	platform: string;
 };
 
 export class TimClient {
-	private readonly client: Client<typeof TimApi>;
+	private readonly client: Client<typeof TimGrpcApi>;
 	private readonly conf: TimClientConf;
 	private sessionKey: string | null = null;
 	private sessionInit: Promise<string> | null = null;
@@ -32,7 +30,7 @@ export class TimClient {
 	constructor(conf: TimClientConf) {
 		this.conf = conf;
 		this.client = createClient(
-			TimApi,
+			TimGrpcApi,
 			createGrpcWebTransport({
 				baseUrl: BASE_URL
 			})
@@ -56,11 +54,11 @@ export class TimClient {
 	}
 
 	private async acquireSession(): Promise<string> {
-		const request = buildTrustedConnectRequest(this.conf);
-		const response = await this.client.trustedConnect(request);
+		const request = buildTrustedRegisterRequest(this.conf);
+		const response = await this.client.trustedRegister(request);
 		const sessionKey = response.session?.key;
 		if (sessionKey === undefined) {
-			throw new ConnectError('missing session key in trusted connect response', Code.Internal);
+			throw new ConnectError('missing session key in trusted register response', Code.Internal);
 		}
 		return sessionKey;
 	}
@@ -93,16 +91,12 @@ export class TimClient {
 
 export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
 
-function buildTrustedConnectRequest(identity: TimClientConf): TrustedConnectReq {
-	const timite = create(TimiteSchema, {
-		id: identity.timiteId,
-		nick: identity.nick
-	});
+function buildTrustedRegisterRequest(identity: TimClientConf): TrustedRegisterReq {
 	const clientInfo = create(ClientInfoSchema, {
 		platform: identity.platform
 	});
-	return create(TrustedConnectReqSchema, {
-		timite,
+	return create(TrustedRegisterReqSchema, {
+		nick: identity.nick,
 		clientInfo
 	});
 }

@@ -1,24 +1,20 @@
 use std::str::FromStr;
 
-use tonic::metadata::errors::InvalidMetadataValue;
-use tonic::metadata::{Ascii, MetadataValue};
-use tonic::transport::Endpoint;
-
 pub mod tim_api {
     tonic::include_proto!("tim.api.g1");
 }
 
-use tim_api::tim_api_client::TimApiClient;
-pub use tim_api::{
-    space_update::Event, ClientInfo, SendMessageReq, SpaceNewMessage, SpaceUpdate,
-    SubscribeToSpaceReq, Timite, TrustedConnectReq,
-};
+use tim_api::tim_grpc_api_client::TimGrpcApiClient;
+use tim_api::{ClientInfo, SendMessageReq, SubscribeToSpaceReq, TrustedRegisterReq};
+pub use tim_api::{space_update::Event, SpaceNewMessage, SpaceUpdate};
+use tonic::metadata::errors::InvalidMetadataValue;
+use tonic::metadata::{Ascii, MetadataValue};
+use tonic::transport::Endpoint;
 
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
 
 pub struct TimClientConf {
     pub endpoint: String,
-    pub timite_id: u64,
     pub nick: String,
     pub provider: String,
 }
@@ -31,7 +27,7 @@ pub enum TimClientError {
     #[error("tim gprc error: {0}")]
     TimGrpc(#[from] tonic::Status),
 
-    #[error("missing session key in trusted connect response")]
+    #[error("missing session key in trusted register response")]
     MissingSession,
 
     #[error("invalid session metadata value: {0}")]
@@ -40,7 +36,7 @@ pub enum TimClientError {
 
 #[derive(Clone)]
 pub struct TimClient {
-    client: TimApiClient<tonic::transport::Channel>,
+    client: TimGrpcApiClient<tonic::transport::Channel>,
     token: MetadataValue<Ascii>,
 }
 
@@ -48,20 +44,17 @@ impl TimClient {
     pub async fn new(conf: TimClientConf) -> Result<Self, TimClientError> {
         let endpoint = Endpoint::from_str(&conf.endpoint)?;
         let channel = endpoint.connect().await?;
-        let mut client = TimApiClient::new(channel);
+        let mut client = TimGrpcApiClient::new(channel);
 
-        let connect_req = TrustedConnectReq {
-            timite: Some(Timite {
-                id: conf.timite_id,
-                nick: conf.nick.to_string(),
-            }),
+        let register_req = TrustedRegisterReq {
+            nick: conf.nick.to_string(),
             client_info: Some(ClientInfo {
                 platform: conf.provider.to_string(),
             }),
         };
 
         let connect_res = client
-            .trusted_connect(tonic::Request::new(connect_req))
+            .trusted_register(tonic::Request::new(register_req))
             .await?
             .into_inner();
 
@@ -73,10 +66,7 @@ impl TimClient {
 
         let token = MetadataValue::try_from(session_key)?;
 
-        Ok(TimClient {
-            client: client.clone(),
-            token,
-        })
+        Ok(TimClient { client, token })
     }
 
     pub async fn send_message(&mut self, content: &str) -> Result<(), TimClientError> {
