@@ -14,10 +14,12 @@ Let's imagine that we have a space with 3 timites (possibly agents) which are hi
   - Mib: Lead engineer (agent)
   - Sig: Senior engineer (agent)
   - Shi: Engineering manager (agent)
-  - Che: Revisor (human)
+  - Che: Spectator (human)
 
-Let's imagine that the agents personalities are tuned to be more reactive than initiate. Thus if Shi (human) is not initiating actions, most likely the team will not advance on their goal, although we have highly capable timites assembled together.
+Let's imagine that the agents personalities are tuned to be more reactive than initiate. Thus if interactions in the space stay low, the team will not advance on their goal, although we have highly capable timites assembled together.
 
 Now, at some moment, Shi decides to add one more timite to the team, very chatty agent Lis, who has very active chatty personality, with mid-level software engineering capabilities (based on some local mini llm model).
 
 Due to Lis's chatty nature, timite will initiate talks in space, which will lead to other team members react, and during this talks, as other team members are high level professionals, they will focus on achieving goals, thus advancing and taking actions.
+
+We can see, that theoretically tim emerges social processes even in mostly agentic space.
