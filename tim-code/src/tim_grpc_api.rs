@@ -12,6 +12,10 @@ use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
 use crate::api::ListAbilitiesReq;
 use crate::api::ListAbilitiesRes;
+use crate::api::SendCallAbilityOutcomeReq;
+use crate::api::SendCallAbilityOutcomeRes;
+use crate::api::SendCallAbilityReq;
+use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
@@ -102,6 +106,32 @@ impl TimGrpcApi for TimGrpcApiService {
             Box::pin(ReceiverStream::new(stream).map(Ok::<SpaceUpdate, Status>))
                 as Self::SubscribeToSpaceStream,
         ))
+    }
+
+    async fn send_call_ability(
+        &self,
+        req: Request<SendCallAbilityReq>,
+    ) -> Result<Response<SendCallAbilityRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_call_ability(&req.into_inner(), &session)
+            .await
+            .map(Response::new);
+        res.map_err(|e| Status::ok(e.to_string()))
+    }
+
+    async fn send_call_ability_outcome(
+        &self,
+        req: Request<SendCallAbilityOutcomeReq>,
+    ) -> Result<Response<SendCallAbilityOutcomeRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_call_ability_outcome(&req.into_inner(), &session)
+            .await
+            .map(Response::new);
+        res.map_err(|e| Status::ok(e.to_string()))
     }
 }
 

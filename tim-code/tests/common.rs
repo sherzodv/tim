@@ -21,12 +21,11 @@ impl TimApiTestCtx {
         let db_path = db_path.to_string_lossy().to_string();
 
         let storage = Arc::new(TimStorage::new(&db_path)?);
-        let api = Arc::new(TimApi::new(
-            Arc::new(TimSession::new(storage.clone())),
-            Arc::new(TimSpace::new()),
-            Arc::new(TimTimite::new(storage.clone())?),
-            Arc::new(TimAbility::new(storage.clone())?),
-        ));
+        let session = Arc::new(TimSession::new(storage.clone()));
+        let space = Arc::new(TimSpace::new());
+        let timite = Arc::new(TimTimite::new(storage.clone())?);
+        let ability = Arc::new(TimAbility::new(storage.clone(), space.clone())?);
+        let api = Arc::new(TimApi::new(session, space, timite, ability));
 
         Ok(Self {
             _temp_dir: temp_dir,

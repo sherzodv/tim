@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
 use crate::api::space_update;
+use crate::api::CallAbility;
+use crate::api::CallAbilityOutcome;
 use crate::api::Message;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
@@ -54,6 +56,20 @@ fn update_new_message(
                 content: req.content.to_string(),
             }),
         })),
+    }
+}
+
+fn update_call_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceUpdate {
+    SpaceUpdate {
+        id: upd_id,
+        event: Some(space_update::Event::CallAbilityOutcome(outcome.clone())),
+    }
+}
+
+fn update_call_ability(upd_id: u64, call_ability: &CallAbility) -> SpaceUpdate {
+    SpaceUpdate {
+        id: upd_id,
+        event: Some(space_update::Event::CallAbility(call_ability.clone())),
     }
 }
 
@@ -115,5 +131,57 @@ impl TimSpace {
             },
         );
         receiver
+    }
+
+    pub async fn publish_call_outcome(
+        &self,
+        outcome: &CallAbilityOutcome,
+        sender_timite_id: u64,
+    ) -> Result<(), TimSpaceError> {
+        let snapshot = {
+            let guard = self
+                .subscribers
+                .read()
+                .expect("space updates subscribers lock poisoned");
+            guard
+                .iter()
+                .map(|(_, entry)| entry.clone())
+                .collect::<Vec<_>>()
+        };
+
+        for sub in snapshot {
+            if !sub.receive_own_messages && sub.session.timite_id == sender_timite_id {
+                continue;
+            }
+            let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
+            sub.chan.send(update_call_outcome(upd_id, outcome)).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn publish_call_ability(
+        &self,
+        call_ability: &CallAbility,
+    ) -> Result<(), TimSpaceError> {
+        let snapshot = {
+            let guard = self
+                .subscribers
+                .read()
+                .expect("space updates subscribers lock poisoned");
+            guard
+                .iter()
+                .map(|(_, entry)| entry.clone())
+                .collect::<Vec<_>>()
+        };
+
+        for sub in snapshot {
+            let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
+            sub.chan
+                .send(update_call_ability(upd_id, call_ability))
+                .await?;
+        }
+
+        Ok(())
     }
 }

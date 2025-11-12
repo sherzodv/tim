@@ -1,4 +1,5 @@
 use crate::api::Ability;
+use crate::api::CallAbility;
 use crate::api::Session;
 use crate::api::Timite;
 use crate::api::TimiteAbilities;
@@ -30,15 +31,22 @@ mod key {
     pub fn session(key: &str) -> Vec<u8> {
         format!("s:{}", key).into_bytes()
     }
+
+    pub fn ability_call_prefix() -> Vec<u8> {
+        b"acall:".to_vec()
+    }
+
+    pub fn ability_call(id: u64) -> Vec<u8> {
+        let mut k = ability_call_prefix();
+        k.extend(id.to_be_bytes());
+        k
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimStorageError {
     #[error("Store error: {0}")]
     KvStore(#[from] KvStoreError),
-
-    #[error("Timite {0} not found")]
-    TimiteMissing(u64),
 }
 
 pub struct TimStorage {
@@ -61,8 +69,6 @@ impl TimStorage {
         timite_id: u64,
         abilities: &Vec<Ability>,
     ) -> Result<(), TimStorageError> {
-        self.fetch_timite(timite_id)?
-            .ok_or(TimStorageError::TimiteMissing(timite_id))?;
         let record = StoredTimiteAbilities {
             timite_id,
             abilities: abilities.to_vec(),
@@ -80,14 +86,12 @@ impl TimStorage {
         let mut result = Vec::new();
 
         for tc in list {
-            // TODO: unregister abilities if timite not found
-            let timite = self
-                .fetch_timite(tc.timite_id)?
-                .ok_or(TimStorageError::TimiteMissing(tc.timite_id))?;
-            result.push(TimiteAbilities {
-                timite: Some(timite),
-                abilities: tc.abilities,
-            });
+            if let Some(timite) = self.fetch_timite(tc.timite_id)? {
+                result.push(TimiteAbilities {
+                    timite: Some(timite),
+                    abilities: tc.abilities,
+                });
+            }
         }
 
         Ok(result)
@@ -114,5 +118,43 @@ impl TimStorage {
 
     pub fn fetch_timite(&self, timite_id: u64) -> Result<Option<Timite>, TimStorageError> {
         Ok(self.store.fetch_data::<Timite>(&key::timite(timite_id))?)
+    }
+
+    pub fn fetch_max_call_ability_id(&self) -> Result<u64, TimStorageError> {
+        let record = self
+            .store
+            .fetch_max_log::<CallAbility>(&key::ability_call_prefix())?;
+        Ok(record
+            .map(|entry| entry.call_ability_id.unwrap_or(0))
+            .unwrap_or(0))
+    }
+
+    pub fn store_call_ability(
+        &self,
+        call_ability_id: u64,
+        call_ability: &CallAbility,
+    ) -> Result<(), TimStorageError> {
+        let mut rec = call_ability.clone();
+        rec.call_ability_id = Some(call_ability_id);
+        self.store
+            .store_log(&key::ability_call(call_ability_id), &rec)?;
+        Ok(())
+    }
+
+    pub fn fetch_call_ability(
+        &self,
+        call_ability_id: u64,
+    ) -> Result<Option<CallAbility>, TimStorageError> {
+        let record = self
+            .store
+            .fetch_log::<CallAbility>(&key::ability_call(call_ability_id))?;
+        Ok(record)
+    }
+
+    pub fn fetch_timite_abilities(&self, timite_id: u64) -> Result<Vec<Ability>, TimStorageError> {
+        let record = self
+            .store
+            .fetch_data::<StoredTimiteAbilities>(&key::timite_abilities(timite_id))?;
+        Ok(record.map(|entry| entry.abilities).unwrap_or_default())
     }
 }

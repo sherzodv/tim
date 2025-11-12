@@ -6,6 +6,10 @@ use tracing::debug;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
 use crate::api::ListAbilitiesRes;
+use crate::api::SendCallAbilityOutcomeReq;
+use crate::api::SendCallAbilityOutcomeRes;
+use crate::api::SendCallAbilityReq;
+use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
@@ -37,6 +41,14 @@ pub enum TimApiError {
 
     #[error("Ability error: {0}")]
     AbilityError(#[from] TimAbilityError),
+
+    #[error(
+        "Call ability target mismatch (call ability targeted timite {call_ability_timite} but sender was {sender_timite})"
+    )]
+    CallAbilityTargetMismatch {
+        call_ability_timite: u64,
+        sender_timite: u64,
+    },
 
     #[error("Invalid args error: {0}")]
     InvalidArgError(String),
@@ -137,5 +149,43 @@ impl TimApi {
         session: &Session,
     ) -> mpsc::Receiver<SpaceUpdate> {
         self.t_space.subscribe(req, &session)
+    }
+
+    pub async fn send_call_ability(
+        &self,
+        req: &SendCallAbilityReq,
+        session: &Session,
+    ) -> Result<SendCallAbilityRes, TimApiError> {
+        let call_ability = req
+            .call_ability
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("call ability required".into()))?;
+        let call_ability_id = self
+            .t_ability
+            .process_call_ability(call_ability, session)
+            .await?;
+        Ok(SendCallAbilityRes { call_ability_id })
+    }
+
+    pub async fn send_call_ability_outcome(
+        &self,
+        req: &SendCallAbilityOutcomeReq,
+        session: &Session,
+    ) -> Result<SendCallAbilityOutcomeRes, TimApiError> {
+        let outcome = req
+            .outcome
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("outcome payload required".into()))?;
+        let call_ability = self.t_ability.find_call_ability(outcome.call_ability_id)?;
+        if call_ability.timite_id != session.timite_id {
+            return Err(TimApiError::CallAbilityTargetMismatch {
+                call_ability_timite: call_ability.timite_id,
+                sender_timite: session.timite_id,
+            });
+        }
+        self.t_space
+            .publish_call_outcome(outcome, session.timite_id)
+            .await?;
+        Ok(SendCallAbilityOutcomeRes {})
     }
 }

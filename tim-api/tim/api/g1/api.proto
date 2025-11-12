@@ -42,6 +42,20 @@ message TimiteAbilities {
   repeated Ability abilities = 2;
 }
 
+message CallAbility {
+  uint64 timite_id = 1;
+  uint64 sender_id = 2;
+  string name = 3;
+  string payload = 4;
+  optional uint64 call_ability_id = 5;
+}
+
+message CallAbilityOutcome {
+  uint64 call_ability_id = 1;
+  optional string payload = 2;
+  optional string error = 3;
+}
+
 message DeclareAbilitiesReq {
   repeated Ability abilities = 1;
 }
@@ -62,7 +76,9 @@ message ListAbilitiesRes {
 message SpaceUpdate {
   uint64 id = 1;
   oneof event {
-    SpaceNewMessage space_new_message = 7;
+    SpaceNewMessage space_new_message = 2;
+    CallAbility call_ability = 3;
+    CallAbilityOutcome call_ability_outcome = 4;
   }
 }
 
@@ -107,10 +123,27 @@ message SubscribeToSpaceReq {
    bool receive_own_messages = 1;
 }
 
+message SendCallAbilityReq {
+  CallAbility call_ability = 1;
+}
+
+message SendCallAbilityRes {
+  uint64 call_ability_id = 1;
+}
+
+message SendCallAbilityOutcomeReq {
+  CallAbilityOutcome outcome = 1;
+}
+
+message SendCallAbilityOutcomeRes {
+}
+
 service TimGrpcApi {
   rpc TrustedRegister(TrustedRegisterReq) returns (TrustedRegisterRes);
   rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
+  rpc SendCallAbility(SendCallAbilityReq) returns (SendCallAbilityRes);
+  rpc SendCallAbilityOutcome(SendCallAbilityOutcomeReq) returns (SendCallAbilityOutcomeRes);
   rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
   rpc ListAbilities(ListAbilitiesReq) returns (ListAbilitiesRes);

@@ -25,8 +25,8 @@ pub struct KvStore {
 }
 
 const F_SECRETS: &str = "secrets";
-const F_DATA: &str = "data";
-const F_LOG: &str = "log";
+const F_DATA: &str = "data"; // metadata, profiles, registry etc.
+const F_LOG: &str = "log"; // chat messages, execution results, events etc.
 
 const FAMILIES: &[&str] = &[F_SECRETS, F_DATA, F_LOG];
 
@@ -42,17 +42,7 @@ impl KvStore {
         prefix: &[u8],
     ) -> Result<Option<V>, KvStoreError> {
         let cf = get_cf(&self.db, F_DATA)?;
-
-        let mut iter = self.db.raw_iterator_cf(&cf);
-        let bytes = collect_last_prefixed_value(&mut iter, prefix)?;
-
-        match bytes {
-            Some(data) => {
-                let msg = V::decode(data.as_slice())?;
-                Ok(Some(msg))
-            }
-            None => Ok(None),
-        }
+        self.fetch_max_prefixed_value::<V>(cf, prefix)
     }
 
     // Fetches all values with the given prefix `prefix`
@@ -106,6 +96,28 @@ impl KvStore {
         self.put_value(cf, key, value)
     }
 
+    pub fn fetch_max_log<V: Message + Default>(
+        &self,
+        prefix: &[u8],
+    ) -> Result<Option<V>, KvStoreError> {
+        let cf = get_cf(&self.db, F_LOG)?;
+        self.fetch_max_prefixed_value::<V>(cf, prefix)
+    }
+
+    pub fn fetch_log<V: Message + Default>(&self, key: &[u8]) -> Result<Option<V>, KvStoreError> {
+        let cf = get_cf(&self.db, F_LOG)?;
+        self.get_value::<V>(cf, key)
+    }
+
+    pub fn store_log<V: Message + Default>(
+        &self,
+        key: &[u8],
+        value: &V,
+    ) -> Result<(), KvStoreError> {
+        let cf = get_cf(&self.db, F_LOG)?;
+        self.put_value(cf, key, value)
+    }
+
     fn get_value<V: Message + Default>(
         &self,
         cf: &ColumnFamily,
@@ -129,6 +141,23 @@ impl KvStore {
         let bytes = value.encode_to_vec();
         self.db.put_cf(cf, key, bytes)?;
         Ok(())
+    }
+
+    fn fetch_max_prefixed_value<V: Message + Default>(
+        &self,
+        cf: &ColumnFamily,
+        prefix: &[u8],
+    ) -> Result<Option<V>, KvStoreError> {
+        let mut iter = self.db.raw_iterator_cf(cf);
+        let bytes = collect_last_prefixed_value(&mut iter, prefix)?;
+
+        match bytes {
+            Some(data) => {
+                let value = V::decode(data.as_slice())?;
+                Ok(Some(value))
+            }
+            None => Ok(None),
+        }
     }
 }
 

@@ -15,6 +15,8 @@
    - Every plan includes a **naming consistency pass**.
    - Keep style uniform across all repositories.
    - Use `cargo +nightly fmt` for formatting.
+   - Pay attention to method grouping (how it already done in the code)
+   - Pay attention to method signatures, e.g. all store_ methods return Result<(), Error>, etc.
 
 4. **Clarity in code**
    - Small functions, low cyclomatic complexity.
