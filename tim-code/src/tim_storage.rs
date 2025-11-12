@@ -2,7 +2,6 @@ use crate::{
     api::{Session, Timite},
     kvstore::{KvStore, KvStoreError},
 };
-use prost::Message;
 
 mod key {
     pub fn timite_prefix() -> Vec<u8> {
@@ -37,8 +36,7 @@ impl TimStorage {
     }
 
     pub fn store_timite(&self, timite: &Timite) -> Result<(), TimStorageError> {
-        let bytes = timite.encode_to_vec();
-        self.store.store_data(&key::timite(timite.id), &bytes)?;
+        self.store.store_data(&key::timite(timite.id), timite)?;
         Ok(())
     }
 
@@ -47,9 +45,8 @@ impl TimStorage {
     }
 
     pub fn store_session(&self, session: &Session) -> Result<(), TimStorageError> {
-        let bytes = session.encode_to_vec();
         self.store
-            .store_secret(&key::session(&session.key), &bytes)?;
+            .store_secret(&key::session(&session.key), session)?;
         Ok(())
     }
 

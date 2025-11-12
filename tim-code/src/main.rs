@@ -1,16 +1,3 @@
-pub(crate) mod api {
-    tonic::include_proto!("tim.api.g1");
-}
-
-mod kvstore;
-mod tim_api;
-mod tim_session;
-mod tim_space;
-mod tim_storage;
-mod tim_timite;
-
-mod tim_grpc_api;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -18,13 +5,13 @@ use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
-use crate::api::tim_grpc_api_server::{TimGrpcApiServer};
-use crate::tim_api::TimApi;
-use crate::tim_grpc_api::TimGrpcApiService;
-use crate::tim_session::{SessionLayer, TimSession};
-use crate::tim_space::TimSpace;
-use crate::tim_storage::TimStorage;
-use crate::tim_timite::TimTimite;
+use tim_code::api::tim_grpc_api_server::TimGrpcApiServer;
+use tim_code::tim_api::TimApi;
+use tim_code::tim_grpc_api::TimGrpcApiService;
+use tim_code::tim_session::{SessionLayer, TimSession};
+use tim_code::tim_space::TimSpace;
+use tim_code::tim_storage::TimStorage;
+use tim_code::tim_timite::TimTimite;
 
 fn init_tracing() {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());

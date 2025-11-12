@@ -24,7 +24,7 @@ impl TimTimite {
         let max_id = t_store.fetch_max_timite_id()?;
         Ok(Self {
             t_store,
-            id_cnt: Arc::new(AtomicU64::new(max_id + 1)),
+            id_cnt: Arc::new(AtomicU64::new(max_id)),
         })
     }
 

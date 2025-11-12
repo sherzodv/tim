@@ -1,5 +1,5 @@
 use prost::Message;
-use rocksdb::{ColumnFamily, Options, DB};
+use rocksdb::{ColumnFamily, DBAccess, DBRawIteratorWithThreadMode, Options, DB};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -38,16 +38,15 @@ impl KvStore {
     ) -> Result<Option<V>, KvStoreError> {
         let cf = get_cf(&self.db, F_DATA)?;
 
-        // Jump to last key with this prefix (range scan, not full DB scan)
-        let mut iter = self.db.prefix_iterator_cf(&cf, prefix);
-        iter.seek_to_last();
+        let mut iter = self.db.raw_iterator_cf(&cf);
+        let bytes = collect_last_prefixed_value(&mut iter, prefix)?;
 
-        match iter.item() {
-            Some((k, v)) if k.starts_with(prefix) => {
-                let msg = V::decode(&v[..])?;
+        match bytes {
+            Some(data) => {
+                let msg = V::decode(data.as_slice())?;
                 Ok(Some(msg))
             }
-            _ => Ok(None),
+            None => Ok(None),
         }
     }
 
@@ -114,9 +113,38 @@ fn get_cf<'a>(db: &'a DB, name: &'static str) -> Result<&'a ColumnFamily, KvStor
         .map_err(|e| KvStoreError::KeysetNotFound(e.to_string()))
 }
 
+fn collect_last_prefixed_value<'a, D>(
+    iter: &mut DBRawIteratorWithThreadMode<'a, D>,
+    prefix: &[u8],
+) -> Result<Option<Vec<u8>>, KvStoreError>
+where
+    D: DBAccess,
+{
+    iter.seek(prefix);
+
+    let mut last_value = None;
+
+    while iter.valid() {
+        match iter.key() {
+            Some(key) if key.starts_with(prefix) => {
+                if let Some(value) = iter.value() {
+                    last_value = Some(value.to_vec());
+                }
+            }
+            _ => break,
+        }
+
+        iter.next();
+    }
+
+    iter.status()?;
+    Ok(last_value)
+}
+
 pub fn start_rocks_db<P: AsRef<Path>>(path: P) -> Result<DB, KvStoreError> {
     let mut opts = Options::default();
     opts.create_if_missing(true);
+    opts.create_missing_column_families(true);
     let db = DB::open_cf(&opts, path, FAMILIES)?;
     Ok(db)
 }

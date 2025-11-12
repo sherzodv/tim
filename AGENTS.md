@@ -1,8 +1,40 @@
-## Work style
+# AGENTS.md
 
-Iterative, small step changes. Each patch must have high quality code just like it should pass review of the world top 100 tech lead (rust, java, typescript). Again, keep changes small. Offer to check the patch and re-iterate rather than create big patch of full functionality.
-Keep things utterly simple. Don't overuse defensive coding (too many names for env vars, too many checks for conf params, too complex config resolving etc.). Always include in plan a step to check naming consistency. Be consitent across all the projects, write code which is consistent across all the codebase.
+## Principles
 
-## Current focus
+1. **Iterate in micro-patches**
+   - One focused change per patch.
+   - Each patch must meet *top-100 tech-lead code quality* (Rust, Java, TS).
+   - Review → improve → merge. No large feature dumps.
 
-Prototype technical architecture and social mechanics. No tests as everything is yet very unclear.
+2. **Simplicity first**
+   - No premature abstraction.
+   - Minimize config, env vars, guards, and defensive noise.
+   - Prefer obvious over overly flexible.
+
+3. **Consistency as a first-class concern**
+   - Naming, structure, errors, logs, metrics, configs, patterns.
+   - Every plan includes a **naming consistency pass**.
+   - Keep style uniform across all repositories.
+
+4. **Clarity in code**
+   - Small functions, low cyclomatic complexity.
+   - Minimize nesting, flatten control flow.
+   - Prefer data flow over deeply nested branches.
+
+5. **Review-driven iteration**
+   - Propose patch → review → refine → merge.
+   - Suggest simplifications and edge cases proactively.
+
+6. **No new tests by default**
+   - Existing tests cover only complex flows or unclear library behavior.
+   - Do **not** add tests unless explicitly requested.
+
+---
+
+## Current Mission
+
+- **Goal:** Prototype technical architecture and social/game mechanics.
+- **Priority:** learning speed > completeness, correctness > coverage.
+- **Testing:** minimal, selective, deliberate.
+- **Stability:** evolving assumptions are expected.
