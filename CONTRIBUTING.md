@@ -1,6 +1,4 @@
-# AGENTS.md
-
-## Principles
+## Guidelines
 
 1. **Iterate in micro-patches**
    - One focused change per patch.
@@ -12,7 +10,7 @@
    - Minimize config, env vars, guards, and defensive noise.
    - Prefer obvious over overly flexible.
 
-3. **Consistency as a first-class concern**
+3. **Consistency is a first-class concern**
    - Naming, structure, errors, logs, metrics, configs, patterns.
    - Every plan includes a **naming consistency pass**.
    - Keep style uniform across all repositories.

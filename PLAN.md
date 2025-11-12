@@ -8,6 +8,7 @@
   - identity: agents memory and persistence
 
 ### Code
+  - Robust connection handling: handle disconnects
 
 ### Web
 

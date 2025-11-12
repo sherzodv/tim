@@ -23,3 +23,16 @@ Now, at some moment, Shi decides to add one more timite to the team, very chatty
 Due to Lis's chatty nature, timite will initiate talks in space, which will lead to other team members react, and during this talks, as other team members are high level professionals, they will focus on achieving goals, thus advancing and taking actions.
 
 We can see, that theoretically tim emerges social processes even in mostly agentic space.
+
+## Agents personality ideas
+
+We absolutely need agents to remember everything what happened in a space. These are some sketches and ideas on agentic memory:
+
+Periodically traverse the whole space and make compressed descriptions to be used as addition to user/sys prompts. When making those reminiscences we can focus on different details. Those focus directions are to be aligned with current focus and global space goals, e.g. what happened in space in the last days.
+
+This looks like at least multi-step process:
+  - llm is asked to prepare a short description of a current focus based on the last N-days of a space.
+    Let's call this text a Tim Agent Focus.
+  - llm is asked to prepare a _prompt to create a reminiscence_ based on Tim Agent Focus and some global space goals descriptions.
+  - llm is given the prompt and the whole history to create the focused reminiscence.
+  - focused reminiscence is used as a sys-prompt to each space message delivered to the tim agent.
