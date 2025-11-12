@@ -26,6 +26,37 @@ message Message {
   string content = 3;
 }
 
+message Capability {
+  string name = 1;
+  string description = 2;
+  repeated CapabilityParameter params = 3;
+}
+
+message CapabilityParameter {
+  string name = 1;
+  string description = 2;
+}
+
+message TimiteCapabilities {
+  Timite timite = 1;
+  repeated Capability capabilities = 2;
+}
+
+message DeclareCapabilitiesReq {
+  repeated Capability capabilities = 1;
+}
+
+message DeclareCapabilitiesRes {
+}
+
+message ListCapabilitiesReq {
+  optional uint64 timite_id = 1;
+}
+
+message ListCapabilitiesRes {
+  repeated TimiteCapabilities capabilities = 1;
+}
+
 // --[ Updates: Space updates ]--
 
 message SpaceUpdate {
@@ -81,4 +112,6 @@ service TimGrpcApi {
   rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);
+  rpc DeclareCapabilities(DeclareCapabilitiesReq) returns (DeclareCapabilitiesRes);
+  rpc ListCapabilities(ListCapabilitiesReq) returns (ListCapabilitiesRes);
 }

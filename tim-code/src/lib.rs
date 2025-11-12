@@ -8,4 +8,5 @@ pub mod tim_session;
 pub mod tim_space;
 pub mod tim_storage;
 pub mod tim_timite;
+pub mod tim_capability;
 pub mod tim_grpc_api;

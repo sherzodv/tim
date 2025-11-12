@@ -1,5 +1,5 @@
 use crate::{
-    api::{Session, Timite},
+    api::{Capability, Session, Timite, TimiteCapabilities},
     kvstore::{KvStore, KvStoreError},
 };
 
@@ -8,9 +8,20 @@ mod key {
         b"t:id:".to_vec()
     }
 
+    pub fn timite_skill_prefix() -> Vec<u8> {
+        b"t:skill:".to_vec()
+    }
+
     pub fn timite(id: u64) -> Vec<u8> {
         let mut k = timite_prefix();
         k.extend(id.to_be_bytes()); // big-endian = lexicographically sortable
+        k
+    }
+
+    pub fn timite_skill(id: u64, name: &str) -> Vec<u8> {
+        let mut k = timite_skill_prefix();
+        k.extend(id.to_be_bytes());
+        k.extend(name.as_bytes());
         k
     }
 
@@ -40,8 +51,21 @@ impl TimStorage {
         Ok(())
     }
 
-    pub fn find_timite_by_id(&self, timite_id: u64) -> Result<Option<Timite>, TimStorageError> {
-        Ok(self.store.fetch_data::<Timite>(&key::timite(timite_id))?)
+    pub fn store_timite_capability(
+        &self,
+        timite_id: u64,
+        capability: &Capability,
+    ) -> Result<(), TimStorageError> {
+        self.store
+            .store_data(&key::timite_skill(timite_id, &capability.name), capability)?;
+        Ok(())
+    }
+
+    pub fn list_capabilities(&self) -> Result<Vec<TimiteCapabilities>, TimStorageError> {
+        let res = self
+            .store
+            .fetch_all_data::<TimiteCapabilities>(&key::timite_skill_prefix())?;
+        Ok(res)
     }
 
     pub fn store_session(&self, session: &Session) -> Result<(), TimStorageError> {

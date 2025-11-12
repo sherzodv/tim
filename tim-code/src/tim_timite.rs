@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crate::{
-    api::Timite,
+    api::{Capability, Timite},
     tim_storage::{TimStorage, TimStorageError},
 };
 
@@ -30,7 +30,21 @@ impl TimTimite {
 
     pub fn create(&self, nick: &str) -> Result<Timite, TimTimiteError> {
         let id = self.id_cnt.fetch_add(1, Ordering::Relaxed) + 1;
-        let timite = Timite { id, nick: nick.to_string() };
+        let timite = Timite {
+            id,
+            nick: nick.to_string(),
+        };
         Ok(self.t_store.store_timite(&timite).map(|_| timite)?)
+    }
+
+    pub fn declare_capabilities(
+        &self,
+        timite_id: u64,
+        capabilities: &Vec<Capability>,
+    ) -> Result<(), TimTimiteError> {
+        for c in capabilities {
+            self.t_store.store_timite_capability(timite_id, c)?;
+        }
+        Ok(())
     }
 }

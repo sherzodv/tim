@@ -50,6 +50,26 @@ impl KvStore {
         }
     }
 
+    // Fetches all values with the given prefix `prefix`
+    pub fn fetch_all_data<V: Message + Default>(
+        &self,
+        prefix: &[u8],
+    ) -> Result<Vec<V>, KvStoreError> {
+        let cf = get_cf(&self.db, F_DATA)?;
+
+        let mut iter = self.db.raw_iterator_cf(&cf);
+        let values = collect_prefixed_values(&mut iter, prefix)?;
+
+        let mut result: Vec<V> = Vec::new();
+
+        for bytes in &values {
+            let v = V::decode(bytes.as_slice())?;
+            result.push(v);
+        }
+
+        Ok(result)
+    }
+
     pub fn fetch_secret<V: Message + Default>(
         &self,
         key: &[u8],
@@ -139,6 +159,34 @@ where
 
     iter.status()?;
     Ok(last_value)
+}
+
+fn collect_prefixed_values<'a, D>(
+    iter: &mut DBRawIteratorWithThreadMode<'a, D>,
+    prefix: &[u8],
+) -> Result<Vec<Vec<u8>>, KvStoreError>
+where
+    D: DBAccess,
+{
+    iter.seek(prefix);
+
+    let mut result: Vec<Vec<u8>> = Vec::new();
+
+    while iter.valid() {
+        match iter.key() {
+            Some(key) if key.starts_with(prefix) => {
+                if let Some(value) = iter.value() {
+                    result.push(value.to_vec());
+                }
+            }
+            _ => break,
+        }
+
+        iter.next();
+    }
+
+    iter.status()?;
+    Ok(result)
 }
 
 pub fn start_rocks_db<P: AsRef<Path>>(path: P) -> Result<DB, KvStoreError> {

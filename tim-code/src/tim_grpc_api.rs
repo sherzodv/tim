@@ -7,6 +7,7 @@ use tonic::{Request, Response, Status};
 
 use crate::api::tim_grpc_api_server::TimGrpcApi;
 use crate::api::{
+    DeclareCapabilitiesReq, DeclareCapabilitiesRes, ListCapabilitiesReq, ListCapabilitiesRes,
     SendMessageReq, SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
     TrustedConnectRes, TrustedRegisterReq, TrustedRegisterRes,
 };
@@ -43,6 +44,28 @@ impl TimGrpcApi for TimGrpcApiService {
             .trusted_connect(&req.into_inner())
             .await
             .map(|r| Response::new(r));
+        res.map_err(|e| Status::ok(e.to_string()))
+    }
+
+    async fn declare_capabilities(
+        &self,
+        req: Request<DeclareCapabilitiesReq>,
+    ) -> Result<Response<DeclareCapabilitiesRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .declare_capabilities(&req.into_inner(), &session)
+            .await
+            .map(|r| Response::new(r));
+        res.map_err(|e| Status::ok(e.to_string()))
+    }
+
+    async fn list_capabilities(
+        &self,
+        req: Request<ListCapabilitiesReq>,
+    ) -> Result<Response<ListCapabilitiesRes>, Status> {
+        self.require_session(&req)?;
+        let res = self.api.list_capabilities().await.map(|r| Response::new(r));
         res.map_err(|e| Status::ok(e.to_string()))
     }
 

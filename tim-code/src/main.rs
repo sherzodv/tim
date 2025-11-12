@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tim_code::tim_capability::TimCapability;
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::{Any, CorsLayer};
@@ -41,11 +42,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_svc = Arc::new(TimSession::new(storage_svc.clone()));
     let space_svc = Arc::new(TimSpace::new());
     let timite_svc = Arc::new(TimTimite::new(storage_svc.clone())?);
+    let capability_svc = Arc::new(TimCapability::new(storage_svc.clone())?);
 
     let api_svc = Arc::new(TimApi::new(
         session_svc.clone(),
         space_svc.clone(),
         timite_svc.clone(),
+        capability_svc.clone(),
     ));
 
     let api_svc = TimGrpcApiService::new(api_svc.clone());

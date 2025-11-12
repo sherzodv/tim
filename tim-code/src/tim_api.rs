@@ -3,9 +3,11 @@ use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::api::{
-    SendMessageReq, SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
+    DeclareCapabilitiesReq, DeclareCapabilitiesRes, ListCapabilitiesRes, SendMessageReq,
+    SendMessageRes, Session, SpaceUpdate, SubscribeToSpaceReq, TrustedConnectReq,
     TrustedConnectRes, TrustedRegisterReq, TrustedRegisterRes,
 };
+use crate::tim_capability::{TimCapability, TimCapabilityError};
 use crate::tim_session::{TimSession, TimSessionError};
 use crate::tim_space::{TimSpace, TimSpaceError};
 use crate::tim_timite::{TimTimite, TimTimiteError};
@@ -21,6 +23,9 @@ pub enum TimApiError {
     #[error("Space error: {0}")]
     SpaceError(#[from] TimSpaceError),
 
+    #[error("Capability error: {0}")]
+    CapabilityError(#[from] TimCapabilityError),
+
     #[error("Invalid args error: {0}")]
     InvalidArgError(String),
 }
@@ -30,6 +35,7 @@ pub struct TimApi {
     t_session: Arc<TimSession>,
     t_space: Arc<TimSpace>,
     t_timite: Arc<TimTimite>,
+    t_capability: Arc<TimCapability>,
 }
 
 impl TimApi {
@@ -37,11 +43,13 @@ impl TimApi {
         t_session: Arc<TimSession>,
         t_space: Arc<TimSpace>,
         t_timite: Arc<TimTimite>,
+        t_capability: Arc<TimCapability>,
     ) -> Self {
         Self {
-            t_session: t_session,
-            t_space: t_space,
-            t_timite: t_timite,
+            t_session,
+            t_space,
+            t_timite,
+            t_capability,
         }
     }
 
@@ -82,6 +90,21 @@ impl TimApi {
         Ok(TrustedConnectRes {
             session: Some(session),
         })
+    }
+
+    pub async fn declare_capabilities(
+        &self,
+        req: &DeclareCapabilitiesReq,
+        session: &Session,
+    ) -> Result<DeclareCapabilitiesRes, TimApiError> {
+        self.t_timite
+            .declare_capabilities(session.timite_id, &req.capabilities)?;
+        Ok(DeclareCapabilitiesRes {})
+    }
+
+    pub async fn list_capabilities(&self) -> Result<ListCapabilitiesRes, TimApiError> {
+        let capabilities = self.t_capability.list()?;
+        Ok(ListCapabilitiesRes { capabilities })
     }
 
     pub async fn send_message(
