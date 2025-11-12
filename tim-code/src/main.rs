@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tim_code::api::tim_grpc_api_server::TimGrpcApiServer;
+use tim_code::tim_ability::TimAbility;
 use tim_code::tim_api::TimApi;
-use tim_code::tim_capability::TimCapability;
 use tim_code::tim_grpc_api::TimGrpcApiService;
 use tim_code::tim_session::SessionLayer;
 use tim_code::tim_session::TimSession;
@@ -44,13 +44,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_svc = Arc::new(TimSession::new(storage_svc.clone()));
     let space_svc = Arc::new(TimSpace::new());
     let timite_svc = Arc::new(TimTimite::new(storage_svc.clone())?);
-    let capability_svc = Arc::new(TimCapability::new(storage_svc.clone())?);
+    let ability_svc = Arc::new(TimAbility::new(storage_svc.clone())?);
 
     let api_svc = Arc::new(TimApi::new(
         session_svc.clone(),
         space_svc.clone(),
         timite_svc.clone(),
-        capability_svc.clone(),
+        ability_svc.clone(),
     ));
 
     let api_svc = TimGrpcApiService::new(api_svc.clone());

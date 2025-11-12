@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tempfile::tempdir;
 use tempfile::TempDir;
+use tim_code::tim_ability::TimAbility;
 use tim_code::tim_api::TimApi;
-use tim_code::tim_capability::TimCapability;
 use tim_code::tim_session::TimSession;
 use tim_code::tim_space::TimSpace;
 use tim_code::tim_storage::TimStorage;
@@ -25,7 +25,7 @@ impl TimApiTestCtx {
             Arc::new(TimSession::new(storage.clone())),
             Arc::new(TimSpace::new()),
             Arc::new(TimTimite::new(storage.clone())?),
-            Arc::new(TimCapability::new(storage.clone())?),
+            Arc::new(TimAbility::new(storage.clone())?),
         ));
 
         Ok(Self {

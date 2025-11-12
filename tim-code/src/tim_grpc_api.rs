@@ -8,10 +8,10 @@ use tonic::Response;
 use tonic::Status;
 
 use crate::api::tim_grpc_api_server::TimGrpcApi;
-use crate::api::DeclareCapabilitiesReq;
-use crate::api::DeclareCapabilitiesRes;
-use crate::api::ListCapabilitiesReq;
-use crate::api::ListCapabilitiesRes;
+use crate::api::DeclareAbilitiesReq;
+use crate::api::DeclareAbilitiesRes;
+use crate::api::ListAbilitiesReq;
+use crate::api::ListAbilitiesRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
@@ -57,25 +57,25 @@ impl TimGrpcApi for TimGrpcApiService {
         res.map_err(|e| Status::ok(e.to_string()))
     }
 
-    async fn declare_capabilities(
+    async fn declare_abilities(
         &self,
-        req: Request<DeclareCapabilitiesReq>,
-    ) -> Result<Response<DeclareCapabilitiesRes>, Status> {
+        req: Request<DeclareAbilitiesReq>,
+    ) -> Result<Response<DeclareAbilitiesRes>, Status> {
         let session = self.require_session(&req)?;
         let res = self
             .api
-            .declare_capabilities(&req.into_inner(), &session)
+            .declare_abilities(&req.into_inner(), &session)
             .await
             .map(|r| Response::new(r));
         res.map_err(|e| Status::ok(e.to_string()))
     }
 
-    async fn list_capabilities(
+    async fn list_abilities(
         &self,
-        req: Request<ListCapabilitiesReq>,
-    ) -> Result<Response<ListCapabilitiesRes>, Status> {
+        req: Request<ListAbilitiesReq>,
+    ) -> Result<Response<ListAbilitiesRes>, Status> {
         self.require_session(&req)?;
-        let res = self.api.list_capabilities().await.map(|r| Response::new(r));
+        let res = self.api.list_abilities().await.map(|r| Response::new(r));
         res.map_err(|e| Status::ok(e.to_string()))
     }
 

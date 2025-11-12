@@ -4,7 +4,7 @@ package tim.code.db.g1;
 
 import "tim/api/g1/api.proto";
 
-message StoredTimiteCapabilities {
+message StoredTimiteAbilities {
   uint64 timite_id = 1;
-  repeated tim.api.g1.Capability capabilities = 2;
+  repeated tim.api.g1.Ability abilities = 2;
 }

@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use crate::api::Capability;
+use crate::api::Ability;
 use crate::api::Timite;
 use crate::tim_storage::TimStorage;
 use crate::tim_storage::TimStorageError;
@@ -36,13 +36,11 @@ impl TimTimite {
         Ok(self.t_store.store_timite(&timite).map(|_| timite)?)
     }
 
-    pub fn declare_capabilities(
+    pub fn declare_abilities(
         &self,
         timite_id: u64,
-        capabilities: &Vec<Capability>,
+        abilities: &Vec<Ability>,
     ) -> Result<(), TimTimiteError> {
-        Ok(self
-            .t_store
-            .store_timite_capabilities(timite_id, capabilities)?)
+        Ok(self.t_store.store_timite_abilities(timite_id, abilities)?)
     }
 }

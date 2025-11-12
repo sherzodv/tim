@@ -3,9 +3,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::api::DeclareCapabilitiesReq;
-use crate::api::DeclareCapabilitiesRes;
-use crate::api::ListCapabilitiesRes;
+use crate::api::DeclareAbilitiesReq;
+use crate::api::DeclareAbilitiesRes;
+use crate::api::ListAbilitiesRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
@@ -15,8 +15,8 @@ use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
 use crate::api::TrustedRegisterReq;
 use crate::api::TrustedRegisterRes;
-use crate::tim_capability::TimCapability;
-use crate::tim_capability::TimCapabilityError;
+use crate::tim_ability::TimAbility;
+use crate::tim_ability::TimAbilityError;
 use crate::tim_session::TimSession;
 use crate::tim_session::TimSessionError;
 use crate::tim_space::TimSpace;
@@ -35,8 +35,8 @@ pub enum TimApiError {
     #[error("Space error: {0}")]
     SpaceError(#[from] TimSpaceError),
 
-    #[error("Capability error: {0}")]
-    CapabilityError(#[from] TimCapabilityError),
+    #[error("Ability error: {0}")]
+    AbilityError(#[from] TimAbilityError),
 
     #[error("Invalid args error: {0}")]
     InvalidArgError(String),
@@ -47,7 +47,7 @@ pub struct TimApi {
     t_session: Arc<TimSession>,
     t_space: Arc<TimSpace>,
     t_timite: Arc<TimTimite>,
-    t_capability: Arc<TimCapability>,
+    t_ability: Arc<TimAbility>,
 }
 
 impl TimApi {
@@ -55,13 +55,13 @@ impl TimApi {
         t_session: Arc<TimSession>,
         t_space: Arc<TimSpace>,
         t_timite: Arc<TimTimite>,
-        t_capability: Arc<TimCapability>,
+        t_ability: Arc<TimAbility>,
     ) -> Self {
         Self {
             t_session,
             t_space,
             t_timite,
-            t_capability,
+            t_ability,
         }
     }
 
@@ -104,19 +104,19 @@ impl TimApi {
         })
     }
 
-    pub async fn declare_capabilities(
+    pub async fn declare_abilities(
         &self,
-        req: &DeclareCapabilitiesReq,
+        req: &DeclareAbilitiesReq,
         session: &Session,
-    ) -> Result<DeclareCapabilitiesRes, TimApiError> {
+    ) -> Result<DeclareAbilitiesRes, TimApiError> {
         self.t_timite
-            .declare_capabilities(session.timite_id, &req.capabilities)?;
-        Ok(DeclareCapabilitiesRes {})
+            .declare_abilities(session.timite_id, &req.abilities)?;
+        Ok(DeclareAbilitiesRes {})
     }
 
-    pub async fn list_capabilities(&self) -> Result<ListCapabilitiesRes, TimApiError> {
-        let capabilities = self.t_capability.list()?;
-        Ok(ListCapabilitiesRes { capabilities })
+    pub async fn list_abilities(&self) -> Result<ListAbilitiesRes, TimApiError> {
+        let abilities = self.t_ability.list()?;
+        Ok(ListAbilitiesRes { abilities })
     }
 
     pub async fn send_message(

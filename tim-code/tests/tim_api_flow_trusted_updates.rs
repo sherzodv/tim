@@ -5,7 +5,7 @@ mod common;
 use common::TimApiTestCtx;
 use tim_code::api::space_update;
 use tim_code::api::ClientInfo;
-use tim_code::api::DeclareCapabilitiesReq;
+use tim_code::api::DeclareAbilitiesReq;
 use tim_code::api::SendMessageReq;
 use tim_code::api::SubscribeToSpaceReq;
 use tim_code::api::Timite;
@@ -33,9 +33,9 @@ async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> 
         .session
         .expect("missing alpha session");
 
-    api.declare_capabilities(
-        &DeclareCapabilitiesReq {
-            capabilities: Vec::new(),
+    api.declare_abilities(
+        &DeclareAbilitiesReq {
+            abilities: Vec::new(),
         },
         &alpha_session,
     )

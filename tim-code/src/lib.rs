@@ -18,8 +18,8 @@ pub use tim::api::g1 as api;
 pub use tim::code::db::g1 as storage;
 
 pub mod kvstore;
+pub mod tim_ability;
 pub mod tim_api;
-pub mod tim_capability;
 pub mod tim_grpc_api;
 pub mod tim_session;
 pub mod tim_space;

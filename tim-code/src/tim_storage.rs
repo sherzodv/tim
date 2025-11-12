@@ -1,17 +1,17 @@
-use crate::api::Capability;
+use crate::api::Ability;
 use crate::api::Session;
 use crate::api::Timite;
-use crate::api::TimiteCapabilities;
+use crate::api::TimiteAbilities;
 use crate::kvstore::KvStore;
 use crate::kvstore::KvStoreError;
-use crate::storage::StoredTimiteCapabilities;
+use crate::storage::StoredTimiteAbilities;
 
 mod key {
     pub fn timite_prefix() -> Vec<u8> {
         b"t:id:".to_vec()
     }
 
-    pub fn timite_capabilities_prefix() -> Vec<u8> {
+    pub fn timite_abilities_prefix() -> Vec<u8> {
         b"t:skill:".to_vec()
     }
 
@@ -21,8 +21,8 @@ mod key {
         k
     }
 
-    pub fn timite_capabilities(id: u64) -> Vec<u8> {
-        let mut k = timite_capabilities_prefix();
+    pub fn timite_abilities(id: u64) -> Vec<u8> {
+        let mut k = timite_abilities_prefix();
         k.extend(id.to_be_bytes());
         k
     }
@@ -39,12 +39,6 @@ pub enum TimStorageError {
 
     #[error("Timite {0} not found")]
     TimiteMissing(u64),
-
-    #[error("Timite capability key malformed: {0}")]
-    TimiteCapabilityKeyMalformed(String),
-
-    #[error("Timite capability key mismatch key_id={key_id} value_id={value_id}")]
-    TimiteCapabilityKeyMismatch { key_id: u64, value_id: u64 },
 }
 
 pub struct TimStorage {
@@ -62,37 +56,37 @@ impl TimStorage {
         Ok(())
     }
 
-    pub fn store_timite_capabilities(
+    pub fn store_timite_abilities(
         &self,
         timite_id: u64,
-        capabilities: &Vec<Capability>,
+        abilities: &Vec<Ability>,
     ) -> Result<(), TimStorageError> {
         self.fetch_timite(timite_id)?
             .ok_or(TimStorageError::TimiteMissing(timite_id))?;
-        let record = StoredTimiteCapabilities {
+        let record = StoredTimiteAbilities {
             timite_id,
-            capabilities: capabilities.to_vec(),
+            abilities: abilities.to_vec(),
         };
         self.store
-            .store_data(&key::timite_capabilities(timite_id), &record)?;
+            .store_data(&key::timite_abilities(timite_id), &record)?;
         Ok(())
     }
 
-    pub fn list_capabilities(&self) -> Result<Vec<TimiteCapabilities>, TimStorageError> {
+    pub fn list_abilities(&self) -> Result<Vec<TimiteAbilities>, TimStorageError> {
         let list = self
             .store
-            .fetch_all_data::<StoredTimiteCapabilities>(&key::timite_capabilities_prefix())?;
+            .fetch_all_data::<StoredTimiteAbilities>(&key::timite_abilities_prefix())?;
 
         let mut result = Vec::new();
 
         for tc in list {
-            // TODO: unregister capabilities if timite not found
+            // TODO: unregister abilities if timite not found
             let timite = self
                 .fetch_timite(tc.timite_id)?
                 .ok_or(TimStorageError::TimiteMissing(tc.timite_id))?;
-            result.push(TimiteCapabilities {
+            result.push(TimiteAbilities {
                 timite: Some(timite),
-                capabilities: tc.capabilities,
+                abilities: tc.abilities,
             });
         }
 

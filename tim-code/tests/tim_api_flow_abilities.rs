@@ -1,9 +1,9 @@
 mod common;
 
 use common::TimApiTestCtx;
-use tim_code::api::Capability;
+use tim_code::api::Ability;
 use tim_code::api::ClientInfo;
-use tim_code::api::DeclareCapabilitiesReq;
+use tim_code::api::DeclareAbilitiesReq;
 use tim_code::api::TrustedRegisterReq;
 
 fn client_info() -> ClientInfo {
@@ -12,14 +12,14 @@ fn client_info() -> ClientInfo {
     }
 }
 
-fn sample_capabilities() -> Vec<Capability> {
+fn sample_abilities() -> Vec<Ability> {
     vec![
-        Capability {
+        Ability {
             name: "echo".into(),
             description: "Echo input back to the caller".into(),
             params: Vec::new(),
         },
-        Capability {
+        Ability {
             name: "ping".into(),
             description: "Health check signal".into(),
             params: Vec::new(),
@@ -28,8 +28,7 @@ fn sample_capabilities() -> Vec<Capability> {
 }
 
 #[tokio::test]
-async fn tim_api_flow_capabilities_lists_declared_skills() -> Result<(), Box<dyn std::error::Error>>
-{
+async fn tim_api_flow_abilities_list_declared_skills() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = TimApiTestCtx::new()?;
     let api = ctx.api();
 
@@ -42,36 +41,38 @@ async fn tim_api_flow_capabilities_lists_declared_skills() -> Result<(), Box<dyn
         .session
         .expect("missing alpha session");
 
-    let capabilities = sample_capabilities();
-    api.declare_capabilities(
-        &DeclareCapabilitiesReq {
-            capabilities: capabilities.clone(),
+    let abilities = sample_abilities();
+    api.declare_abilities(
+        &DeclareAbilitiesReq {
+            abilities: abilities.clone(),
         },
         &session,
     )
     .await?;
 
-    let res = api.list_capabilities().await?;
+    let res = api.list_abilities().await?;
     assert_eq!(
-        res.capabilities.len(),
+        res.abilities.len(),
         1,
         "fresh store should only contain the declaring timite"
     );
 
     let entry = res
-        .capabilities
+        .abilities
         .into_iter()
-        .find(|tc| tc.timite.as_ref().map(|t| t.id) == Some(session.timite_id))
-        .expect("timite capabilities entry missing");
+        .find(|ta| ta.timite.as_ref().map(|t| t.id) == Some(session.timite_id))
+        .expect("timite abilities entry missing");
 
-    let stored = entry.capabilities;
-    assert_eq!(stored.len(), capabilities.len());
+    let stored = entry.abilities;
+    assert_eq!(stored.len(), abilities.len());
 
-    for cap in &capabilities {
+    for ability in &abilities {
         assert!(
-            stored.iter().any(|stored_cap| stored_cap.name == cap.name),
-            "expected to find capability {} in the stored list",
-            cap.name
+            stored
+                .iter()
+                .any(|stored_ability| stored_ability.name == ability.name),
+            "expected to find ability {} in the stored list",
+            ability.name
         );
     }
 
