@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package tim.code.db.g1;
+
+import "tim/api/g1/api.proto";
+
+message StoredTimiteCapabilities {
+  uint64 timite_id = 1;
+  repeated tim.api.g1.Capability capabilities = 2;
+}

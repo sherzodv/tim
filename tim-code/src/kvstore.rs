@@ -63,13 +63,13 @@ impl KvStore {
         let cf = get_cf(&self.db, F_DATA)?;
 
         let mut iter = self.db.raw_iterator_cf(&cf);
-        let values = collect_prefixed_values(&mut iter, prefix)?;
+        let entries = collect_prefixed_entries(&mut iter, prefix)?;
 
         let mut result: Vec<V> = Vec::new();
 
-        for bytes in &values {
-            let v = V::decode(bytes.as_slice())?;
-            result.push(v);
+        for bytes in entries {
+            let value = V::decode(bytes.as_slice())?;
+            result.push(value);
         }
 
         Ok(result)
@@ -166,7 +166,7 @@ where
     Ok(last_value)
 }
 
-fn collect_prefixed_values<'a, D>(
+fn collect_prefixed_entries<'a, D>(
     iter: &mut DBRawIteratorWithThreadMode<'a, D>,
     prefix: &[u8],
 ) -> Result<Vec<Vec<u8>>, KvStoreError>

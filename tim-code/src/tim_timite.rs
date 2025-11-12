@@ -41,9 +41,8 @@ impl TimTimite {
         timite_id: u64,
         capabilities: &Vec<Capability>,
     ) -> Result<(), TimTimiteError> {
-        for c in capabilities {
-            self.t_store.store_timite_capability(timite_id, c)?;
-        }
-        Ok(())
+        Ok(self
+            .t_store
+            .store_timite_capabilities(timite_id, capabilities)?)
     }
 }
