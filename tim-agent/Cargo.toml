@@ -28,6 +28,7 @@ uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = { version = "2.0.17" }
+tinytemplate = "1.2"
 
 [build-dependencies]
 tonic-prost-build = "0.14"

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tempfile::{tempdir, TempDir};
+use tempfile::tempdir;
+use tempfile::TempDir;
 use tim_code::tim_api::TimApi;
 use tim_code::tim_capability::TimCapability;
 use tim_code::tim_session::TimSession;
@@ -10,7 +11,7 @@ use tim_code::tim_timite::TimTimite;
 
 pub struct TimApiTestCtx {
     _temp_dir: TempDir,
-    api: TimApi,
+    api: Arc<TimApi>,
 }
 
 impl TimApiTestCtx {
@@ -20,12 +21,12 @@ impl TimApiTestCtx {
         let db_path = db_path.to_string_lossy().to_string();
 
         let storage = Arc::new(TimStorage::new(&db_path)?);
-        let api = TimApi::new(
+        let api = Arc::new(TimApi::new(
             Arc::new(TimSession::new(storage.clone())),
             Arc::new(TimSpace::new()),
             Arc::new(TimTimite::new(storage.clone())?),
             Arc::new(TimCapability::new(storage.clone())?),
-        );
+        ));
 
         Ok(Self {
             _temp_dir: temp_dir,
@@ -33,7 +34,7 @@ impl TimApiTestCtx {
         })
     }
 
-    pub fn api(&self) -> &TimApi {
-        &self.api
+    pub fn api(&self) -> Arc<TimApi> {
+        self.api.clone()
     }
 }

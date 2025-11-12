@@ -5,8 +5,8 @@ pub mod tim_api {
 }
 
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
-use tim_api::{ClientInfo, SendMessageReq, SubscribeToSpaceReq, TrustedRegisterReq};
 pub use tim_api::{space_update::Event, SpaceNewMessage, SpaceUpdate};
+use tim_api::{ClientInfo, SendMessageReq, SubscribeToSpaceReq, TrustedRegisterReq};
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Endpoint;

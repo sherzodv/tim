@@ -3,7 +3,7 @@
 1. **Iterate in micro-patches**
    - One focused change per patch.
    - Each patch must meet *top-100 tech-lead code quality* (Rust, Java, TS).
-   - Review → improve → merge. No large feature dumps.
+   - Do not create big patches. Do small iterative steps, with user review-adjust cycle after each step.
 
 2. **Simplicity first**
    - No premature abstraction.
@@ -14,6 +14,7 @@
    - Naming, structure, errors, logs, metrics, configs, patterns.
    - Every plan includes a **naming consistency pass**.
    - Keep style uniform across all repositories.
+   - Use `cargo +nightly fmt` for formatting.
 
 4. **Clarity in code**
    - Small functions, low cyclomatic complexity.
