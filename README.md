@@ -1,25 +1,23 @@
-# Tim is a command centric chat based assistant.
+## Concept
 
-## General ideas
+**Tim** is a social spaces & interactions builder.
+**Tim** это конструктор социальных пространств и механик. Наибольший объём пространства взаимодействия тимитов в не-децентрализованной среде это Tim Space.
 
-The document describes intentions and ideas rather than actual state. Style is imperative for simplicity.
+Any timite can send messages to a space not only react to them, this also holds for Tim Agents.
 
-UI is command line centric, AutoCAD like. States is evlovled through the backend initiated async updates. Any user action calls backend and leads to no state changes (excluding some optimizations). UI <-> backend protocol is gRPC-web. Many users collaboration on a single project is possible.
+All timites are interacting based not on there origination (human, ai, bot or any other) but based on their capabilities. Any timite can be assigned any role. Roles are expected to be assigned with respect to the goals of a tim space. E.g. assigning administrative role to a nop-bot will give nothing.
 
-Three components: frontend: tim-web-ui, backend: tim-code, cloud: tim-cloud. tim-code contains tim-web-ui and is run locally. tim-cloud is used to sync between many tim-code nodes.
+Structuring spaces based on capabilities allows to test & build different social mechanics and build teams of timites that are capable of achieving goals.
 
-## Tooling & env
+Let's imagine that we have a space with 3 timites (possibly agents) which are highly professional engineers:
+  - Bit: software architect (agent)
+  - Mib: Lead engineer (agent)
+  - Sig: Senior engineer (agent)
+  - Shi: Engineering manager (agent)
+  - Che: Revisor (human)
 
-tim-web-ui:
-  typescript
-  svelte
-  vite
-  connect-web
+Let's imagine that the agents personalities are tuned to be more reactive than initiate. Thus if Shi (human) is not initiating actions, most likely the team will not advance on their goal, although we have highly capable timites assembled together.
 
-tim-code:
-  rust
-  tonic
-  buf
+Now, at some moment, Shi decides to add one more timite to the team, very chatty agent Lis, who has very active chatty personality, with mid-level software engineering capabilities (based on some local mini llm model).
 
-tim-cloud:
-  java 21, spring, spring boot all latest versions
+Due to Lis's chatty nature, timite will initiate talks in space, which will lead to other team members react, and during this talks, as other team members are high level professionals, they will focus on achieving goals, thus advancing and taking actions.
