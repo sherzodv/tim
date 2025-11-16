@@ -1,10 +1,12 @@
 use async_trait::async_trait;
 
+use crate::tim_client::tim_api::CallAbility;
 use crate::tim_client::Event;
 use crate::tim_client::SpaceNewMessage;
 
 use crate::llm::LlmError;
 use crate::tim_client::{TimClient, TimClientConf, TimClientError};
+use tinytemplate::error::Error as TemplateError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -16,6 +18,12 @@ pub enum AgentError {
 
     #[error("tim client error: {0}")]
     TimeClientError(#[from] TimClientError),
+
+    #[error("crawler error: {0}")]
+    Crawler(String),
+
+    #[error("template error: {0}")]
+    Template(#[from] TemplateError),
 }
 
 #[async_trait]
@@ -25,6 +33,10 @@ pub trait Agent: Send {
     }
 
     async fn on_space_message(&mut self, sender_id: u64, content: &str) -> Result<(), AgentError>;
+
+    async fn on_call_ability(&mut self, _call: &CallAbility) -> Result<(), AgentError> {
+        Ok(())
+    }
 }
 
 pub struct AgentRunner {
@@ -51,6 +63,11 @@ impl AgentRunner {
                     agent
                         .on_space_message(message.sender_id, &message.content)
                         .await?;
+                }
+                Some(Event::CallAbility(call)) => {
+                    if call.timite_id == self.client.timite_id() {
+                        agent.on_call_ability(&call).await?;
+                    }
                 }
                 _ => {
                     eprintln!("Unhandled space update: {:?}", upd);

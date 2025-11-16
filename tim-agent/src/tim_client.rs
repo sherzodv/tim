@@ -6,7 +6,11 @@ pub mod tim_api {
 
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
 pub use tim_api::{space_update::Event, SpaceNewMessage, SpaceUpdate};
-use tim_api::{ClientInfo, SendMessageReq, SubscribeToSpaceReq, TrustedRegisterReq};
+use tim_api::{
+    Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, ListAbilitiesReq,
+    SendCallAbilityOutcomeReq, SendMessageReq, SubscribeToSpaceReq, TimiteAbilities,
+    TrustedRegisterReq,
+};
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Endpoint;
@@ -38,6 +42,7 @@ pub enum TimClientError {
 pub struct TimClient {
     client: TimGrpcApiClient<tonic::transport::Channel>,
     token: MetadataValue<Ascii>,
+    timite_id: u64,
 }
 
 impl TimClient {
@@ -58,15 +63,15 @@ impl TimClient {
             .await?
             .into_inner();
 
-        let session_key = connect_res
-            .session
-            .as_ref()
-            .map(|s| s.key.clone())
-            .ok_or(TimClientError::MissingSession)?;
+        let session = connect_res.session.ok_or(TimClientError::MissingSession)?;
 
-        let token = MetadataValue::try_from(session_key)?;
+        let token = MetadataValue::try_from(session.key.clone())?;
 
-        Ok(TimClient { client, token })
+        Ok(TimClient {
+            client,
+            token,
+            timite_id: session.timite_id,
+        })
     }
 
     pub async fn send_message(&mut self, content: &str) -> Result<(), TimClientError> {
@@ -81,6 +86,42 @@ impl TimClient {
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_message(req).await?;
         Ok(())
+    }
+
+    pub async fn declare_abilities(
+        &mut self,
+        abilities: Vec<Ability>,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(DeclareAbilitiesReq { abilities });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.declare_abilities(req).await?;
+        Ok(())
+    }
+
+    pub async fn send_call_ability_outcome(
+        &mut self,
+        outcome: &CallAbilityOutcome,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendCallAbilityOutcomeReq {
+            outcome: Some(outcome.clone()),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_call_ability_outcome(req).await?;
+        Ok(())
+    }
+
+    pub async fn list_abilities(&mut self) -> Result<Vec<TimiteAbilities>, TimClientError> {
+        let mut req = tonic::Request::new(ListAbilitiesReq { timite_id: None });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        let res = self.client.list_abilities(req).await?.into_inner();
+        Ok(res.abilities)
+    }
+
+    pub fn timite_id(&self) -> u64 {
+        self.timite_id
     }
 
     pub async fn subscribe_to_space(

@@ -1,0 +1,2 @@
+Abilities declared in this space:
+{entries}

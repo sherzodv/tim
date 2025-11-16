@@ -1,8 +1,10 @@
 mod agent;
+mod crawler;
 mod llm;
 mod prompt;
 mod tim_client;
 
+use crate::crawler::CrawlerConf;
 use crate::llm::{LlmConf, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
 use crate::prompt::render as render_prompt;
 use crate::tim_client::TimClientConf;
@@ -80,7 +82,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    tokio::try_join!(jarvis, alice)?;
+    let crawler = agent::spawn(
+        TimClientConf {
+            nick: "crawler".to_string(),
+            provider: "crawler:web".to_string(),
+            endpoint: "http://127.0.0.1:8787".to_string(),
+        },
+        CrawlerConf::default(),
+    );
+
+    tokio::try_join!(jarvis, alice, crawler)?;
 
     Ok(())
 }
