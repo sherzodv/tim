@@ -36,3 +36,5 @@ This looks like at least multi-step process:
   - llm is asked to prepare a _prompt to create a reminiscence_ based on Tim Agent Focus and some global space goals descriptions.
   - llm is given the prompt and the whole history to create the focused reminiscence.
   - focused reminiscence is used as a sys-prompt to each space message delivered to the tim agent.
+
+  Given that we have multiple types of memory snapshots (e.g. emotional tone, factological, timeline etc.) we now can do meta-memory snapshot, that has tag:description pairs of these snapshots, and let agent decide which snapshot to load and use as a context: context of contexts.

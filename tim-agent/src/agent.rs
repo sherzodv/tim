@@ -3,9 +3,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::time::{interval_at, Instant};
 
-use crate::tim_client::tim_api::CallAbility;
-use crate::tim_client::Event;
-use crate::tim_client::SpaceNewMessage;
 use crate::tim_client::SpaceUpdate;
 
 use crate::tim_client::{TimClient, TimClientConf, TimClientError};
@@ -37,11 +34,7 @@ pub trait Agent: Send {
         Ok(())
     }
 
-    async fn on_space_message(&mut self, sender_id: u64, content: &str) -> Result<(), AgentError>;
-
-    async fn on_call_ability(&mut self, _call: &CallAbility) -> Result<(), AgentError> {
-        Ok(())
-    }
+    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError>;
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
         Ok(())
@@ -83,7 +76,7 @@ impl AgentRunner {
                     let Some(update) = maybe_update else {
                         break;
                     };
-                    self.handle_space_update(&mut agent, update).await?;
+                    agent.on_space_update(&update).await?;
                 }
                 _ = live_timer.tick() => {
                     agent.on_live().await?;
@@ -91,33 +84,6 @@ impl AgentRunner {
             }
         }
 
-        Ok(())
-    }
-}
-
-impl AgentRunner {
-    async fn handle_space_update<A: Agent>(
-        &self,
-        agent: &mut A,
-        upd: SpaceUpdate,
-    ) -> Result<(), AgentError> {
-        match upd.event {
-            Some(Event::SpaceNewMessage(SpaceNewMessage {
-                message: Some(message),
-            })) => {
-                agent
-                    .on_space_message(message.sender_id, &message.content)
-                    .await?;
-            }
-            Some(Event::CallAbility(call)) => {
-                if call.timite_id == self.client.timite_id() {
-                    agent.on_call_ability(&call).await?;
-                }
-            }
-            _ => {
-                eprintln!("Unhandled space update: {:?}", upd);
-            }
-        }
         Ok(())
     }
 }

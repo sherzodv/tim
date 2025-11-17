@@ -4,6 +4,7 @@ use reqwest::Client;
 use crate::agent::{Agent, AgentBuilder, AgentError};
 use crate::tim_client::tim_api::{Ability, CallAbility, CallAbilityOutcome};
 use crate::tim_client::TimClient;
+use crate::tim_client::{Event, SpaceUpdate};
 
 #[derive(Clone)]
 pub struct CrawlerConf {
@@ -122,6 +123,27 @@ impl WebCrawlerAgent {
         self.client.send_call_ability_outcome(&outcome).await?;
         Ok(())
     }
+
+    async fn handle_call(&mut self, call: &CallAbility) -> Result<(), AgentError> {
+        if call.timite_id != self.client.timite_id() {
+            return Ok(());
+        }
+        if call.name != self.conf.ability_name {
+            return Ok(());
+        }
+        let call_id = call
+            .call_ability_id
+            .ok_or_else(|| AgentError::Crawler("call missing identifier".into()))?;
+        let payload = call.payload.trim().to_string();
+        if payload.is_empty() {
+            self.respond_outcome(call_id, Err("payload must be a URL".into()))
+                .await?;
+            return Ok(());
+        }
+        let result = self.crawl(&payload).await;
+        self.respond_outcome(call_id, result).await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -136,29 +158,10 @@ impl Agent for WebCrawlerAgent {
         Ok(())
     }
 
-    async fn on_space_message(
-        &mut self,
-        _sender_id: u64,
-        _content: &str,
-    ) -> Result<(), AgentError> {
-        Ok(())
-    }
-
-    async fn on_call_ability(&mut self, call: &CallAbility) -> Result<(), AgentError> {
-        if call.name != self.conf.ability_name {
-            return Ok(());
+    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError> {
+        if let Some(Event::CallAbility(call)) = &update.event {
+            self.handle_call(call).await?;
         }
-        let call_id = call
-            .call_ability_id
-            .ok_or_else(|| AgentError::Crawler("call missing identifier".into()))?;
-        let url = call.payload.trim();
-        if url.is_empty() {
-            self.respond_outcome(call_id, Err("payload must be a URL".into()))
-                .await?;
-            return Ok(());
-        }
-        let result = self.crawl(url).await;
-        self.respond_outcome(call_id, result).await?;
         Ok(())
     }
 }

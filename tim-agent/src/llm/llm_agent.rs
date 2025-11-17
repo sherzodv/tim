@@ -10,6 +10,7 @@ use crate::agent::{Agent, AgentBuilder, AgentError};
 use crate::prompt::render as render_template;
 use crate::tim_client::tim_api::{Ability as SpaceAbility, AbilityParameter, TimiteAbilities};
 use crate::tim_client::TimClient;
+use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
 
 use super::chatgpt::ChatGpt;
 use super::llm::{Llm, LlmReq};
@@ -109,6 +110,20 @@ impl LlmAgent {
         self.push_history(DialogRole::Agent, &reply);
         self.client.send_message(&reply).await?;
         Ok(())
+    }
+
+    async fn handle_peer_message(&mut self, content: String) -> Result<(), AgentError> {
+        if !self.conf.response_delay.is_zero() {
+            sleep(self.conf.response_delay).await;
+        }
+        self.push_history(DialogRole::Peer, &content);
+        let context = self.render_history();
+        let prompt_body = if context.is_empty() {
+            content.trim().to_string()
+        } else {
+            format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
+        };
+        self.reply_with_prompt(prompt_body).await
     }
 
     fn push_history(&mut self, role: DialogRole, content: &str) {
@@ -232,18 +247,16 @@ impl Agent for LlmAgent {
         Ok(())
     }
 
-    async fn on_space_message(&mut self, _sender_id: u64, content: &str) -> Result<(), AgentError> {
-        if !self.conf.response_delay.is_zero() {
-            sleep(self.conf.response_delay).await;
+    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError> {
+        match &update.event {
+            Some(Event::SpaceNewMessage(SpaceNewMessage {
+                message: Some(message),
+            })) => {
+                let content = message.content.clone();
+                self.handle_peer_message(content).await
+            }
+            _ => Ok(()),
         }
-        self.push_history(DialogRole::Peer, content);
-        let context = self.render_history();
-        let prompt_body = if context.is_empty() {
-            content.trim().to_string()
-        } else {
-            format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
-        };
-        self.reply_with_prompt(prompt_body).await
     }
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
