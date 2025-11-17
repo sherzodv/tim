@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -14,6 +13,7 @@ use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
 
 use super::chatgpt::ChatGpt;
 use super::llm::{Llm, LlmReq};
+use super::memory::LlmMemory;
 
 #[derive(Clone)]
 pub struct LlmAgentConf {
@@ -31,18 +31,7 @@ pub struct LlmAgent {
     client: TimClient,
     conf: LlmAgentConf,
     llm: Arc<dyn Llm>,
-    history: VecDeque<DialogTurn>,
-}
-
-#[derive(Clone, Copy)]
-enum DialogRole {
-    Peer,
-    Agent,
-}
-
-struct DialogTurn {
-    role: DialogRole,
-    content: String,
+    memory: LlmMemory,
 }
 
 const SPACE_ABILITIES_TEMPLATE: &str = include_str!("../../prompts/space_abilities.txt");
@@ -77,7 +66,7 @@ impl LlmAgent {
             client,
             conf: conf.clone(),
             llm,
-            history: VecDeque::with_capacity(conf.history_limit),
+            memory: LlmMemory::new(conf.history_limit),
         })
     }
 
@@ -107,7 +96,7 @@ impl LlmAgent {
 
     async fn reply_with_prompt(&mut self, prompt_body: String) -> Result<(), AgentError> {
         let reply = self.respond(&prompt_body).await?;
-        self.push_history(DialogRole::Agent, &reply);
+        let _ = self.memory.push_agent(&reply);
         self.client.send_message(&reply).await?;
         Ok(())
     }
@@ -116,46 +105,14 @@ impl LlmAgent {
         if !self.conf.response_delay.is_zero() {
             sleep(self.conf.response_delay).await;
         }
-        self.push_history(DialogRole::Peer, &content);
-        let context = self.render_history();
-        let prompt_body = if context.is_empty() {
-            content.trim().to_string()
-        } else {
-            format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
+        let _ = self.memory.push_peer(&content);
+        let prompt_body = match self.memory.context() {
+            Some(context) => {
+                format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
+            }
+            None => content.trim().to_string(),
         };
         self.reply_with_prompt(prompt_body).await
-    }
-
-    fn push_history(&mut self, role: DialogRole, content: &str) {
-        let trimmed = content.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        if self.history.len() == self.conf.history_limit {
-            self.history.pop_front();
-        }
-        self.history.push_back(DialogTurn {
-            role,
-            content: trimmed.to_string(),
-        });
-    }
-
-    fn render_history(&self) -> String {
-        if self.history.is_empty() {
-            return String::new();
-        }
-        let mut buf = String::new();
-        for turn in &self.history {
-            let role = match turn.role {
-                DialogRole::Peer => "Peer",
-                DialogRole::Agent => "Agent",
-            };
-            buf.push_str(role);
-            buf.push_str(": ");
-            buf.push_str(&turn.content);
-            buf.push('\n');
-        }
-        buf.trim_end().to_string()
     }
 
     async fn render_space_abilities(&mut self) -> Result<Option<String>, AgentError> {
@@ -260,11 +217,11 @@ impl Agent for LlmAgent {
     }
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
-        let context = self.render_history();
-        let prompt_body = if context.is_empty() {
-            "Start the conversation with a concise, purposeful update.".to_string()
-        } else {
-            format!("Conversation so far:\n{context}\nShare a proactive update even without a new peer message.")
+        let prompt_body = match self.memory.context() {
+            Some(context) => format!(
+                "Conversation so far:\n{context}\nShare a proactive update even without a new peer message."
+            ),
+            None => "Start the conversation with a concise, purposeful update.".to_string(),
         };
         self.reply_with_prompt(prompt_body).await
     }
