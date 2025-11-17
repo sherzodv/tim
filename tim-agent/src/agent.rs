@@ -4,14 +4,13 @@ use crate::tim_client::tim_api::CallAbility;
 use crate::tim_client::Event;
 use crate::tim_client::SpaceNewMessage;
 
-use crate::llm::LlmError;
 use crate::tim_client::{TimClient, TimClientConf, TimClientError};
 use tinytemplate::error::Error as TemplateError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("llm error: {0}")]
-    Llm(#[from] LlmError),
+    Llm(String),
 
     #[error("tim gprc error: {0}")]
     TimGrpc(#[from] tonic::Status),

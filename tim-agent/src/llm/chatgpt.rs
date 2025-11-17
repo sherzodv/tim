@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{Llm, LlmError, LlmReq, LlmRes};
+use super::llm::{Llm, LlmError, LlmReq, LlmRes};
 
 pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
@@ -29,7 +29,7 @@ impl fmt::Debug for ChatGpt {
 }
 
 impl ChatGpt {
-    pub fn new(
+    pub(super) fn new(
         api_key: String,
         endpoint: String,
         model: String,
