@@ -16,7 +16,6 @@ use super::llm::{Llm, LlmReq};
 
 #[derive(Clone)]
 pub struct LlmAgentConf {
-    pub initial_msg: Option<String>,
     pub userp: String,
     pub history_limit: usize,
     pub response_delay: Duration,
@@ -24,6 +23,7 @@ pub struct LlmAgentConf {
     pub endpoint: String,
     pub model: String,
     pub temperature: f32,
+    pub live_interval: Duration,
 }
 
 pub struct LlmAgent {
@@ -102,6 +102,13 @@ impl LlmAgent {
             "Received LLM chat response"
         );
         Ok(answer.message)
+    }
+
+    async fn reply_with_prompt(&mut self, prompt_body: String) -> Result<(), AgentError> {
+        let reply = self.respond(&prompt_body).await?;
+        self.push_history(DialogRole::Agent, &reply);
+        self.client.send_message(&reply).await?;
+        Ok(())
     }
 
     fn push_history(&mut self, role: DialogRole, content: &str) {
@@ -215,9 +222,6 @@ impl LlmAgent {
 #[async_trait]
 impl Agent for LlmAgent {
     async fn on_start(&mut self) -> Result<(), AgentError> {
-        if let Some(initial) = self.conf.initial_msg.take() {
-            self.client.send_message(&initial).await?;
-        }
         if let Some(abilities) = self.render_space_abilities().await? {
             debug!(
                 target: "tim_agent::llm",
@@ -239,10 +243,21 @@ impl Agent for LlmAgent {
         } else {
             format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
         };
-        let reply = self.respond(&prompt_body).await?;
-        self.push_history(DialogRole::Agent, &reply);
-        self.client.send_message(&reply).await?;
-        Ok(())
+        self.reply_with_prompt(prompt_body).await
+    }
+
+    async fn on_live(&mut self) -> Result<(), AgentError> {
+        let context = self.render_history();
+        let prompt_body = if context.is_empty() {
+            "Start the conversation with a concise, purposeful update.".to_string()
+        } else {
+            format!("Conversation so far:\n{context}\nShare a proactive update even without a new peer message.")
+        };
+        self.reply_with_prompt(prompt_body).await
+    }
+
+    fn live_interval(&self) -> Duration {
+        self.conf.live_interval
     }
 }
 

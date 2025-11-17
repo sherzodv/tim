@@ -12,6 +12,8 @@ use std::time::Duration;
 
 const JARVIS_USERP: &str = include_str!("../prompts/jarvis_userp.md");
 const ALICE_USERP: &str = include_str!("../prompts/alice_userp.md");
+const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(30);
+const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(45);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +30,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint: "http://127.0.0.1:8787".to_string(),
         },
         LlmAgentConf {
-            initial_msg: Some("Morning Alice, status update?".to_string()),
             userp: JARVIS_USERP.to_string(),
             history_limit: 12,
             response_delay: Duration::from_millis(900),
@@ -36,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint: endpoint.clone(),
             model: env::var("OPENAI_JARVIS_MODEL").unwrap_or_else(|_| default_model.clone()),
             temperature: 0.8,
+            live_interval: JARVIS_LIVE_INTERVAL,
         },
     );
 
@@ -46,7 +48,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint: "http://127.0.0.1:8787".to_string(),
         },
         LlmAgentConf {
-            initial_msg: Some("Jarvis, I can take the next task, thoughts?".to_string()),
             userp: ALICE_USERP.to_string(),
             history_limit: 10,
             response_delay: Duration::from_millis(1100),
@@ -54,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint,
             model: env::var("OPENAI_ALICE_MODEL").unwrap_or_else(|_| default_model),
             temperature: 0.6,
+            live_interval: ALICE_LIVE_INTERVAL,
         },
     );
 

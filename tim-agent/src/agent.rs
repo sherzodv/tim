@@ -1,11 +1,17 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
+use tokio::time::{interval_at, Instant};
 
 use crate::tim_client::tim_api::CallAbility;
 use crate::tim_client::Event;
 use crate::tim_client::SpaceNewMessage;
+use crate::tim_client::SpaceUpdate;
 
 use crate::tim_client::{TimClient, TimClientConf, TimClientError};
 use tinytemplate::error::Error as TemplateError;
+
+const MIN_LIVE_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -36,6 +42,14 @@ pub trait Agent: Send {
     async fn on_call_ability(&mut self, _call: &CallAbility) -> Result<(), AgentError> {
         Ok(())
     }
+
+    async fn on_live(&mut self) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    fn live_interval(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 pub struct AgentRunner {
@@ -54,26 +68,56 @@ impl AgentRunner {
 
         agent.on_start().await?;
 
-        while let Some(upd) = stream.message().await? {
-            match upd.event {
-                Some(Event::SpaceNewMessage(SpaceNewMessage {
-                    message: Some(message),
-                })) => {
-                    agent
-                        .on_space_message(message.sender_id, &message.content)
-                        .await?;
+        let live_period = agent.live_interval();
+        let safe_period = if live_period.is_zero() {
+            MIN_LIVE_INTERVAL
+        } else {
+            live_period
+        };
+        let mut live_timer = interval_at(Instant::now() + safe_period, safe_period);
+
+        loop {
+            tokio::select! {
+                maybe_update = stream.message() => {
+                    let maybe_update = maybe_update?;
+                    let Some(update) = maybe_update else {
+                        break;
+                    };
+                    self.handle_space_update(&mut agent, update).await?;
                 }
-                Some(Event::CallAbility(call)) => {
-                    if call.timite_id == self.client.timite_id() {
-                        agent.on_call_ability(&call).await?;
-                    }
-                }
-                _ => {
-                    eprintln!("Unhandled space update: {:?}", upd);
+                _ = live_timer.tick() => {
+                    agent.on_live().await?;
                 }
             }
         }
 
+        Ok(())
+    }
+}
+
+impl AgentRunner {
+    async fn handle_space_update<A: Agent>(
+        &self,
+        agent: &mut A,
+        upd: SpaceUpdate,
+    ) -> Result<(), AgentError> {
+        match upd.event {
+            Some(Event::SpaceNewMessage(SpaceNewMessage {
+                message: Some(message),
+            })) => {
+                agent
+                    .on_space_message(message.sender_id, &message.content)
+                    .await?;
+            }
+            Some(Event::CallAbility(call)) => {
+                if call.timite_id == self.client.timite_id() {
+                    agent.on_call_ability(&call).await?;
+                }
+            }
+            _ => {
+                eprintln!("Unhandled space update: {:?}", upd);
+            }
+        }
         Ok(())
     }
 }
