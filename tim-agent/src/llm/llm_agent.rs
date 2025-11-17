@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::Serialize;
 use tokio::time::{sleep, Duration};
-use tracing::debug;
 
 use crate::agent::{Agent, AgentBuilder, AgentError};
-use crate::prompt::render as render_template;
-use crate::tim_client::tim_api::{Ability as SpaceAbility, AbilityParameter, TimiteAbilities};
 use crate::tim_client::TimClient;
 use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
 
+use super::ability;
 use super::chatgpt::ChatGpt;
 use super::llm::{Llm, LlmReq};
 use super::memory::LlmMemory;
@@ -34,22 +31,7 @@ pub struct LlmAgent {
     memory: LlmMemory,
 }
 
-const SPACE_ABILITIES_TEMPLATE: &str = include_str!("../../prompts/space_abilities.txt");
-const SPACE_ABILITY_ENTRY_TEMPLATE: &str = include_str!("../../prompts/space_ability_entry.txt");
 const TIM_SYSTEM_PROMPT: &str = include_str!("../../prompts/tim-sys.md");
-
-#[derive(Serialize)]
-struct AbilityEntryTemplateCtx {
-    owner: String,
-    name: String,
-    description: String,
-    params: String,
-}
-
-#[derive(Serialize)]
-struct SpaceAbilitiesTemplateCtx<'a> {
-    entries: &'a str,
-}
 
 impl LlmAgent {
     pub fn new(conf: &LlmAgentConf, client: TimClient) -> Result<Self, AgentError> {
@@ -70,34 +52,19 @@ impl LlmAgent {
         })
     }
 
-    async fn respond(&self, prompt: &str) -> Result<String, AgentError> {
+    async fn reply_with_prompt(&mut self, prompt_body: String) -> Result<(), AgentError> {
         let req = LlmReq {
             sysp: TIM_SYSTEM_PROMPT,
             userp: &self.conf.userp,
-            msg: prompt,
+            msg: &prompt_body,
         };
-        debug!(
-            target: "tim_agent::llm",
-            prompt = prompt,
-            "Dispatching LLM chat request"
-        );
         let answer = self
             .llm
             .chat(&req)
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
-        debug!(
-            target: "tim_agent::llm",
-            response = answer.message.as_str(),
-            "Received LLM chat response"
-        );
-        Ok(answer.message)
-    }
-
-    async fn reply_with_prompt(&mut self, prompt_body: String) -> Result<(), AgentError> {
-        let reply = self.respond(&prompt_body).await?;
-        let _ = self.memory.push_agent(&reply);
-        self.client.send_message(&reply).await?;
+        let _ = self.memory.push_agent(&answer.message);
+        self.client.send_message(&answer.message).await?;
         Ok(())
     }
 
@@ -117,90 +84,14 @@ impl LlmAgent {
 
     async fn render_space_abilities(&mut self) -> Result<Option<String>, AgentError> {
         let abilities = self.client.list_abilities().await?;
-        let mut entries = Vec::new();
-        for envelope in &abilities {
-            let owner = Self::ability_owner(envelope);
-            for ability in &envelope.abilities {
-                if let Some(ctx) = Self::ability_entry_ctx(&owner, ability) {
-                    entries.push(render_template(SPACE_ABILITY_ENTRY_TEMPLATE, &ctx)?);
-                }
-            }
-        }
-        if entries.is_empty() {
-            return Ok(None);
-        }
-        let block = entries.join("\n");
-        let ctx = SpaceAbilitiesTemplateCtx {
-            entries: block.trim(),
-        };
-        let rendered = render_template(SPACE_ABILITIES_TEMPLATE, &ctx)?;
-        Ok(Some(rendered))
-    }
-
-    fn ability_owner(envelope: &TimiteAbilities) -> String {
-        envelope
-            .timite
-            .as_ref()
-            .map(|timite| {
-                let nick = timite.nick.trim();
-                if nick.is_empty() {
-                    format!("timite#{}", timite.id)
-                } else {
-                    nick.to_string()
-                }
-            })
-            .unwrap_or_else(|| "unknown".to_string())
-    }
-
-    fn ability_entry_ctx(owner: &str, ability: &SpaceAbility) -> Option<AbilityEntryTemplateCtx> {
-        let name = ability.name.trim();
-        if name.is_empty() {
-            return None;
-        }
-        let description = ability.description.trim();
-        Some(AbilityEntryTemplateCtx {
-            owner: owner.to_string(),
-            name: name.to_string(),
-            description: if description.is_empty() {
-                "no description provided".to_string()
-            } else {
-                description.to_string()
-            },
-            params: Self::format_params(&ability.params),
-        })
-    }
-
-    fn format_params(params: &[AbilityParameter]) -> String {
-        if params.is_empty() {
-            return "none".to_string();
-        }
-        params
-            .iter()
-            .map(|param| {
-                let name = param.name.trim();
-                let desc = param.description.trim();
-                match (name.is_empty(), desc.is_empty()) {
-                    (true, true) => "value".to_string(),
-                    (true, false) => desc.to_string(),
-                    (false, true) => name.to_string(),
-                    (false, false) => format!("{name} ({desc})"),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+        ability::render_space_abilities(&abilities).map_err(AgentError::from)
     }
 }
 
 #[async_trait]
 impl Agent for LlmAgent {
     async fn on_start(&mut self) -> Result<(), AgentError> {
-        if let Some(abilities) = self.render_space_abilities().await? {
-            debug!(
-                target: "tim_agent::llm",
-                abilities = abilities.as_str(),
-                "Fetched space abilities"
-            );
-        }
+        let _ = self.render_space_abilities().await?;
         Ok(())
     }
 

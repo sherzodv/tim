@@ -1,3 +1,4 @@
+mod ability;
 pub mod chatgpt;
 mod llm;
 pub mod llm_agent;
