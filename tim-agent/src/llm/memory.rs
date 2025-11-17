@@ -3,38 +3,38 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 #[derive(Debug)]
-pub(super) enum LlmMemoryItem {
+pub(super) enum MemoryItem {
     Peer(String),
     Agent(String),
 }
 
-impl LlmMemoryItem {
+impl MemoryItem {
     fn role(&self) -> &'static str {
         match self {
-            LlmMemoryItem::Peer(_) => "Peer",
-            LlmMemoryItem::Agent(_) => "Agent",
+            MemoryItem::Peer(_) => "Peer",
+            MemoryItem::Agent(_) => "Agent",
         }
     }
 
     fn content(&self) -> &str {
         match self {
-            LlmMemoryItem::Peer(content) | LlmMemoryItem::Agent(content) => content,
+            MemoryItem::Peer(content) | MemoryItem::Agent(content) => content,
         }
     }
 }
 
-pub(super) struct LlmMemory {
+pub(super) struct Memory {
     limit: usize,
-    items: VecDeque<LlmMemoryItem>,
+    items: VecDeque<MemoryItem>,
 }
 
 #[derive(Debug, Error)]
-pub(super) enum LlmMemoryError {
+pub(super) enum MemoryError {
     #[error("memory entry is empty")]
     EmptyEntry,
 }
 
-impl LlmMemory {
+impl Memory {
     pub(super) fn new(limit: usize) -> Self {
         Self {
             limit,
@@ -42,13 +42,13 @@ impl LlmMemory {
         }
     }
 
-    pub(super) fn push_peer(&mut self, content: &str) -> Result<(), LlmMemoryError> {
-        self.push(LlmMemoryItem::Peer(Self::normalize(content)?));
+    pub(super) fn push_peer(&mut self, content: &str) -> Result<(), MemoryError> {
+        self.push(MemoryItem::Peer(Self::normalize(content)?));
         Ok(())
     }
 
-    pub(super) fn push_agent(&mut self, content: &str) -> Result<(), LlmMemoryError> {
-        self.push(LlmMemoryItem::Agent(Self::normalize(content)?));
+    pub(super) fn push_agent(&mut self, content: &str) -> Result<(), MemoryError> {
+        self.push(MemoryItem::Agent(Self::normalize(content)?));
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl LlmMemory {
         Some(buf.trim_end().to_string())
     }
 
-    fn push(&mut self, entry: LlmMemoryItem) {
+    fn push(&mut self, entry: MemoryItem) {
         if self.limit == 0 {
             return;
         }
@@ -76,10 +76,10 @@ impl LlmMemory {
         self.items.push_back(entry);
     }
 
-    fn normalize(raw: &str) -> Result<String, LlmMemoryError> {
+    fn normalize(raw: &str) -> Result<String, MemoryError> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
-            return Err(LlmMemoryError::EmptyEntry);
+            return Err(MemoryError::EmptyEntry);
         }
         Ok(trimmed.to_string())
     }

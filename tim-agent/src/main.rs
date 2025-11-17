@@ -5,7 +5,7 @@ mod prompt;
 mod tim_client;
 
 use crate::crawler::CrawlerConf;
-use crate::llm::{LlmAgentConf, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
+use crate::llm::{AgentConf, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
 use crate::tim_client::TimClientConf;
 use std::env;
 use std::time::Duration;
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             provider: "openai:jarvis".to_string(),
             endpoint: "http://127.0.0.1:8787".to_string(),
         },
-        LlmAgentConf {
+        AgentConf {
             userp: JARVIS_USERP.to_string(),
             history_limit: 12,
             response_delay: Duration::from_millis(900),
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             provider: "openai:alice".to_string(),
             endpoint: "http://127.0.0.1:8787".to_string(),
         },
-        LlmAgentConf {
+        AgentConf {
             userp: ALICE_USERP.to_string(),
             history_limit: 10,
             response_delay: Duration::from_millis(1100),

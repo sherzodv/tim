@@ -3,17 +3,17 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::time::{sleep, Duration};
 
-use crate::agent::{Agent, AgentBuilder, AgentError};
+use crate::agent::{Agent as AgentTrait, AgentBuilder, AgentError};
 use crate::tim_client::TimClient;
 use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
 
 use super::ability;
 use super::chatgpt::ChatGpt;
 use super::llm::{Llm, LlmReq};
-use super::memory::LlmMemory;
+use super::memory::Memory;
 
 #[derive(Clone)]
-pub struct LlmAgentConf {
+pub struct AgentConf {
     pub userp: String,
     pub history_limit: usize,
     pub response_delay: Duration,
@@ -24,17 +24,17 @@ pub struct LlmAgentConf {
     pub live_interval: Duration,
 }
 
-pub struct LlmAgent {
+pub struct Agent {
     client: TimClient,
-    conf: LlmAgentConf,
+    conf: AgentConf,
     llm: Arc<dyn Llm>,
-    memory: LlmMemory,
+    memory: Memory,
 }
 
 const TIM_SYSTEM_PROMPT: &str = include_str!("../../prompts/tim-sys.md");
 
-impl LlmAgent {
-    pub fn new(conf: &LlmAgentConf, client: TimClient) -> Result<Self, AgentError> {
+impl Agent {
+    pub fn new(conf: &AgentConf, client: TimClient) -> Result<Self, AgentError> {
         let llm: Arc<dyn Llm> = Arc::new(
             ChatGpt::new(
                 conf.api_key.clone(),
@@ -48,7 +48,7 @@ impl LlmAgent {
             client,
             conf: conf.clone(),
             llm,
-            memory: LlmMemory::new(conf.history_limit),
+            memory: Memory::new(conf.history_limit),
         })
     }
 
@@ -89,7 +89,7 @@ impl LlmAgent {
 }
 
 #[async_trait]
-impl Agent for LlmAgent {
+impl AgentTrait for Agent {
     async fn on_start(&mut self) -> Result<(), AgentError> {
         let _ = self.render_space_abilities().await?;
         Ok(())
@@ -122,10 +122,10 @@ impl Agent for LlmAgent {
     }
 }
 
-impl AgentBuilder for LlmAgentConf {
-    type A = LlmAgent;
+impl AgentBuilder for AgentConf {
+    type A = Agent;
 
     fn build(&self, client: TimClient) -> Result<Self::A, AgentError> {
-        LlmAgent::new(self, client)
+        Agent::new(self, client)
     }
 }
