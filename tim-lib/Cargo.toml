@@ -1,0 +1,13 @@
+[package]
+name = "tim-lib"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "tim_lib"
+path = "src/lib.rs"
+
+[dependencies]
+prost = "0.14"
+rocksdb = "0.22"
+thiserror = "2"

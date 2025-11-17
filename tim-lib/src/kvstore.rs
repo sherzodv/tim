@@ -36,7 +36,6 @@ impl KvStore {
         Ok(KvStore { db: Arc::new(db) })
     }
 
-    // Fetches value with max lexicographic key having given prefix `prefix`
     pub fn fetch_max_data<V: Message + Default>(
         &self,
         prefix: &[u8],
@@ -45,7 +44,6 @@ impl KvStore {
         self.fetch_max_prefixed_value::<V>(cf, prefix)
     }
 
-    // Fetches all values with the given prefix `prefix`
     pub fn fetch_all_data<V: Message + Default>(
         &self,
         prefix: &[u8],

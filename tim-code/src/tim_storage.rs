@@ -3,9 +3,8 @@ use crate::api::CallAbility;
 use crate::api::Session;
 use crate::api::Timite;
 use crate::api::TimiteAbilities;
-use crate::kvstore::KvStore;
-use crate::kvstore::KvStoreError;
 use crate::storage::StoredTimiteAbilities;
+use tim_lib::kvstore::{KvStore, KvStoreError};
 
 mod key {
     pub fn timite_prefix() -> Vec<u8> {

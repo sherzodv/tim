@@ -1631,11 +1631,11 @@ dependencies = [
  "prost-types",
  "rand 0.8.5",
  "reqwest",
- "rocksdb",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tim-lib",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1647,6 +1647,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "tim-lib"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "rocksdb",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
