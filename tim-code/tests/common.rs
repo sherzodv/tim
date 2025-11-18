@@ -22,7 +22,7 @@ impl TimApiTestCtx {
 
         let storage = Arc::new(TimStorage::new(&db_path)?);
         let session = Arc::new(TimSession::new(storage.clone()));
-        let space = Arc::new(TimSpace::new());
+        let space = Arc::new(TimSpace::new(storage.clone()));
         let timite = Arc::new(TimTimite::new(storage.clone())?);
         let ability = Arc::new(TimAbility::new(storage.clone(), space.clone())?);
         let api = Arc::new(TimApi::new(session, space, timite, ability));

@@ -10,6 +10,8 @@ use tonic::Status;
 use crate::api::tim_grpc_api_server::TimGrpcApi;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
+use crate::api::GetTimelineReq;
+use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
 use crate::api::ListAbilitiesRes;
 use crate::api::SendCallAbilityOutcomeReq;
@@ -80,6 +82,18 @@ impl TimGrpcApi for TimGrpcApiService {
     ) -> Result<Response<ListAbilitiesRes>, Status> {
         self.require_session(&req)?;
         let res = self.api.list_abilities().await.map(|r| Response::new(r));
+        res.map_err(|e| Status::ok(e.to_string()))
+    }
+
+    async fn get_timeline(
+        &self,
+        req: Request<GetTimelineReq>,
+    ) -> Result<Response<GetTimelineRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .get_timeline(&req.into_inner(), &session)
+            .map(Response::new);
         res.map_err(|e| Status::ok(e.to_string()))
     }
 

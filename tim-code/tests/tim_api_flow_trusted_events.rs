@@ -20,7 +20,7 @@ fn client_info() -> ClientInfo {
 }
 
 #[tokio::test]
-async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> {
+async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = TimApiTestCtx::new()?;
     let api = ctx.api();
 
@@ -71,7 +71,7 @@ async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> 
         .session
         .expect("missing beta session");
 
-    let mut beta_updates = api.subscribe(
+    let mut beta_events = api.subscribe(
         &SubscribeToSpaceReq {
             receive_own_messages: false,
         },
@@ -92,15 +92,15 @@ async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> 
         "send_message should not include an error"
     );
 
-    let update = timeout(Duration::from_secs(1), beta_updates.recv())
+    let event = timeout(Duration::from_secs(1), beta_events.recv())
         .await?
-        .expect("beta subscriber should receive an update");
+        .expect("beta subscriber should receive an event");
 
-    let message = match update.data {
+    let message = match event.data {
         Some(space_event::Data::EventNewMessage(event)) => {
-            event.message.expect("space update missing message")
+            event.message.expect("space event missing message")
         }
-        _ => panic!("unexpected update event {:?}", update.data),
+        _ => panic!("unexpected event event {:?}", event.data),
     };
 
     assert_eq!(message.content, content);

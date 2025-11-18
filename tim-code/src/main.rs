@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let storage_svc = Arc::new(TimStorage::new(&data_dir)?);
     let session_svc = Arc::new(TimSession::new(storage_svc.clone()));
-    let space_svc = Arc::new(TimSpace::new());
+    let space_svc = Arc::new(TimSpace::new(storage_svc.clone()));
     let timite_svc = Arc::new(TimTimite::new(storage_svc.clone())?);
     let ability_svc = Arc::new(TimAbility::new(storage_svc.clone(), space_svc.clone())?);
 

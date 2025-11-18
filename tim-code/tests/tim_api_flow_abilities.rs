@@ -110,7 +110,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     )
     .await?;
 
-    let mut alpha_updates = api.subscribe(
+    let mut alpha_events = api.subscribe(
         &SubscribeToSpaceReq {
             receive_own_messages: false,
         },
@@ -149,21 +149,21 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         "call ability ids should be positive integers"
     );
 
-    let alpha_call_update = timeout(Duration::from_secs(1), alpha_updates.recv())
+    let alpha_call_event = timeout(Duration::from_secs(1), alpha_events.recv())
         .await?
-        .expect("alpha should receive call ability update");
+        .expect("alpha should receive call ability event");
 
-    let call_event = match alpha_call_update.data {
+    let call_event = match alpha_call_event.data {
         Some(space_event::Data::EventCallAbility(event)) => {
             event.call_ability.expect("missing call ability payload")
         }
-        other => panic!("unexpected alpha update event: {:?}", other),
+        other => panic!("unexpected alpha event event: {:?}", other),
     };
 
     assert_eq!(
         call_event.call_ability_id,
         Some(call_ability_id),
-        "call ability update should carry the stored id"
+        "call ability event should carry the stored id"
     );
     assert_eq!(
         call_event.timite_id, alpha_session.timite_id,
@@ -176,7 +176,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     assert_eq!(call_event.name, ability_name);
     assert_eq!(call_event.payload, ability_payload);
 
-    let mut beta_updates = api.subscribe(
+    let mut beta_events = api.subscribe(
         &SubscribeToSpaceReq {
             receive_own_messages: false,
         },
@@ -196,15 +196,15 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     )
     .await?;
 
-    let beta_outcome_update = timeout(Duration::from_secs(1), beta_updates.recv())
+    let beta_outcome_event = timeout(Duration::from_secs(1), beta_events.recv())
         .await?
         .expect("beta should receive call ability outcome");
 
-    let outcome_event = match beta_outcome_update.data {
+    let outcome_event = match beta_outcome_event.data {
         Some(space_event::Data::EventCallAbilityOutcome(event)) => event
             .call_ability_outcome
             .expect("missing call ability outcome payload"),
-        other => panic!("unexpected beta update event: {:?}", other),
+        other => panic!("unexpected beta event event: {:?}", other),
     };
 
     assert_eq!(

@@ -5,6 +5,8 @@ use tracing::debug;
 
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
+use crate::api::GetTimelineReq;
+use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesRes;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendCallAbilityOutcomeRes;
@@ -149,6 +151,19 @@ impl TimApi {
         session: &Session,
     ) -> mpsc::Receiver<SpaceEvent> {
         self.t_space.subscribe(req, &session)
+    }
+
+    pub fn get_timeline(
+        &self,
+        req: &GetTimelineReq,
+        _session: &Session,
+    ) -> Result<GetTimelineRes, TimApiError> {
+        let events = self.t_space.timeline(req.offset, req.size)?;
+        Ok(GetTimelineRes {
+            offset: req.offset,
+            size: req.size,
+            events,
+        })
     }
 
     pub async fn send_call_ability(

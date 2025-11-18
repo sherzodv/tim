@@ -4,6 +4,7 @@ use tim_lib::kvstore::KvStoreError;
 use crate::api::Ability;
 use crate::api::CallAbility;
 use crate::api::Session;
+use crate::api::SpaceEvent;
 use crate::api::Timite;
 use crate::api::TimiteAbilities;
 use crate::storage::StoredTimiteAbilities;
@@ -42,12 +43,33 @@ mod key {
         k.extend(id.to_be_bytes());
         k
     }
+
+    pub fn timeline_prefix() -> Vec<u8> {
+        b"ev:".to_vec()
+    }
+
+    pub fn timeline_event(id: u64) -> Vec<u8> {
+        let mut k = timeline_prefix();
+        k.extend(id.to_be_bytes());
+        k
+    }
+
+    pub fn timeline_start(offset: u64) -> Vec<u8> {
+        if offset == 0 {
+            timeline_prefix()
+        } else {
+            timeline_event(offset)
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimStorageError {
     #[error("Store error: {0}")]
     KvStore(#[from] KvStoreError),
+
+    #[error("Timeline error: {0}")]
+    Timeline(String),
 }
 
 pub struct TimStorage {
@@ -157,5 +179,27 @@ impl TimStorage {
             .store
             .fetch_data::<StoredTimiteAbilities>(&key::timite_abilities(timite_id))?;
         Ok(record.map(|entry| entry.abilities).unwrap_or_default())
+    }
+
+    pub fn store_space_event(&self, event: &SpaceEvent) -> Result<(), TimStorageError> {
+        let metadata = event
+            .metadata
+            .as_ref()
+            .ok_or_else(|| TimStorageError::Timeline("space event missing metadata".into()))?;
+        let key = key::timeline_event(metadata.id);
+        self.store.store_log(&key, event)?;
+        Ok(())
+    }
+
+    pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimStorageError> {
+        if size == 0 {
+            return Ok(Vec::new());
+        }
+        let prefix = key::timeline_prefix();
+        let start = key::timeline_start(offset);
+        let events = self
+            .store
+            .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?;
+        Ok(events)
     }
 }

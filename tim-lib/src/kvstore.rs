@@ -124,6 +124,41 @@ impl KvStore {
         Ok(result)
     }
 
+    pub fn fetch_log_range<V: Message + Default>(
+        &self,
+        prefix: &[u8],
+        start: &[u8],
+        limit: usize,
+    ) -> Result<Vec<V>, KvStoreError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let cf = get_cf(&self.db, F_LOG)?;
+        let mut iter = self.db.raw_iterator_cf(&cf);
+        if start.is_empty() {
+            iter.seek(prefix);
+        } else {
+            iter.seek(start);
+        }
+
+        let mut result = Vec::new();
+        while iter.valid() && result.len() < limit {
+            match iter.key() {
+                Some(key) if key.starts_with(prefix) => {
+                    if let Some(value) = iter.value() {
+                        let decoded = V::decode(value)?;
+                        result.push(decoded);
+                    }
+                }
+                _ => break,
+            }
+            iter.next();
+        }
+
+        iter.status()?;
+        Ok(result)
+    }
+
     pub fn store_log<V: Message + Default>(
         &self,
         key: &[u8],

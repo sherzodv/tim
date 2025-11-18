@@ -148,13 +148,28 @@ message SendCallAbilityOutcomeReq {
 message SendCallAbilityOutcomeRes {
 }
 
+message GetTimelineReq {
+  uint64 offset = 1;
+  uint32 size = 2;
+}
+
+message GetTimelineRes {
+  uint64 offset = 1;
+  uint32 size = 2;
+  repeated SpaceEvent events = 3;
+}
+
 service TimGrpcApi {
   rpc TrustedRegister(TrustedRegisterReq) returns (TrustedRegisterRes);
   rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
+
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SendCallAbility(SendCallAbilityReq) returns (SendCallAbilityRes);
   rpc SendCallAbilityOutcome(SendCallAbilityOutcomeReq) returns (SendCallAbilityOutcomeRes);
-  rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceEvent);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
+
   rpc ListAbilities(ListAbilitiesReq) returns (ListAbilitiesRes);
+  rpc GetTimeline(GetTimelineReq) returns (GetTimelineRes);
+
+  rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceEvent);
 }

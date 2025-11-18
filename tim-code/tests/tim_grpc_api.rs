@@ -52,7 +52,7 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         .session
         .expect("missing beta session");
 
-    let mut beta_updates = service
+    let mut beta_events = service
         .subscribe_to_space(request_with_session(
             SubscribeToSpaceReq {
                 receive_own_messages: false,
@@ -76,16 +76,16 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         "send_message should indicate success"
     );
 
-    let update = timeout(Duration::from_secs(1), beta_updates.next())
+    let event = timeout(Duration::from_secs(1), beta_events.next())
         .await
-        .expect("timed out waiting for grpc update")
+        .expect("timed out waiting for grpc event")
         .expect("subscription ended unexpectedly")?;
 
-    let message = match update.data {
+    let message = match event.data {
         Some(space_event::Data::EventNewMessage(event)) => {
-            event.message.expect("space update missing message")
+            event.message.expect("space event missing message")
         }
-        _ => panic!("unexpected update event {:?}", update.data),
+        _ => panic!("unexpected event event {:?}", event.data),
     };
 
     assert_eq!(message.content, "grpc ping");
