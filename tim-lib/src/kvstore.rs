@@ -107,6 +107,23 @@ impl KvStore {
         self.get_value::<V>(cf, key)
     }
 
+    pub fn fetch_all_log<V: Message + Default>(
+        &self,
+        prefix: &[u8],
+    ) -> Result<Vec<V>, KvStoreError> {
+        let cf = get_cf(&self.db, F_LOG)?;
+        let mut iter = self.db.raw_iterator_cf(&cf);
+        let entries = collect_prefixed_entries(&mut iter, prefix)?;
+
+        let mut result = Vec::new();
+        for bytes in entries {
+            let value = V::decode(bytes.as_slice())?;
+            result.push(value);
+        }
+
+        Ok(result)
+    }
+
     pub fn store_log<V: Message + Default>(
         &self,
         key: &[u8],

@@ -1,7 +1,9 @@
+use std::fs;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::time::{sleep, Duration};
+use tracing::warn;
 
 use crate::agent::{Agent as AgentTrait, AgentBuilder, AgentError};
 use crate::tim_client::TimClient;
@@ -44,11 +46,16 @@ impl Agent {
             )
             .map_err(|err| AgentError::Llm(err.to_string()))?,
         );
+        let timite_id = client.timite_id();
+        let storage_path = storage_path_for(timite_id)
+            .map_err(|err| AgentError::Llm(format!("failed to init storage: {err}")))?;
+        let memory = Memory::new(conf.history_limit, &storage_path, timite_id)
+            .map_err(|err| AgentError::Llm(err.to_string()))?;
         Ok(Self {
             client,
             conf: conf.clone(),
             llm,
-            memory: Memory::new(conf.history_limit),
+            memory,
         })
     }
 
@@ -63,7 +70,9 @@ impl Agent {
             .chat(&req)
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
-        let _ = self.memory.push_agent(&answer.message);
+        if let Err(err) = self.memory.push_agent(&answer.message) {
+            warn!("failed to store agent reply: {err}");
+        }
         self.client.send_message(&answer.message).await?;
         Ok(())
     }
@@ -72,7 +81,6 @@ impl Agent {
         if !self.conf.response_delay.is_zero() {
             sleep(self.conf.response_delay).await;
         }
-        let _ = self.memory.push_peer(&content);
         let prompt_body = match self.memory.context() {
             Some(context) => {
                 format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
@@ -96,6 +104,9 @@ impl AgentTrait for Agent {
     }
 
     async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError> {
+        if let Err(err) = self.memory.record_space_update(update) {
+            warn!("failed to persist space update: {err}");
+        }
         match &update.event {
             Some(Event::SpaceNewMessage(SpaceNewMessage {
                 message: Some(message),
@@ -128,4 +139,12 @@ impl AgentBuilder for AgentConf {
     fn build(&self, client: TimClient) -> Result<Self::A, AgentError> {
         Agent::new(self, client)
     }
+}
+
+fn storage_path_for(timite_id: u64) -> Result<String, std::io::Error> {
+    let root = std::env::var("TIM_AGENT_DATA_DIR").unwrap_or_else(|_| "./.tim-agent".to_string());
+    fs::create_dir_all(&root)?;
+    let path = format!("{root}/{timite_id}");
+    fs::create_dir_all(&path)?;
+    Ok(path)
 }

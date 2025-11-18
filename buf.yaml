@@ -2,6 +2,7 @@ version: v2
 modules:
   - path: tim-api
   - path: tim-code
+  - path: tim-agent
 lint:
   use:
     - STANDARD

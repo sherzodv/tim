@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package tim.agent.db.g1;
+
+message TimelineEvent {
+  uint64 timite_id = 1;
+  string header = 2;
+  string content = 3;
+}
