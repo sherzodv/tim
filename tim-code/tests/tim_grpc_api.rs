@@ -81,11 +81,11 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         .expect("timed out waiting for grpc update")
         .expect("subscription ended unexpectedly")?;
 
-    let message = match update.event {
-        Some(space_event::Event::EventNewMessage(event)) => {
+    let message = match update.data {
+        Some(space_event::Data::EventNewMessage(event)) => {
             event.message.expect("space update missing message")
         }
-        _ => panic!("unexpected update event {:?}", update.event),
+        _ => panic!("unexpected update event {:?}", update.data),
     };
 
     assert_eq!(message.content, "grpc ping");

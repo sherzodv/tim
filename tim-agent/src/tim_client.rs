@@ -5,7 +5,7 @@ pub mod tim_api {
 }
 
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
-pub use tim_api::{space_event::Event, EventNewMessage, SpaceEvent};
+pub use tim_api::{space_event::Data as Event, EventNewMessage, SpaceEvent};
 use tim_api::{
     Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, ListAbilitiesReq,
     SendCallAbilityOutcomeReq, SendMessageReq, SubscribeToSpaceReq, TimiteAbilities,

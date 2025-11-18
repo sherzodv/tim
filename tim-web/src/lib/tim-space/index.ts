@@ -31,8 +31,8 @@ export class TimSpace implements TimSpaceHandler {
 	}
 
 	onSpaceUpdate(update: SpaceEvent) {
-		if (update.event?.case !== 'eventNewMessage') return;
-		const message = update.event.value?.message;
+		if (update.data?.case !== 'eventNewMessage') return;
+		const message = update.data.value?.message;
 		if (!message) return;
 		this.append({
 			id: message.id ?? this.nextLocalId(),

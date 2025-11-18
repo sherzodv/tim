@@ -88,7 +88,7 @@ mod key {
 }
 
 pub(super) fn timeline_event_from_update(update: &SpaceEvent) -> Option<TimelineEvent> {
-    match &update.event {
+    match &update.data {
         Some(Event::EventNewMessage(new_message)) => message_event(new_message),
         Some(Event::EventCallAbility(call)) => call.call_ability.as_ref().map(call_event),
         Some(Event::EventCallAbilityOutcome(outcome)) => outcome

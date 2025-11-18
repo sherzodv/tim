@@ -96,11 +96,11 @@ async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> 
         .await?
         .expect("beta subscriber should receive an update");
 
-    let message = match update.event {
-        Some(space_event::Event::EventNewMessage(event)) => {
+    let message = match update.data {
+        Some(space_event::Data::EventNewMessage(event)) => {
             event.message.expect("space update missing message")
         }
-        _ => panic!("unexpected update event {:?}", update.event),
+        _ => panic!("unexpected update event {:?}", update.data),
     };
 
     assert_eq!(message.content, content);

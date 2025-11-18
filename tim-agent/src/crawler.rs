@@ -159,7 +159,7 @@ impl Agent for WebCrawlerAgent {
     }
 
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
-        if let Some(Event::EventCallAbility(call_event)) = &update.event {
+        if let Some(Event::EventCallAbility(call_event)) = &update.data {
             if let Some(call) = call_event.call_ability.as_ref() {
                 self.handle_call(call).await?;
             }

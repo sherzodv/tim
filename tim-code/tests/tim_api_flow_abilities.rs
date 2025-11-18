@@ -153,8 +153,8 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .await?
         .expect("alpha should receive call ability update");
 
-    let call_event = match alpha_call_update.event {
-        Some(space_event::Event::EventCallAbility(event)) => {
+    let call_event = match alpha_call_update.data {
+        Some(space_event::Data::EventCallAbility(event)) => {
             event.call_ability.expect("missing call ability payload")
         }
         other => panic!("unexpected alpha update event: {:?}", other),
@@ -200,8 +200,8 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .await?
         .expect("beta should receive call ability outcome");
 
-    let outcome_event = match beta_outcome_update.event {
-        Some(space_event::Event::EventCallAbilityOutcome(event)) => event
+    let outcome_event = match beta_outcome_update.data {
+        Some(space_event::Data::EventCallAbilityOutcome(event)) => event
             .call_ability_outcome
             .expect("missing call ability outcome payload"),
         other => panic!("unexpected beta update event: {:?}", other),

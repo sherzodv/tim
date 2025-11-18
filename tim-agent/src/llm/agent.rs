@@ -107,7 +107,7 @@ impl AgentTrait for Agent {
         if let Err(err) = self.memory.record_space_update(update) {
             warn!("failed to persist space update: {err}");
         }
-        match &update.event {
+        match &update.data {
             Some(Event::EventNewMessage(EventNewMessage {
                 message: Some(message),
             })) => {

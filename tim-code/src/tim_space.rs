@@ -2,11 +2,15 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::RwLock;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
+use prost_types::Timestamp;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::api::space_event;
+use crate::api::space_event::Data as EventData;
+use crate::api::space_event::Metadata as EventMetadata;
 use crate::api::CallAbility;
 use crate::api::CallAbilityOutcome;
 use crate::api::EventCallAbility;
@@ -50,8 +54,8 @@ fn update_new_message(
     session: &Session,
 ) -> SpaceEvent {
     SpaceEvent {
-        id: upd_id,
-        event: Some(space_event::Event::EventNewMessage(EventNewMessage {
+        metadata: event_metadata(upd_id),
+        data: Some(EventData::EventNewMessage(EventNewMessage {
             message: Some(Message {
                 id: msg_id,
                 sender_id: session.timite_id,
@@ -61,10 +65,10 @@ fn update_new_message(
     }
 }
 
-fn update_call_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceEvent {
+fn update_call_ability_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceEvent {
     SpaceEvent {
-        id: upd_id,
-        event: Some(space_event::Event::EventCallAbilityOutcome(
+        metadata: event_metadata(upd_id),
+        data: Some(EventData::EventCallAbilityOutcome(
             EventCallAbilityOutcome {
                 call_ability_outcome: Some(outcome.clone()),
             },
@@ -74,11 +78,28 @@ fn update_call_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceEvent 
 
 fn update_call_ability(upd_id: u64, call_ability: &CallAbility) -> SpaceEvent {
     SpaceEvent {
-        id: upd_id,
-        event: Some(space_event::Event::EventCallAbility(EventCallAbility {
+        metadata: event_metadata(upd_id),
+        data: Some(EventData::EventCallAbility(EventCallAbility {
             call_ability: Some(call_ability.clone()),
         })),
     }
+}
+
+fn now_timestamp_ms() -> Timestamp {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    Timestamp {
+        seconds: now.as_secs() as i64,
+        nanos: (now.subsec_millis() * 1_000_000) as i32,
+    }
+}
+
+fn event_metadata(upd_id: u64) -> Option<EventMetadata> {
+    Some(EventMetadata {
+        id: upd_id,
+        emitted_at: Some(now_timestamp_ms()),
+    })
 }
 
 impl TimSpace {
@@ -162,7 +183,7 @@ impl TimSpace {
                 continue;
             }
             let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
-            sub.chan.send(update_call_outcome(upd_id, outcome)).await?;
+            sub.chan.send(update_call_ability_outcome(upd_id, outcome)).await?;
         }
 
         Ok(())

@@ -72,8 +72,12 @@ message ListAbilitiesRes {
 }
 
 message SpaceEvent {
-  uint64 id = 1;
-  oneof event {
+  message Metadata {
+    uint64 id = 1;
+    google.protobuf.Timestamp emitted_at = 2;
+  }
+  Metadata metadata = 1;
+  oneof data {
     EventNewMessage event_new_message = 2;
     EventCallAbility event_call_ability = 3;
     EventCallAbilityOutcome event_call_ability_outcome = 4;
