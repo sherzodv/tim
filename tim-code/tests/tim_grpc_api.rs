@@ -3,7 +3,7 @@ mod common;
 use std::time::Duration;
 
 use common::TimApiTestCtx;
-use tim_code::api::space_update;
+use tim_code::api::space_event;
 use tim_code::api::tim_grpc_api_server::TimGrpcApi;
 use tim_code::api::ClientInfo;
 use tim_code::api::SendMessageReq;
@@ -82,7 +82,7 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         .expect("subscription ended unexpectedly")?;
 
     let message = match update.event {
-        Some(space_update::Event::SpaceNewMessage(event)) => {
+        Some(space_event::Event::EventNewMessage(event)) => {
             event.message.expect("space update missing message")
         }
         _ => panic!("unexpected update event {:?}", update.event),

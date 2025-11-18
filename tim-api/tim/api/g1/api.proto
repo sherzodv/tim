@@ -71,19 +71,25 @@ message ListAbilitiesRes {
   repeated TimiteAbilities abilities = 1;
 }
 
-// --[ Updates: Space updates ]--
-
-message SpaceUpdate {
+message SpaceEvent {
   uint64 id = 1;
   oneof event {
-    SpaceNewMessage space_new_message = 2;
-    CallAbility call_ability = 3;
-    CallAbilityOutcome call_ability_outcome = 4;
+    EventNewMessage event_new_message = 2;
+    EventCallAbility event_call_ability = 3;
+    EventCallAbilityOutcome event_call_ability_outcome = 4;
   }
 }
 
-message SpaceNewMessage {
+message EventNewMessage {
   Message message = 1;
+}
+
+message EventCallAbility {
+  CallAbility call_ability = 1;
+}
+
+message EventCallAbilityOutcome {
+  CallAbilityOutcome call_ability_outcome = 1;
 }
 
 // --[ RPC req/res ]--
@@ -144,7 +150,7 @@ service TimGrpcApi {
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SendCallAbility(SendCallAbilityReq) returns (SendCallAbilityRes);
   rpc SendCallAbilityOutcome(SendCallAbilityOutcomeReq) returns (SendCallAbilityOutcomeRes);
-  rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceUpdate);
+  rpc SubscribeToSpace(SubscribeToSpaceReq) returns (stream SpaceEvent);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
   rpc ListAbilities(ListAbilitiesReq) returns (ListAbilitiesRes);
 }

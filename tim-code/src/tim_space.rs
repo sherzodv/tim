@@ -6,15 +6,17 @@ use std::sync::RwLock;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::api::space_update;
+use crate::api::space_event;
 use crate::api::CallAbility;
 use crate::api::CallAbilityOutcome;
+use crate::api::EventCallAbility;
+use crate::api::EventCallAbilityOutcome;
+use crate::api::EventNewMessage;
 use crate::api::Message;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
-use crate::api::SpaceNewMessage;
-use crate::api::SpaceUpdate;
+use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 
 const BUFFER_SIZE: usize = 10;
@@ -25,13 +27,13 @@ pub enum TimSpaceError {
     LockPoisoned(String),
 
     #[error("Send failed: {0}")]
-    ChannelError(#[from] SendError<SpaceUpdate>),
+    ChannelError(#[from] SendError<SpaceEvent>),
 }
 
 #[derive(Debug, Clone)]
 struct Subscriber {
     receive_own_messages: bool,
-    chan: mpsc::Sender<SpaceUpdate>,
+    chan: mpsc::Sender<SpaceEvent>,
     session: Session,
 }
 
@@ -46,10 +48,10 @@ fn update_new_message(
     msg_id: u64,
     req: &SendMessageReq,
     session: &Session,
-) -> SpaceUpdate {
-    SpaceUpdate {
+) -> SpaceEvent {
+    SpaceEvent {
         id: upd_id,
-        event: Some(space_update::Event::SpaceNewMessage(SpaceNewMessage {
+        event: Some(space_event::Event::EventNewMessage(EventNewMessage {
             message: Some(Message {
                 id: msg_id,
                 sender_id: session.timite_id,
@@ -59,17 +61,23 @@ fn update_new_message(
     }
 }
 
-fn update_call_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceUpdate {
-    SpaceUpdate {
+fn update_call_outcome(upd_id: u64, outcome: &CallAbilityOutcome) -> SpaceEvent {
+    SpaceEvent {
         id: upd_id,
-        event: Some(space_update::Event::CallAbilityOutcome(outcome.clone())),
+        event: Some(space_event::Event::EventCallAbilityOutcome(
+            EventCallAbilityOutcome {
+                call_ability_outcome: Some(outcome.clone()),
+            },
+        )),
     }
 }
 
-fn update_call_ability(upd_id: u64, call_ability: &CallAbility) -> SpaceUpdate {
-    SpaceUpdate {
+fn update_call_ability(upd_id: u64, call_ability: &CallAbility) -> SpaceEvent {
+    SpaceEvent {
         id: upd_id,
-        event: Some(space_update::Event::CallAbility(call_ability.clone())),
+        event: Some(space_event::Event::EventCallAbility(EventCallAbility {
+            call_ability: Some(call_ability.clone()),
+        })),
     }
 }
 
@@ -116,7 +124,7 @@ impl TimSpace {
         &self,
         req: &SubscribeToSpaceReq,
         session: &Session,
-    ) -> mpsc::Receiver<SpaceUpdate> {
+    ) -> mpsc::Receiver<SpaceEvent> {
         let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
         let mut guard = self
             .subscribers

@@ -1,4 +1,4 @@
-use crate::tim_client::SpaceUpdate;
+use crate::tim_client::SpaceEvent;
 
 use super::storage::{timeline_event_from_update, Storage, StorageError, TimelineEvent};
 use thiserror::Error;
@@ -31,7 +31,7 @@ impl Memory {
         })
     }
 
-    pub(super) fn record_space_update(&self, update: &SpaceUpdate) -> Result<(), MemoryError> {
+    pub(super) fn record_space_update(&self, update: &SpaceEvent) -> Result<(), MemoryError> {
         if let Some(mut event) = timeline_event_from_update(update) {
             if event.content.trim().is_empty() {
                 return Ok(());

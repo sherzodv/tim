@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::tim_client::tim_api::{CallAbility, CallAbilityOutcome};
-use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
+use crate::tim_client::{Event, EventNewMessage, SpaceEvent};
 use thiserror::Error;
 use tim_lib::kvstore::{KvStore, KvStoreError};
 
@@ -87,16 +87,19 @@ mod key {
     }
 }
 
-pub(super) fn timeline_event_from_update(update: &SpaceUpdate) -> Option<TimelineEvent> {
+pub(super) fn timeline_event_from_update(update: &SpaceEvent) -> Option<TimelineEvent> {
     match &update.event {
-        Some(Event::SpaceNewMessage(new_message)) => message_event(new_message),
-        Some(Event::CallAbility(call)) => Some(call_event(call)),
-        Some(Event::CallAbilityOutcome(outcome)) => Some(call_outcome_event(outcome)),
+        Some(Event::EventNewMessage(new_message)) => message_event(new_message),
+        Some(Event::EventCallAbility(call)) => call.call_ability.as_ref().map(call_event),
+        Some(Event::EventCallAbilityOutcome(outcome)) => outcome
+            .call_ability_outcome
+            .as_ref()
+            .map(call_outcome_event),
         None => None,
     }
 }
 
-fn message_event(event: &SpaceNewMessage) -> Option<TimelineEvent> {
+fn message_event(event: &EventNewMessage) -> Option<TimelineEvent> {
     let message = event.message.as_ref()?;
     let content = message.content.trim();
     if content.is_empty() {

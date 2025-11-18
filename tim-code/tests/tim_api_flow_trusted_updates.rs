@@ -3,7 +3,7 @@ use std::time::Duration;
 mod common;
 
 use common::TimApiTestCtx;
-use tim_code::api::space_update;
+use tim_code::api::space_event;
 use tim_code::api::ClientInfo;
 use tim_code::api::DeclareAbilitiesReq;
 use tim_code::api::SendMessageReq;
@@ -97,7 +97,7 @@ async fn trusted_flow_sends_updates() -> Result<(), Box<dyn std::error::Error>> 
         .expect("beta subscriber should receive an update");
 
     let message = match update.event {
-        Some(space_update::Event::SpaceNewMessage(event)) => {
+        Some(space_event::Event::EventNewMessage(event)) => {
             event.message.expect("space update missing message")
         }
         _ => panic!("unexpected update event {:?}", update.event),

@@ -3,7 +3,7 @@ use std::time::Duration;
 mod common;
 
 use common::TimApiTestCtx;
-use tim_code::api::space_update;
+use tim_code::api::space_event;
 use tim_code::api::Ability;
 use tim_code::api::CallAbility;
 use tim_code::api::CallAbilityOutcome;
@@ -154,7 +154,9 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .expect("alpha should receive call ability update");
 
     let call_event = match alpha_call_update.event {
-        Some(space_update::Event::CallAbility(event)) => event,
+        Some(space_event::Event::EventCallAbility(event)) => {
+            event.call_ability.expect("missing call ability payload")
+        }
         other => panic!("unexpected alpha update event: {:?}", other),
     };
 
@@ -199,7 +201,9 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .expect("beta should receive call ability outcome");
 
     let outcome_event = match beta_outcome_update.event {
-        Some(space_update::Event::CallAbilityOutcome(event)) => event,
+        Some(space_event::Event::EventCallAbilityOutcome(event)) => event
+            .call_ability_outcome
+            .expect("missing call ability outcome payload"),
         other => panic!("unexpected beta update event: {:?}", other),
     };
 

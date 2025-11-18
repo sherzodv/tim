@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::time::{interval_at, Instant};
 
-use crate::tim_client::SpaceUpdate;
+use crate::tim_client::SpaceEvent;
 
 use crate::tim_client::{TimClient, TimClientConf, TimClientError};
 use tinytemplate::error::Error as TemplateError;
@@ -34,7 +34,7 @@ pub trait Agent: Send {
         Ok(())
     }
 
-    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError>;
+    async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError>;
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
         Ok(())

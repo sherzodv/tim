@@ -1,4 +1,4 @@
-import type { SpaceUpdate } from '../../gen/tim/api/g1/api_pb';
+import type { SpaceEvent } from '../../gen/tim/api/g1/api_pb';
 import type { TimClient } from '../tim-client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
 import type { TimSpaceStorage } from './storage';
@@ -30,8 +30,8 @@ export class TimSpace implements TimSpaceHandler {
 		await this.client.sendMessage(content);
 	}
 
-	onSpaceUpdate(update: SpaceUpdate) {
-		if (update.event?.case !== 'spaceNewMessage') return;
+	onSpaceUpdate(update: SpaceEvent) {
+		if (update.event?.case !== 'eventNewMessage') return;
 		const message = update.event.value?.message;
 		if (!message) return;
 		this.append({

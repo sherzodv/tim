@@ -13,7 +13,7 @@ use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
-use crate::api::SpaceUpdate;
+use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
@@ -147,7 +147,7 @@ impl TimApi {
         &self,
         req: &SubscribeToSpaceReq,
         session: &Session,
-    ) -> mpsc::Receiver<SpaceUpdate> {
+    ) -> mpsc::Receiver<SpaceEvent> {
         self.t_space.subscribe(req, &session)
     }
 

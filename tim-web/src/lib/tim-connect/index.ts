@@ -1,11 +1,11 @@
 import { ConnectError, Code } from '@connectrpc/connect';
-import type { SpaceUpdate } from '../../gen/tim/api/g1/api_pb';
+import type { SpaceEvent } from '../../gen/tim/api/g1/api_pb';
 import { type TimClient } from '../tim-client';
 
 export type ChannelPhase = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'stopped';
 
 export type TimSpaceHandler = {
-	onSpaceUpdate(update: SpaceUpdate): void;
+	onSpaceUpdate(update: SpaceEvent): void;
 	onPhaseChange?(phase: ChannelPhase): void;
 };
 

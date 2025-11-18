@@ -4,7 +4,7 @@ use reqwest::Client;
 use crate::agent::{Agent, AgentBuilder, AgentError};
 use crate::tim_client::tim_api::{Ability, CallAbility, CallAbilityOutcome};
 use crate::tim_client::TimClient;
-use crate::tim_client::{Event, SpaceUpdate};
+use crate::tim_client::{Event, SpaceEvent};
 
 #[derive(Clone)]
 pub struct CrawlerConf {
@@ -158,9 +158,11 @@ impl Agent for WebCrawlerAgent {
         Ok(())
     }
 
-    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError> {
-        if let Some(Event::CallAbility(call)) = &update.event {
-            self.handle_call(call).await?;
+    async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
+        if let Some(Event::EventCallAbility(call_event)) = &update.event {
+            if let Some(call) = call_event.call_ability.as_ref() {
+                self.handle_call(call).await?;
+            }
         }
         Ok(())
     }

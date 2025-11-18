@@ -5,7 +5,7 @@ pub mod tim_api {
 }
 
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
-pub use tim_api::{space_update::Event, SpaceNewMessage, SpaceUpdate};
+pub use tim_api::{space_event::Event, EventNewMessage, SpaceEvent};
 use tim_api::{
     Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, ListAbilitiesReq,
     SendCallAbilityOutcomeReq, SendMessageReq, SubscribeToSpaceReq, TimiteAbilities,
@@ -126,7 +126,7 @@ impl TimClient {
 
     pub async fn subscribe_to_space(
         &mut self,
-    ) -> Result<tonic::Streaming<SpaceUpdate>, TimClientError> {
+    ) -> Result<tonic::Streaming<SpaceEvent>, TimClientError> {
         let sub_req = SubscribeToSpaceReq {
             receive_own_messages: false,
         };

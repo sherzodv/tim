@@ -7,7 +7,7 @@ use tracing::warn;
 
 use crate::agent::{Agent as AgentTrait, AgentBuilder, AgentError};
 use crate::tim_client::TimClient;
-use crate::tim_client::{Event, SpaceNewMessage, SpaceUpdate};
+use crate::tim_client::{Event, EventNewMessage, SpaceEvent};
 
 use super::ability;
 use super::chatgpt::ChatGpt;
@@ -103,12 +103,12 @@ impl AgentTrait for Agent {
         Ok(())
     }
 
-    async fn on_space_update(&mut self, update: &SpaceUpdate) -> Result<(), AgentError> {
+    async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
         if let Err(err) = self.memory.record_space_update(update) {
             warn!("failed to persist space update: {err}");
         }
         match &update.event {
-            Some(Event::SpaceNewMessage(SpaceNewMessage {
+            Some(Event::EventNewMessage(EventNewMessage {
                 message: Some(message),
             })) => {
                 let content = message.content.clone();

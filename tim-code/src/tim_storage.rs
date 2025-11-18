@@ -1,10 +1,12 @@
+use tim_lib::kvstore::KvStore;
+use tim_lib::kvstore::KvStoreError;
+
 use crate::api::Ability;
 use crate::api::CallAbility;
 use crate::api::Session;
 use crate::api::Timite;
 use crate::api::TimiteAbilities;
 use crate::storage::StoredTimiteAbilities;
-use tim_lib::kvstore::{KvStore, KvStoreError};
 
 mod key {
     pub fn timite_prefix() -> Vec<u8> {

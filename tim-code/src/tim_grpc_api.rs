@@ -19,7 +19,7 @@ use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::Session;
-use crate::api::SpaceUpdate;
+use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
@@ -35,7 +35,7 @@ pub struct TimGrpcApiService {
 #[tonic::async_trait]
 impl TimGrpcApi for TimGrpcApiService {
     type SubscribeToSpaceStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceUpdate, Status>> + Send>>;
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceEvent, Status>> + Send>>;
 
     async fn trusted_register(
         &self,
@@ -103,7 +103,7 @@ impl TimGrpcApi for TimGrpcApiService {
         let session = self.require_session(&req)?;
         let stream = self.api.subscribe(&req.into_inner(), &session);
         Ok(Response::new(
-            Box::pin(ReceiverStream::new(stream).map(Ok::<SpaceUpdate, Status>))
+            Box::pin(ReceiverStream::new(stream).map(Ok::<SpaceEvent, Status>))
                 as Self::SubscribeToSpaceStream,
         ))
     }
