@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 use tracing::warn;
 
 use crate::agent::{Agent as AgentTrait, AgentBuilder, AgentError};
@@ -16,8 +16,6 @@ use super::memory::Memory;
 #[derive(Clone)]
 pub struct AgentConf {
     pub userp: String,
-    pub history_limit: usize,
-    pub response_delay: Duration,
     pub api_key: String,
     pub endpoint: String,
     pub model: String,
@@ -70,9 +68,6 @@ impl Agent {
     }
 
     async fn handle_peer_message(&mut self, content: String) -> Result<(), AgentError> {
-        if !self.conf.response_delay.is_zero() {
-            sleep(self.conf.response_delay).await;
-        }
         let prompt_body = match self.memory.context().await {
             Ok(Some(context)) => {
                 format!("Conversation so far:\n{context}\nRespond to the latest peer message.")

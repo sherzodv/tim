@@ -31,8 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         AgentConf {
             userp: JARVIS_USERP.to_string(),
-            history_limit: 12,
-            response_delay: Duration::from_millis(900),
             api_key: api_key.clone(),
             endpoint: endpoint.clone(),
             model: env::var("OPENAI_JARVIS_MODEL").unwrap_or_else(|_| default_model.clone()),
@@ -49,8 +47,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         AgentConf {
             userp: ALICE_USERP.to_string(),
-            history_limit: 10,
-            response_delay: Duration::from_millis(1100),
             api_key,
             endpoint,
             model: env::var("OPENAI_ALICE_MODEL").unwrap_or_else(|_| default_model),
