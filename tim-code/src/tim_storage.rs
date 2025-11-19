@@ -53,14 +53,6 @@ mod key {
         k.extend(id.to_be_bytes());
         k
     }
-
-    pub fn timeline_start(offset: u64) -> Vec<u8> {
-        if offset == 0 {
-            timeline_prefix()
-        } else {
-            timeline_event(offset)
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -196,10 +188,25 @@ impl TimStorage {
             return Ok(Vec::new());
         }
         let prefix = key::timeline_prefix();
-        let start = key::timeline_start(offset);
-        let events = self
+        if offset == 0 {
+            let Some(last_event) = self.store.fetch_max_log::<SpaceEvent>(&prefix)? else {
+                return Ok(Vec::new());
+            };
+            let last_id = last_event
+                .metadata
+                .as_ref()
+                .map(|meta| meta.id)
+                .ok_or_else(|| TimStorageError::Timeline("space event missing metadata".into()))?;
+            let span = size.saturating_sub(1) as u64;
+            let start_id = last_id.saturating_sub(span);
+            let start = key::timeline_event(start_id);
+            return Ok(self
+                .store
+                .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?);
+        }
+        let start = key::timeline_event(offset);
+        Ok(self
             .store
-            .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?;
-        Ok(events)
+            .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?)
     }
 }

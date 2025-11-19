@@ -1,4 +1,3 @@
-use std::fs;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -46,11 +45,7 @@ impl Agent {
             )
             .map_err(|err| AgentError::Llm(err.to_string()))?,
         );
-        let timite_id = client.timite_id();
-        let storage_path = storage_path_for(timite_id)
-            .map_err(|err| AgentError::Llm(format!("failed to init storage: {err}")))?;
-        let memory = Memory::new(conf.history_limit, &storage_path, timite_id)
-            .map_err(|err| AgentError::Llm(err.to_string()))?;
+        let memory = Memory::new(client.clone());
         Ok(Self {
             client,
             conf: conf.clone(),
@@ -70,9 +65,6 @@ impl Agent {
             .chat(&req)
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
-        if let Err(err) = self.memory.push_agent(&answer.message) {
-            warn!("failed to store agent reply: {err}");
-        }
         self.client.send_message(&answer.message).await?;
         Ok(())
     }
@@ -81,11 +73,15 @@ impl Agent {
         if !self.conf.response_delay.is_zero() {
             sleep(self.conf.response_delay).await;
         }
-        let prompt_body = match self.memory.context() {
-            Some(context) => {
+        let prompt_body = match self.memory.context().await {
+            Ok(Some(context)) => {
                 format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
             }
-            None => content.trim().to_string(),
+            Ok(None) => content.trim().to_string(),
+            Err(err) => {
+                warn!("failed to load conversation context: {err}");
+                content.trim().to_string()
+            }
         };
         self.reply_with_prompt(prompt_body).await
     }
@@ -104,9 +100,6 @@ impl AgentTrait for Agent {
     }
 
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
-        if let Err(err) = self.memory.record_space_update(update) {
-            warn!("failed to persist space update: {err}");
-        }
         match &update.data {
             Some(Event::EventNewMessage(EventNewMessage {
                 message: Some(message),
@@ -119,11 +112,17 @@ impl AgentTrait for Agent {
     }
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
-        let prompt_body = match self.memory.context() {
-            Some(context) => format!(
+        let prompt_body = match self.memory.context().await {
+            Ok(Some(context)) => format!(
                 "Conversation so far:\n{context}\nShare a proactive update even without a new peer message."
             ),
-            None => "Start the conversation with a concise, purposeful update.".to_string(),
+            Ok(None) => {
+                "Start the conversation with a concise, purposeful update.".to_string()
+            }
+            Err(err) => {
+                warn!("failed to load conversation context: {err}");
+                "Start the conversation with a concise, purposeful update.".to_string()
+            }
         };
         self.reply_with_prompt(prompt_body).await
     }
@@ -139,12 +138,4 @@ impl AgentBuilder for AgentConf {
     fn build(&self, client: TimClient) -> Result<Self::A, AgentError> {
         Agent::new(self, client)
     }
-}
-
-fn storage_path_for(timite_id: u64) -> Result<String, std::io::Error> {
-    let root = std::env::var("TIM_AGENT_DATA_DIR").unwrap_or_else(|_| "./.tim-agent".to_string());
-    fs::create_dir_all(&root)?;
-    let path = format!("{root}/{timite_id}");
-    fs::create_dir_all(&path)?;
-    Ok(path)
 }

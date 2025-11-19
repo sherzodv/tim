@@ -1,101 +1,114 @@
-use crate::tim_client::SpaceEvent;
-
-use super::storage::{timeline_event_from_update, Storage, StorageError, TimelineEvent};
+use crate::tim_client::tim_api::{EventCallAbility, EventCallAbilityOutcome, EventNewMessage};
+use crate::tim_client::{Event, TimClient, TimClientError};
 use thiserror::Error;
 
+const TIMELINE_PAGE_SIZE: u32 = 128;
+
 pub(super) struct Memory {
-    limit: usize,
-    timite_id: u64,
-    storage: Storage,
+    client: TimClient,
 }
 
 #[derive(Debug, Error)]
 pub(super) enum MemoryError {
-    #[error("memory entry is empty")]
-    EmptyEntry,
-
-    #[error("storage error: {0}")]
-    Storage(#[from] StorageError),
+    #[error("timeline fetch failed: {0}")]
+    Timeline(#[from] TimClientError),
 }
 
 impl Memory {
-    pub(super) fn new(
-        limit: usize,
-        storage_path: &str,
-        timite_id: u64,
-    ) -> Result<Self, MemoryError> {
-        Ok(Self {
-            limit,
-            timite_id,
-            storage: Storage::new(storage_path)?,
-        })
+    pub(super) fn new(client: TimClient) -> Self {
+        Self { client }
     }
 
-    pub(super) fn record_space_update(&self, update: &SpaceEvent) -> Result<(), MemoryError> {
-        if let Some(mut event) = timeline_event_from_update(update) {
-            if event.content.trim().is_empty() {
-                return Ok(());
-            }
-            event.timite_id = self.timite_id;
-            self.storage.store_timeline_event(self.timite_id, &event)?;
-        }
-        Ok(())
-    }
-
-    pub(super) fn push_agent(&self, content: &str) -> Result<(), MemoryError> {
-        let normalized = Self::normalize(content)?;
-        let event = TimelineEvent {
-            timite_id: self.timite_id,
-            header: "Agent".to_string(),
-            content: normalized,
-        };
-        self.storage.store_timeline_event(self.timite_id, &event)?;
-        Ok(())
-    }
-
-    pub(super) fn context(&self) -> Option<String> {
-        if self.limit == 0 {
-            return None;
-        }
-        let fetch_limit = usize::min(self.limit, u16::MAX as usize) as u16;
-        let start_at = match self.storage.timeline_size(self.timite_id) {
-            Ok(total) => total.saturating_sub(fetch_limit as u64),
-            Err(_) => return None,
-        };
-        let events = match self.storage.timeline(self.timite_id, start_at, fetch_limit) {
-            Ok(events) => events,
-            Err(_) => return None,
-        };
+    pub(super) async fn context(&mut self) -> Result<Option<String>, MemoryError> {
+        let mut offset = 0;
         let mut buf = String::new();
-        for event in events {
-            if !Self::is_conversational(&event) {
-                continue;
+        loop {
+            let page = self.client.get_timeline(offset, TIMELINE_PAGE_SIZE).await?;
+            if page.is_empty() {
+                break;
             }
-            let content = event.content.trim();
-            if content.is_empty() {
-                continue;
+            for event in &page {
+                if let Some(line) = self.render_event(event) {
+                    buf.push_str(&line);
+                    buf.push('\n');
+                }
             }
-            buf.push_str(event.header.trim());
-            buf.push_str(": ");
-            buf.push_str(content);
-            buf.push('\n');
+            let last_id = page
+                .last()
+                .and_then(|event| event.metadata.as_ref().map(|meta| meta.id));
+            if let Some(id) = last_id {
+                offset = id.saturating_add(1);
+            } else {
+                offset = offset.saturating_add(page.len() as u64);
+            }
+            if page.len() < TIMELINE_PAGE_SIZE as usize {
+                break;
+            }
         }
         if buf.is_empty() {
-            None
+            Ok(None)
         } else {
-            Some(buf.trim_end().to_string())
+            Ok(Some(buf.trim_end().to_string()))
         }
     }
 
-    fn is_conversational(event: &TimelineEvent) -> bool {
-        matches!(event.header.as_str(), "Peer" | "Agent")
+    fn render_event(&self, event: &crate::tim_client::SpaceEvent) -> Option<String> {
+        match &event.data {
+            Some(Event::EventNewMessage(msg)) => self.render_new_message(msg),
+            Some(Event::EventCallAbility(call)) => self.render_call_ability(call),
+            Some(Event::EventCallAbilityOutcome(outcome)) => self.render_call_outcome(outcome),
+            None => None,
+        }
     }
 
-    fn normalize(raw: &str) -> Result<String, MemoryError> {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Err(MemoryError::EmptyEntry);
+    fn render_new_message(&self, new_message: &EventNewMessage) -> Option<String> {
+        let message = new_message.message.as_ref()?;
+        let content = message.content.trim();
+        if content.is_empty() {
+            return None;
         }
-        Ok(trimmed.to_string())
+        let header = if message.sender_id == self.client.timite_id() {
+            "Agent"
+        } else {
+            "Peer"
+        };
+        Some(format!("{header}: {content}"))
+    }
+
+    fn render_call_ability(&self, call: &EventCallAbility) -> Option<String> {
+        let payload = call.call_ability.as_ref()?;
+        Some(format!(
+            "CallAbility:{} sender={} payload={}",
+            payload.name.trim(),
+            payload.sender_id,
+            payload.payload.trim()
+        ))
+    }
+
+    fn render_call_outcome(&self, outcome: &EventCallAbilityOutcome) -> Option<String> {
+        let payload = outcome.call_ability_outcome.as_ref()?;
+        let mut parts = Vec::new();
+        if let Some(data) = payload
+            .payload
+            .as_ref()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+        {
+            parts.push(format!("payload={data}"));
+        }
+        if let Some(err) = payload
+            .error
+            .as_ref()
+            .map(|v| v.trim())
+            .filter(|v| !v.is_empty())
+        {
+            parts.push(format!("error={err}"));
+        }
+        let mut line = format!("CallAbilityOutcome:id={}", payload.call_ability_id);
+        if !parts.is_empty() {
+            line.push(' ');
+            line.push_str(&parts.join(" "));
+        }
+        Some(line)
     }
 }

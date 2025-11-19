@@ -7,7 +7,7 @@ pub mod tim_api {
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
 pub use tim_api::{space_event::Data as Event, EventNewMessage, SpaceEvent};
 use tim_api::{
-    Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, ListAbilitiesReq,
+    Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, GetTimelineReq, ListAbilitiesReq,
     SendCallAbilityOutcomeReq, SendMessageReq, SubscribeToSpaceReq, TimiteAbilities,
     TrustedRegisterReq,
 };
@@ -135,5 +135,17 @@ impl TimClient {
             .metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         Ok(self.client.subscribe_to_space(sub_req).await?.into_inner())
+    }
+
+    pub async fn get_timeline(
+        &mut self,
+        offset: u64,
+        size: u32,
+    ) -> Result<Vec<SpaceEvent>, TimClientError> {
+        let mut req = tonic::Request::new(GetTimelineReq { offset, size });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        let res = self.client.get_timeline(req).await?.into_inner();
+        Ok(res.events)
     }
 }
