@@ -1,12 +1,14 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::time::{interval_at, Instant};
+use tinytemplate::error::Error as TemplateError;
+use tokio::time::interval_at;
+use tokio::time::Instant;
 
 use crate::tim_client::SpaceEvent;
-
-use crate::tim_client::{TimClient, TimClientConf, TimClientError};
-use tinytemplate::error::Error as TemplateError;
+use crate::tim_client::TimClient;
+use crate::tim_client::TimClientConf;
+use crate::tim_client::TimClientError;
 
 const MIN_LIVE_INTERVAL: Duration = Duration::from_secs(1);
 

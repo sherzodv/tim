@@ -43,4 +43,8 @@ impl TimTimite {
     ) -> Result<(), TimTimiteError> {
         Ok(self.t_store.store_timite_abilities(timite_id, abilities)?)
     }
+
+    pub fn get(&self, timite_id: u64) -> Result<Option<Timite>, TimTimiteError> {
+        Ok(self.t_store.fetch_timite(timite_id)?)
+    }
 }

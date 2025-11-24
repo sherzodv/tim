@@ -157,6 +157,7 @@ message GetTimelineRes {
   uint64 offset = 1;
   uint32 size = 2;
   repeated SpaceEvent events = 3;
+  repeated Timite timites = 4;
 }
 
 service TimGrpcApi {

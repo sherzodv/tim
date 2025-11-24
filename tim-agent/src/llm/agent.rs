@@ -4,14 +4,18 @@ use async_trait::async_trait;
 use tokio::time::Duration;
 use tracing::warn;
 
-use crate::agent::{Agent as AgentTrait, AgentBuilder, AgentError};
-use crate::tim_client::TimClient;
-use crate::tim_client::{Event, EventNewMessage, SpaceEvent};
-
 use super::ability;
 use super::chatgpt::ChatGpt;
-use super::llm::{Llm, LlmReq};
+use super::llm::Llm;
+use super::llm::LlmReq;
 use super::memory::Memory;
+use crate::agent::Agent as AgentTrait;
+use crate::agent::AgentBuilder;
+use crate::agent::AgentError;
+use crate::tim_client::Event;
+use crate::tim_client::EventNewMessage;
+use crate::tim_client::SpaceEvent;
+use crate::tim_client::TimClient;
 
 #[derive(Clone)]
 pub struct AgentConf {

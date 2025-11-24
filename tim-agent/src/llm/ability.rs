@@ -2,7 +2,9 @@ use serde::Serialize;
 use tinytemplate::error::Error as TemplateError;
 
 use crate::prompt::render as render_template;
-use crate::tim_client::tim_api::{Ability as SpaceAbility, AbilityParameter, TimiteAbilities};
+use crate::tim_client::tim_api::Ability as SpaceAbility;
+use crate::tim_client::tim_api::AbilityParameter;
+use crate::tim_client::tim_api::TimiteAbilities;
 
 const SPACE_ABILITIES_TEMPLATE: &str = include_str!("../../prompts/space_abilities.txt");
 const SPACE_ABILITY_ENTRY_TEMPLATE: &str = include_str!("../../prompts/space_ability_entry.txt");

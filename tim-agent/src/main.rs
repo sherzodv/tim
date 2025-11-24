@@ -4,11 +4,14 @@ mod llm;
 mod prompt;
 mod tim_client;
 
-use crate::crawler::CrawlerConf;
-use crate::llm::{AgentConf, OPENAI_DEFAULT_ENDPOINT, OPENAI_DEFAULT_MODEL};
-use crate::tim_client::TimClientConf;
 use std::env;
 use std::time::Duration;
+
+use crate::crawler::CrawlerConf;
+use crate::llm::AgentConf;
+use crate::llm::OPENAI_DEFAULT_ENDPOINT;
+use crate::llm::OPENAI_DEFAULT_MODEL;
+use crate::tim_client::TimClientConf;
 
 const JARVIS_USERP: &str = include_str!("../prompts/jarvis_userp.md");
 const ALICE_USERP: &str = include_str!("../prompts/alice_userp.md");

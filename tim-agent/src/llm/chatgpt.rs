@@ -2,9 +2,13 @@ use std::fmt;
 
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 
-use super::llm::{Llm, LlmError, LlmReq, LlmRes};
+use super::llm::Llm;
+use super::llm::LlmError;
+use super::llm::LlmReq;
+use super::llm::LlmRes;
 
 pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";

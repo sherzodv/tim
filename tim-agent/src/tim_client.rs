@@ -4,15 +4,25 @@ pub mod tim_api {
     tonic::include_proto!("tim.api.g1");
 }
 
+pub use tim_api::space_event::Data as Event;
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
-pub use tim_api::{space_event::Data as Event, EventNewMessage, SpaceEvent};
-use tim_api::{
-    Ability, CallAbilityOutcome, ClientInfo, DeclareAbilitiesReq, GetTimelineReq, ListAbilitiesReq,
-    SendCallAbilityOutcomeReq, SendMessageReq, SubscribeToSpaceReq, TimiteAbilities,
-    TrustedRegisterReq,
-};
+use tim_api::Ability;
+use tim_api::CallAbilityOutcome;
+use tim_api::ClientInfo;
+use tim_api::DeclareAbilitiesReq;
+pub use tim_api::EventNewMessage;
+use tim_api::GetTimelineReq;
+use tim_api::GetTimelineRes;
+use tim_api::ListAbilitiesReq;
+use tim_api::SendCallAbilityOutcomeReq;
+use tim_api::SendMessageReq;
+pub use tim_api::SpaceEvent;
+use tim_api::SubscribeToSpaceReq;
+use tim_api::TimiteAbilities;
+use tim_api::TrustedRegisterReq;
 use tonic::metadata::errors::InvalidMetadataValue;
-use tonic::metadata::{Ascii, MetadataValue};
+use tonic::metadata::Ascii;
+use tonic::metadata::MetadataValue;
 use tonic::transport::Endpoint;
 
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
@@ -141,11 +151,11 @@ impl TimClient {
         &mut self,
         offset: u64,
         size: u32,
-    ) -> Result<Vec<SpaceEvent>, TimClientError> {
+    ) -> Result<GetTimelineRes, TimClientError> {
         let mut req = tonic::Request::new(GetTimelineReq { offset, size });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         let res = self.client.get_timeline(req).await?.into_inner();
-        Ok(res.events)
+        Ok(res)
     }
 }

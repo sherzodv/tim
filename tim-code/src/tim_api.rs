@@ -1,8 +1,10 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::debug;
 
+use crate::api::space_event::Data as SpaceEventData;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
 use crate::api::GetTimelineReq;
@@ -17,6 +19,7 @@ use crate::api::SendMessageRes;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::Timite;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
 use crate::api::TrustedRegisterReq;
@@ -159,10 +162,17 @@ impl TimApi {
         _session: &Session,
     ) -> Result<GetTimelineRes, TimApiError> {
         let events = self.t_space.timeline(req.offset, req.size)?;
+        let mut timites: Vec<Timite> = Vec::new();
+        for timite_id in collect_timite_ids(&events) {
+            if let Some(timite) = self.t_timite.get(timite_id)? {
+                timites.push(timite);
+            }
+        }
         Ok(GetTimelineRes {
             offset: req.offset,
             size: req.size,
             events,
+            timites,
         })
     }
 
@@ -203,4 +213,28 @@ impl TimApi {
             .await?;
         Ok(SendCallAbilityOutcomeRes {})
     }
+}
+
+fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
+    let mut ids = BTreeSet::new();
+    for event in events {
+        let Some(data) = event.data.as_ref() else {
+            continue;
+        };
+        match data {
+            SpaceEventData::EventNewMessage(payload) => {
+                if let Some(message) = payload.message.as_ref() {
+                    ids.insert(message.sender_id);
+                }
+            }
+            SpaceEventData::EventCallAbility(payload) => {
+                if let Some(call_ability) = payload.call_ability.as_ref() {
+                    ids.insert(call_ability.sender_id);
+                    ids.insert(call_ability.timite_id);
+                }
+            }
+            SpaceEventData::EventCallAbilityOutcome(_) => {}
+        }
+    }
+    ids
 }

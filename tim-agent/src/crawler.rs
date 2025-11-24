@@ -1,10 +1,15 @@
 use async_trait::async_trait;
 use reqwest::Client;
 
-use crate::agent::{Agent, AgentBuilder, AgentError};
-use crate::tim_client::tim_api::{Ability, CallAbility, CallAbilityOutcome};
+use crate::agent::Agent;
+use crate::agent::AgentBuilder;
+use crate::agent::AgentError;
+use crate::tim_client::tim_api::Ability;
+use crate::tim_client::tim_api::CallAbility;
+use crate::tim_client::tim_api::CallAbilityOutcome;
+use crate::tim_client::Event;
+use crate::tim_client::SpaceEvent;
 use crate::tim_client::TimClient;
-use crate::tim_client::{Event, SpaceEvent};
 
 #[derive(Clone)]
 pub struct CrawlerConf {
