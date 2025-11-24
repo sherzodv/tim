@@ -4,6 +4,7 @@ pub mod tim_api {
     tonic::include_proto!("tim.api.g1");
 }
 
+use futures::stream;
 pub use tim_api::space_event::Data as Event;
 use tim_api::tim_grpc_api_client::TimGrpcApiClient;
 use tim_api::Ability;
@@ -20,6 +21,7 @@ pub use tim_api::SpaceEvent;
 use tim_api::SubscribeToSpaceReq;
 use tim_api::TimiteAbilities;
 use tim_api::TrustedRegisterReq;
+use tokio_stream::Stream;
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::Ascii;
 use tonic::metadata::MetadataValue;
@@ -157,5 +159,52 @@ impl TimClient {
             .insert(SESSION_METADATA_KEY, self.token.clone());
         let res = self.client.get_timeline(req).await?.into_inner();
         Ok(res)
+    }
+
+    pub fn timeline_stream(
+        &mut self,
+        page_size: u32,
+    ) -> impl Stream<Item = Result<GetTimelineRes, TimClientError>> + '_ {
+        struct State<'a> {
+            client: &'a mut TimClient,
+            offset: u64,
+            page_size: u32,
+            finished: bool,
+        }
+        stream::unfold(
+            State {
+                client: self,
+                offset: 0,
+                page_size,
+                finished: false,
+            },
+            |mut state| async move {
+                if state.finished || state.page_size == 0 {
+                    return None;
+                }
+                let res = state
+                    .client
+                    .get_timeline(state.offset, state.page_size)
+                    .await;
+                match res {
+                    Ok(res) => {
+                        if res.events.is_empty() {
+                            state.finished = true;
+                            return None;
+                        }
+                        let len = res.events.len() as u64;
+                        state.offset = state.offset.saturating_add(len);
+                        if len < state.page_size as u64 {
+                            state.finished = true;
+                        }
+                        Some((Ok(res), state))
+                    }
+                    Err(err) => {
+                        state.finished = true;
+                        Some((Err(err), state))
+                    }
+                }
+            },
+        )
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use thiserror::Error;
+use tokio_stream::StreamExt;
 
 use crate::tim_client::tim_api::EventCallAbility;
 use crate::tim_client::tim_api::EventCallAbilityOutcome;
@@ -28,32 +29,18 @@ impl Memory {
     }
 
     pub(super) async fn context(&mut self) -> Result<Option<String>, MemoryError> {
-        let mut offset = 0;
         let mut buf = String::new();
         let mut names = HashMap::new();
-        loop {
-            let page = self.client.get_timeline(offset, TIMELINE_PAGE_SIZE).await?;
-            if page.events.is_empty() {
-                break;
-            }
-            self.expand_names(&mut names, &page.timites);
+        let own_id = self.client.timite_id();
+        let mut stream = Box::pin(self.client.timeline_stream(TIMELINE_PAGE_SIZE));
+        while let Some(page) = stream.next().await {
+            let page = page?;
+            Self::collect_nicks(&mut names, &page.timites);
             for event in &page.events {
-                if let Some(line) = self.render_event(event, &names) {
+                if let Some(line) = Self::render_event(own_id, event, &names) {
                     buf.push_str(&line);
                     buf.push('\n');
                 }
-            }
-            let last_id = page
-                .events
-                .last()
-                .and_then(|event| event.metadata.as_ref().map(|meta| meta.id));
-            if let Some(id) = last_id {
-                offset = id.saturating_add(1);
-            } else {
-                offset = offset.saturating_add(page.events.len() as u64);
-            }
-            if page.events.len() < TIMELINE_PAGE_SIZE as usize {
-                break;
             }
         }
         if buf.is_empty() {
@@ -63,7 +50,7 @@ impl Memory {
         }
     }
 
-    fn expand_names(&self, names: &mut HashMap<u64, String>, timites: &[Timite]) {
+    fn collect_nicks(names: &mut HashMap<u64, String>, timites: &[Timite]) {
         for timite in timites {
             let nick = timite.nick.trim();
             if nick.is_empty() {
@@ -74,20 +61,20 @@ impl Memory {
     }
 
     fn render_event(
-        &self,
+        own_id: u64,
         event: &crate::tim_client::SpaceEvent,
         names: &HashMap<u64, String>,
     ) -> Option<String> {
         match &event.data {
-            Some(Event::EventNewMessage(msg)) => self.render_new_message(msg, names),
-            Some(Event::EventCallAbility(call)) => self.render_call_ability(call, names),
-            Some(Event::EventCallAbilityOutcome(outcome)) => self.render_call_outcome(outcome),
+            Some(Event::EventNewMessage(msg)) => Self::render_new_message(own_id, msg, names),
+            Some(Event::EventCallAbility(call)) => Self::render_call_ability(own_id, call, names),
+            Some(Event::EventCallAbilityOutcome(outcome)) => Self::render_call_outcome(outcome),
             None => None,
         }
     }
 
     fn render_new_message(
-        &self,
+        own_id: u64,
         new_message: &EventNewMessage,
         names: &HashMap<u64, String>,
     ) -> Option<String> {
@@ -96,17 +83,17 @@ impl Memory {
         if content.is_empty() {
             return None;
         }
-        let header = self.format_timite_label(message.sender_id, names);
+        let header = Self::format_timite_label(own_id, message.sender_id, names);
         Some(format!("{header}: {content}"))
     }
 
     fn render_call_ability(
-        &self,
+        own_id: u64,
         call: &EventCallAbility,
         names: &HashMap<u64, String>,
     ) -> Option<String> {
         let payload = call.call_ability.as_ref()?;
-        let sender = self.format_timite_label(payload.sender_id, names);
+        let sender = Self::format_timite_label(own_id, payload.sender_id, names);
         Some(format!(
             "CallAbility:{} sender={} payload={}",
             payload.name.trim(),
@@ -115,7 +102,7 @@ impl Memory {
         ))
     }
 
-    fn render_call_outcome(&self, outcome: &EventCallAbilityOutcome) -> Option<String> {
+    fn render_call_outcome(outcome: &EventCallAbilityOutcome) -> Option<String> {
         let payload = outcome.call_ability_outcome.as_ref()?;
         let mut parts = Vec::new();
         if let Some(data) = payload
@@ -142,8 +129,8 @@ impl Memory {
         Some(line)
     }
 
-    fn format_timite_label(&self, timite_id: u64, names: &HashMap<u64, String>) -> String {
-        if timite_id == self.client.timite_id() {
+    fn format_timite_label(own_id: u64, timite_id: u64, names: &HashMap<u64, String>) -> String {
+        if timite_id == own_id {
             "[Me]".to_string()
         } else if let Some(nick) = names.get(&timite_id) {
             format!("[{}]", nick)
