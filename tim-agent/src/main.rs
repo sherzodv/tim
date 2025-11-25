@@ -1,11 +1,15 @@
 mod agent;
 mod crawler;
 mod llm;
-mod prompt;
 mod tim_client;
 
 use std::env;
 use std::time::Duration;
+
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::crawler::CrawlerConf;
 use crate::llm::AgentConf;
@@ -15,11 +19,16 @@ use crate::tim_client::TimClientConf;
 
 const JARVIS_USERP: &str = include_str!("../prompts/jarvis_userp.md");
 const ALICE_USERP: &str = include_str!("../prompts/alice_userp.md");
-const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(30);
-const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(45);
+const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(10);
+const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(fmt::layer())
+        .init();
+
     let api_key = env::var("OPENAI_API_KEY").or_else(|_| env::var("TIM_OPENAI_API_KEY"))?;
     let endpoint =
         env::var("OPENAI_API_BASE").unwrap_or_else(|_| OPENAI_DEFAULT_ENDPOINT.to_string());
@@ -38,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint: endpoint.clone(),
             model: env::var("OPENAI_JARVIS_MODEL").unwrap_or_else(|_| default_model.clone()),
             temperature: 0.8,
-            live_interval: JARVIS_LIVE_INTERVAL,
+            live_interval: Some(JARVIS_LIVE_INTERVAL),
         },
     );
 
@@ -54,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             endpoint,
             model: env::var("OPENAI_ALICE_MODEL").unwrap_or_else(|_| default_model),
             temperature: 0.6,
-            live_interval: ALICE_LIVE_INTERVAL,
+            live_interval: Some(ALICE_LIVE_INTERVAL),
         },
     );
 

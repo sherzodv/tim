@@ -1,17 +1,22 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::Serialize;
 use tokio::time::Duration;
-use tracing::warn;
+use tracing::debug;
+use std::fmt::Debug;
 
 use super::ability;
 use super::chatgpt::ChatGpt;
 use super::llm::Llm;
 use super::llm::LlmReq;
+use super::llm::LlmRes;
 use super::memory::Memory;
 use crate::agent::Agent as AgentTrait;
 use crate::agent::AgentBuilder;
 use crate::agent::AgentError;
+use crate::llm::memory::MemoryError;
+use crate::llm::prompt::render;
 use crate::tim_client::Event;
 use crate::tim_client::EventNewMessage;
 use crate::tim_client::SpaceEvent;
@@ -24,7 +29,7 @@ pub struct AgentConf {
     pub endpoint: String,
     pub model: String,
     pub temperature: f32,
-    pub live_interval: Duration,
+    pub live_interval: Option<Duration>,
 }
 
 pub struct Agent {
@@ -34,7 +39,39 @@ pub struct Agent {
     memory: Memory,
 }
 
+impl Debug for AgentConf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentConf")
+            .field("userp", &self.userp)
+            .field("endpoint", &self.endpoint)
+            .field("model", &self.model)
+            .field("temperature", &self.temperature)
+            .field("live_interval", &self.live_interval)
+            .finish()
+    }
+}
+
+impl Debug for Agent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agent")
+            .field("client", &self.client)
+            .field("conf", &self.conf)
+            .finish()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AgentPromptContext {
+    nick: String,
+}
+
 const TIM_SYSTEM_PROMPT: &str = include_str!("../../prompts/tim-sys.md");
+
+impl From<MemoryError> for AgentError {
+    fn from(value: MemoryError) -> Self {
+        AgentError::Memory(value.to_string())
+    }
+}
 
 impl Agent {
     pub fn new(conf: &AgentConf, client: TimClient) -> Result<Self, AgentError> {
@@ -56,33 +93,38 @@ impl Agent {
         })
     }
 
-    async fn reply_with_prompt(&mut self, prompt_body: String) -> Result<(), AgentError> {
-        let req = LlmReq {
-            sysp: TIM_SYSTEM_PROMPT,
-            userp: &self.conf.userp,
-            msg: &prompt_body,
+    async fn ask_llm(&mut self, mark: String) -> Result<(), AgentError> {
+        let history = match self.memory.context().await? {
+            Some(context) => context,
+            None => "EMPTY_HISTORY".to_string(),
         };
+        let nick = self.client.get_me().nick.clone();
+        let ctx = AgentPromptContext {
+            nick: nick.clone(),
+        };
+        let sys_prompt = render(TIM_SYSTEM_PROMPT, &ctx)?;
+        let user_prompt = render(&self.conf.userp, &ctx)?;
+        let req = LlmReq {
+            sysp: &sys_prompt,
+            userp: &user_prompt,
+            msg: &(history + &mark),
+        };
+        debug!("{} sending LLM request: {:?}", nick, req);
         let answer = self
             .llm
             .chat(&req)
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
-        self.client.send_message(&answer.message).await?;
-        Ok(())
-    }
-
-    async fn handle_peer_message(&mut self, content: String) -> Result<(), AgentError> {
-        let prompt_body = match self.memory.context().await {
-            Ok(Some(context)) => {
-                format!("Conversation so far:\n{context}\nRespond to the latest peer message.")
+        match answer {
+            super::llm::LlmRes::NoResponse => {
+                debug!("{} no response", nick);
+                Ok(())
             }
-            Ok(None) => content.trim().to_string(),
-            Err(err) => {
-                warn!("failed to load conversation context: {err}");
-                content.trim().to_string()
+            LlmRes::Reply(message) => {
+                self.client.send_message(&message).await?;
+                Ok(())
             }
-        };
-        self.reply_with_prompt(prompt_body).await
+        }
     }
 
     async fn render_space_abilities(&mut self) -> Result<Option<String>, AgentError> {
@@ -101,32 +143,21 @@ impl AgentTrait for Agent {
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
         match &update.data {
             Some(Event::EventNewMessage(EventNewMessage {
-                message: Some(message),
+                message: Some(_),
             })) => {
-                let content = message.content.clone();
-                self.handle_peer_message(content).await
+                self.ask_llm("".to_string()).await?;
+                Ok(())
             }
             _ => Ok(()),
         }
     }
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
-        let prompt_body = match self.memory.context().await {
-            Ok(Some(context)) => format!(
-                "Conversation so far:\n{context}\nShare a proactive update even without a new peer message."
-            ),
-            Ok(None) => {
-                "Start the conversation with a concise, purposeful update.".to_string()
-            }
-            Err(err) => {
-                warn!("failed to load conversation context: {err}");
-                "Start the conversation with a concise, purposeful update.".to_string()
-            }
-        };
-        self.reply_with_prompt(prompt_body).await
+        self.ask_llm("\nTIMER-INIT".to_string()).await?;
+        Ok(())
     }
 
-    fn live_interval(&self) -> Duration {
+    fn live_interval(&self) -> Option<Duration> {
         self.conf.live_interval
     }
 }

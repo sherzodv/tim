@@ -8,14 +8,16 @@ use futures::StreamExt;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+#[derive(Debug)]
 pub struct LlmReq<'a> {
     pub sysp: &'a str,
     pub userp: &'a str,
     pub msg: &'a str,
 }
 
-pub struct LlmRes {
-    pub message: String,
+pub enum LlmRes {
+    Reply(String),
+    NoResponse,
 }
 
 #[derive(Debug, Error)]
@@ -67,6 +69,7 @@ pub trait Llm: Send + Sync {
     async fn chat(&self, req: &LlmReq<'_>) -> Result<LlmRes, LlmError> {
         let mut stream = self.chat_stream(req).await?;
         let mut message = String::new();
+        let mut no_response = false;
         while let Some(item) = stream.next().await {
             match item? {
                 LlmStreamEvent::ContentDelta(delta) => message.push_str(&delta),
@@ -76,16 +79,21 @@ pub trait Llm: Send + Sync {
                     arguments_delta,
                     finished,
                 } => {
+                    if name == Some("TIM-LLM-SILENCE".to_string()) {
+                        no_response = true;
+                        break;
+                    }
                     let _ = (id, name, arguments_delta, finished);
                 }
                 LlmStreamEvent::Completed => break,
             }
         }
+        if no_response {
+            return Ok(LlmRes::NoResponse);
+        }
         if message.trim().is_empty() {
             return Err(LlmError::MissingContent);
         }
-        Ok(LlmRes {
-            message: message.trim().to_string(),
-        })
+        Ok(LlmRes::Reply(message.trim().to_string()))
     }
 }

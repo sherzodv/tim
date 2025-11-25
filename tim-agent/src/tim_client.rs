@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::str::FromStr;
 
 pub mod tim_api {
@@ -27,6 +28,8 @@ use tonic::metadata::Ascii;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Endpoint;
 
+use crate::tim_client::tim_api::Timite;
+
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
 
 pub struct TimClientConf {
@@ -55,6 +58,15 @@ pub struct TimClient {
     client: TimGrpcApiClient<tonic::transport::Channel>,
     token: MetadataValue<Ascii>,
     timite_id: u64,
+    nick: String,
+}
+
+impl Debug for TimClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TimClient")
+            .field("timite_id", &self.timite_id)
+            .finish()
+    }
 }
 
 impl TimClient {
@@ -83,7 +95,15 @@ impl TimClient {
             client,
             token,
             timite_id: session.timite_id,
+            nick: conf.nick,
         })
+    }
+
+    pub fn get_me(&self) -> Timite {
+        Timite {
+            id: self.timite_id,
+            nick: self.nick.clone(),
+        }
     }
 
     pub async fn send_message(&mut self, content: &str) -> Result<(), TimClientError> {

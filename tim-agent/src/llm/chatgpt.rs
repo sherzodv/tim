@@ -6,8 +6,10 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::debug;
+use tracing::trace;
 
 use super::llm::Llm;
 use super::llm::LlmError;
@@ -136,6 +138,19 @@ impl Llm for ChatGpt {
             return Err(LlmError::EmptyPrompt);
         }
 
+        let silence_tool = ToolDefinition {
+            kind: "function".to_string(),
+            function: ToolFunction {
+                name: "TIM-LLM-SILENCE".to_string(),
+                description: "Use when you choose to not respond.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }),
+            },
+        };
+
         let payload = StreamChatReq {
             model: self.model.clone(),
             messages: vec![
@@ -150,7 +165,7 @@ impl Llm for ChatGpt {
             ],
             temperature: self.temperature,
             stream: true,
-            tools: None,
+            tools: Some(vec![silence_tool]),
             tool_choice: None,
         };
         debug!(
@@ -196,7 +211,7 @@ impl Llm for ChatGpt {
 }
 
 fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent, LlmError>> {
-    debug!("sse event: {}", event.data);
+    trace!("sse event: {}", event.data);
     if event.data.trim() == "[DONE]" {
         return vec![Ok(LlmStreamEvent::Completed)];
     }
