@@ -1,7 +1,7 @@
 mod ability;
 pub mod agent;
 pub mod chatgpt;
-mod llm;
+pub mod llm;
 mod memory;
 
 pub use agent::AgentConf;

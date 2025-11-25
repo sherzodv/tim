@@ -1,0 +1,2 @@
+[alias]
+sse-test = "test --test sse_debug -- --ignored --nocapture"
