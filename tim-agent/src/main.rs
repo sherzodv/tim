@@ -19,8 +19,8 @@ use crate::tim_client::TimClientConf;
 
 const JARVIS_USERP: &str = include_str!("../prompts/jarvis_userp.md");
 const ALICE_USERP: &str = include_str!("../prompts/alice_userp.md");
-const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(10);
-const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(10);
+const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(100);
+const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(100);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

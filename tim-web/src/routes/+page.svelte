@@ -49,7 +49,7 @@ $effect(() => {
 	if (!browser) return;
 	console.info('[Tim] UI mounted');
 	timSpace.start();
-	const stopLorem = startLoremFeed(true, 1400);
+	const stopLorem = startLoremFeed(false, 1400);
 	return () => {
 		stopLorem();
 		timSpace.stop();
@@ -65,7 +65,7 @@ $effect(() => {
 	<div class="workspace-region">
 		<Workspace space={timSpace} storage={timStorage} />
 	</div>
-	<CommandLine />
+	<CommandLine space={timSpace} />
 </main>
 
 <style>

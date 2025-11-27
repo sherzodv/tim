@@ -4,7 +4,9 @@
       "Bash(cargo check:*)",
       "Bash(npm run check:*)",
       "Bash(cargo build:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(npm run apigen:*)",
+      "Bash(npx buf:*)"
     ],
     "deny": [],
     "ask": []

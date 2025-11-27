@@ -60,6 +60,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_headers(Any)
         .allow_origin(Any);
 
+    // Spawn periodic cleanup task for disconnected subscribers
+    tokio::spawn({
+        let space = space_svc.clone();
+        async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let removed = space.cleanup_disconnected();
+                if removed > 0 {
+                    info!("Cleaned up {removed} disconnected subscriber(s)");
+                }
+            }
+        }
+    });
+
     info!("Starting tim-code gRPC backend on {addr}");
 
     Server::builder()

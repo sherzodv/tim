@@ -48,7 +48,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .trusted_register(&req.into_inner())
             .await
             .map(|r| Response::new(r));
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn trusted_connect(
@@ -60,7 +60,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .trusted_connect(&req.into_inner())
             .await
             .map(|r| Response::new(r));
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn declare_abilities(
@@ -73,7 +73,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .declare_abilities(&req.into_inner(), &session)
             .await
             .map(|r| Response::new(r));
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn list_abilities(
@@ -82,7 +82,7 @@ impl TimGrpcApi for TimGrpcApiService {
     ) -> Result<Response<ListAbilitiesRes>, Status> {
         self.require_session(&req)?;
         let res = self.api.list_abilities().await.map(|r| Response::new(r));
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn get_timeline(
@@ -94,7 +94,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .api
             .get_timeline(&req.into_inner(), &session)
             .map(Response::new);
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn send_message(
@@ -107,7 +107,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .send_message(&req.into_inner(), &session)
             .await
             .map(|r| Response::new(r));
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn subscribe_to_space(
@@ -132,7 +132,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .send_call_ability(&req.into_inner(), &session)
             .await
             .map(Response::new);
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 
     async fn send_call_ability_outcome(
@@ -145,7 +145,7 @@ impl TimGrpcApi for TimGrpcApiService {
             .send_call_ability_outcome(&req.into_inner(), &session)
             .await
             .map(Response::new);
-        res.map_err(|e| Status::ok(e.to_string()))
+        res.map_err(|e| Status::internal(e.to_string()))
     }
 }
 

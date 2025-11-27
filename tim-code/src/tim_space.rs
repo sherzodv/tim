@@ -140,11 +140,31 @@ impl TimSpace {
         let event = event_new_message(upd_id, msg_id, req, session);
         self.storage.store_space_event(&event)?;
 
+        let mut disconnected = Vec::new();
         for sub in snapshot {
             if !sub.receive_own_messages && sub.session.timite_id == session.timite_id {
                 continue;
             }
-            sub.chan.send(event.clone()).await?;
+            // Check if receiver was dropped before attempting send
+            if sub.chan.is_closed() {
+                disconnected.push(sub.session.key.clone());
+                continue;
+            }
+            // Fallback: check send error in case channel closed during send
+            if sub.chan.send(event.clone()).await.is_err() {
+                disconnected.push(sub.session.key.clone());
+            }
+        }
+
+        // Remove disconnected subscribers
+        if !disconnected.is_empty() {
+            let mut guard = self
+                .subscribers
+                .write()
+                .expect("space events subscribers lock poisoned");
+            for key in disconnected {
+                guard.remove(&key);
+            }
         }
 
         Ok(SendMessageRes { error: None })
@@ -191,11 +211,31 @@ impl TimSpace {
         let event = event_call_ability_outcome(upd_id, outcome);
         self.storage.store_space_event(&event)?;
 
+        let mut disconnected = Vec::new();
         for sub in snapshot {
             if !sub.receive_own_messages && sub.session.timite_id == sender_timite_id {
                 continue;
             }
-            sub.chan.send(event.clone()).await?;
+            // Check if receiver was dropped before attempting send
+            if sub.chan.is_closed() {
+                disconnected.push(sub.session.key.clone());
+                continue;
+            }
+            // Fallback: check send error in case channel closed during send
+            if sub.chan.send(event.clone()).await.is_err() {
+                disconnected.push(sub.session.key.clone());
+            }
+        }
+
+        // Remove disconnected subscribers
+        if !disconnected.is_empty() {
+            let mut guard = self
+                .subscribers
+                .write()
+                .expect("space events subscribers lock poisoned");
+            for key in disconnected {
+                guard.remove(&key);
+            }
         }
 
         Ok(())
@@ -220,8 +260,28 @@ impl TimSpace {
         let event = event_call_ability(upd_id, call_ability);
         self.storage.store_space_event(&event)?;
 
+        let mut disconnected = Vec::new();
         for sub in snapshot {
-            sub.chan.send(event.clone()).await?;
+            // Check if receiver was dropped before attempting send
+            if sub.chan.is_closed() {
+                disconnected.push(sub.session.key.clone());
+                continue;
+            }
+            // Fallback: check send error in case channel closed during send
+            if sub.chan.send(event.clone()).await.is_err() {
+                disconnected.push(sub.session.key.clone());
+            }
+        }
+
+        // Remove disconnected subscribers
+        if !disconnected.is_empty() {
+            let mut guard = self
+                .subscribers
+                .write()
+                .expect("space events subscribers lock poisoned");
+            for key in disconnected {
+                guard.remove(&key);
+            }
         }
 
         Ok(())
@@ -229,5 +289,19 @@ impl TimSpace {
 
     pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimSpaceError> {
         self.storage.timeline(offset, size).map_err(Into::into)
+    }
+
+    /// Periodic cleanup task that removes all disconnected subscribers
+    pub fn cleanup_disconnected(&self) -> usize {
+        let mut guard = self
+            .subscribers
+            .write()
+            .expect("space events subscribers lock poisoned");
+
+        let before_count = guard.len();
+        guard.retain(|_, sub| !sub.chan.is_closed());
+        let after_count = guard.len();
+
+        before_count - after_count
     }
 }

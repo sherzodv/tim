@@ -5,10 +5,12 @@ import { create } from '@bufbuild/protobuf';
 import {
 	TimGrpcApi,
 	TrustedRegisterReqSchema,
+	TrustedConnectReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
 	SubscribeToSpaceReqSchema,
 	GetTimelineReqSchema,
+	TimiteSchema,
 	type TrustedRegisterReq,
 	type SendMessageReq,
 	type SubscribeToSpaceReq,
@@ -56,13 +58,62 @@ export class TimClient {
 	}
 
 	private async acquireSession(): Promise<string> {
-		const request = buildTrustedRegisterRequest(this.conf);
-		const response = await this.client.trustedRegister(request);
-		const sessionKey = response.session?.key;
-		if (sessionKey === undefined) {
-			throw new ConnectError('missing session key in trusted register response', Code.Internal);
+		// Try to load existing timite from localStorage
+		const storedTimite = this.loadStoredTimite();
+
+		if (storedTimite) {
+			// Use trustedConnect with existing timite
+			const connectReq = create(TrustedConnectReqSchema, {
+				timite: storedTimite,
+				clientInfo: create(ClientInfoSchema, {
+					platform: this.conf.platform
+				})
+			});
+			const response = await this.client.trustedConnect(connectReq);
+			const sessionKey = response.session?.key;
+			if (sessionKey === undefined) {
+				throw new ConnectError('missing session key in trusted connect response', Code.Internal);
+			}
+			return sessionKey;
+		} else {
+			// Register new timite
+			const request = buildTrustedRegisterRequest(this.conf);
+			const response = await this.client.trustedRegister(request);
+			const sessionKey = response.session?.key;
+			const timiteId = response.session?.timiteId;
+			if (sessionKey === undefined) {
+				throw new ConnectError('missing session key in trusted register response', Code.Internal);
+			}
+			// Store timite for future sessions
+			if (timiteId !== undefined) {
+				this.storeTimite(timiteId, this.conf.nick);
+			}
+			return sessionKey;
 		}
-		return sessionKey;
+	}
+
+	private loadStoredTimite() {
+		if (typeof window === 'undefined') return null;
+		try {
+			const stored = localStorage.getItem('tim-timite');
+			if (!stored) return null;
+			const data = JSON.parse(stored);
+			return create(TimiteSchema, {
+				id: BigInt(data.id),
+				nick: data.nick
+			});
+		} catch {
+			return null;
+		}
+	}
+
+	private storeTimite(id: bigint, nick: string) {
+		if (typeof window === 'undefined') return;
+		try {
+			localStorage.setItem('tim-timite', JSON.stringify({ id: id.toString(), nick }));
+		} catch (error) {
+			console.warn('Failed to store timite in localStorage', error);
+		}
 	}
 
 	async sendMessage(content: string): Promise<void> {
