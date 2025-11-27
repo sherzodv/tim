@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { WorklogItem } from '../../../api/worklog';
+	import type { WorklogItem } from '$lib/api/worklog';
 	import WorklogItemCmp from './item/index.svelte';
 
 	let { items }: { items: WorklogItem[] } = $props();
@@ -32,7 +32,7 @@
 </section>
 
 <style>
-	@import '../../theme.css';
+	@import '$lib/ui/theme.css';
 
 	.worklog {
 		box-sizing: border-box;

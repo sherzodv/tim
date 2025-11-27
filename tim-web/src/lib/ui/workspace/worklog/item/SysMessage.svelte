@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { WorklogItemSysMessage } from '../../../../api/worklog';
+	import type { WorklogItemSysMessage } from '$lib/api/worklog';
 
 	let { item }: { item: WorklogItemSysMessage } = $props();
 </script>

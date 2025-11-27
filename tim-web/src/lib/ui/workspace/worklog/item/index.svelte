@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { WorklogItem } from '../../../../api/worklog';
+	import type { WorklogItem } from '$lib/api/worklog';
 	import Message from './Message.svelte';
 	import SysMessage from './SysMessage.svelte';
 
