@@ -19,6 +19,9 @@
 	--tim-avatar-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
 	--tim-sidebar-bg: #f4f6f9;
 	--tim-divider: #d6dbe1;
+	--tim-scrollbar-track: #e1e6ef;
+	--tim-scrollbar-thumb: #6d7a90;
+	--tim-scrollbar-thumb-hover: #55627a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,5 +40,8 @@
 		--tim-avatar-text: #ffffff;
 		--tim-sidebar-bg: #161c23;
 		--tim-divider: #252c36;
+		--tim-scrollbar-track: #121922;
+		--tim-scrollbar-thumb: #3f4d63;
+		--tim-scrollbar-thumb-hover: #556078;
 	}
 }

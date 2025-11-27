@@ -1,5 +1,5 @@
 import { writable, type Readable } from 'svelte/store';
-import type { WorklogItem } from '../ui/worklog/types';
+import type { WorklogItem } from '../api/worklog';
 
 export type TimSpaceStorage = Readable<WorklogItem[]> & {
 	append(item: WorklogItem): void;

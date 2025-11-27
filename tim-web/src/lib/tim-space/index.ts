@@ -1,8 +1,9 @@
-import type { SpaceEvent, Timite, Timestamp } from '../../gen/tim/api/g1/api_pb';
+import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
+import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import type { TimClient } from '../tim-client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
 import type { TimSpaceStorage } from './storage';
-import type { WorklogItem } from '../ui/worklog/types';
+import type { WorklogItem } from '../api/worklog';
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -60,8 +61,8 @@ export class TimSpace implements TimSpaceHandler {
 		const description = this.describePhase(phase);
 		if (!description) return;
 		this.append({
-			id: this.nextLocalId(),
 			kind: 'sysmsg',
+			id: this.nextLocalId(),
 			author: 'system',
 			content: description
 		});
@@ -88,8 +89,8 @@ export class TimSpace implements TimSpaceHandler {
 		const message = update.data.value?.message;
 		if (!message) return null;
 		return {
-			id: message.id ?? this.nextLocalId(),
 			kind: 'msg',
+			id: message.id ?? this.nextLocalId(),
 			author: this.formatAuthor(message.senderId),
 			content: message.content ?? '',
 			time: this.formatTime(update.metadata?.emittedAt)

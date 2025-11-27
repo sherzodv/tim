@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { WorklogItem } from './types';
-	import WorklogItemC from './WorklogItem.svelte';
+	import type { WorklogItem } from '../../../api/worklog';
+	import WorklogItemCmp from './item/index.svelte';
 
 	let { items }: { items: WorklogItem[] } = $props();
 
@@ -26,42 +26,51 @@
 </script>
 
 <section class="worklog" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
-	<div class="worklog-body">
-		{#each items as item, i (item.kind + '-' + item.id + '-' + i)}
-			<div class="log-row">
-				<WorklogItemC {item} />
-			</div>
-		{/each}
-	</div>
+	{#each items as item, i (`${item.kind}-${item.id}-${i}`)}
+		<WorklogItemCmp entry={item} />
+	{/each}
 </section>
 
 <style>
-	@import '../theme.css';
+	@import '../../theme.css';
 
 	.worklog {
-		display: block;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
 		flex: 1 1 auto;
 		width: 100%;
 		height: 100%;
 		min-height: 0;
 		max-height: 100%;
-		overflow-y: auto;
+		overflow-y: scroll;
+		scrollbar-gutter: stable both-edges;
 		padding: 1.75rem;
 		background: var(--tim-surface-bg);
 		color: var(--tim-surface-text);
 		font-family: var(--tim-font-family);
 		font-size: var(--tim-font-size);
 		line-height: var(--tim-line-height);
+		scrollbar-width: auto;
+		scrollbar-color: var(--tim-scrollbar-thumb) var(--tim-scrollbar-track);
 	}
 
-	.worklog-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		width: 100%;
+	.worklog::-webkit-scrollbar {
+		width: 16px;
 	}
 
-	.log-row {
-		width: 100%;
+	.worklog::-webkit-scrollbar-track {
+		background: var(--tim-scrollbar-track);
+	}
+
+	.worklog::-webkit-scrollbar-thumb {
+		background: var(--tim-scrollbar-thumb);
+		border-radius: 10px;
+		border: 2px solid var(--tim-surface-bg);
+	}
+
+	.worklog::-webkit-scrollbar-thumb:hover {
+		background: var(--tim-scrollbar-thumb-hover);
 	}
 </style>
