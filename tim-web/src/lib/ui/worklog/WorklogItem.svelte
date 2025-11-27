@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { WorkLogItem } from './types';
+	import type { WorklogItem } from './types';
 	import Message from './item/Message.svelte';
 	import SysMessage from './item/SysMessage.svelte';
 
-	let { item }: { item: WorkLogItem } = $props();
+	let { item }: { item: WorklogItem } = $props();
 </script>
 
 {#if item.kind === 'msg'}

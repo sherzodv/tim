@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { WorkLogItem } from './types';
-	import WorkLogItemC from './WorkLogItem.svelte';
+	import type { WorklogItem } from './types';
+	import WorklogItemC from './WorklogItem.svelte';
 
-	let { items }: { items: WorkLogItem[] } = $props();
+	let { items }: { items: WorklogItem[] } = $props();
 
 	let listEl: HTMLElement;
 	let atBottom = true;
@@ -25,11 +25,11 @@
 	}
 </script>
 
-<section class="work-log" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
-	<div class="work-log-body">
+<section class="worklog" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
+	<div class="worklog-body">
 		{#each items as item, i (item.kind + '-' + item.id + '-' + i)}
 			<div class="log-row">
-				<WorkLogItemC {item} />
+				<WorklogItemC {item} />
 			</div>
 		{/each}
 	</div>
@@ -38,7 +38,7 @@
 <style>
 	@import '../theme.css';
 
-	.work-log {
+	.worklog {
 		display: block;
 		flex: 1 1 auto;
 		width: 100%;
@@ -54,7 +54,7 @@
 		line-height: var(--tim-line-height);
 	}
 
-	.work-log-body {
+	.worklog-body {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;

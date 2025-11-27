@@ -1,22 +1,22 @@
 <script lang="ts">
-	import WorkLog from '../work-log/WorkLog.svelte';
+	import Worklog from '../worklog/Worklog.svelte';
 	import type { TimSpace } from '../../tim-space';
 	import type { TimSpaceStorage } from '../../tim-space/storage';
 
 	let { space, storage }: { space: TimSpace; storage: TimSpaceStorage } = $props();
 </script>
 
-<section class="work-space-shell tim-theme" aria-label="Work space" data-space-active={space ? 'true' : 'false'}>
+<section class="workspace-shell tim-theme" aria-label="Workspace" data-space-active={space ? 'true' : 'false'}>
 	<aside class="chat-list" aria-label="Chat list placeholder"></aside>
-	<section class="work-space">
-		<WorkLog items={$storage} />
+	<section class="workspace">
+		<Worklog items={$storage} />
 	</section>
 </section>
 
 <style>
 	@import '../theme.css';
 
-	.work-space-shell {
+	.workspace-shell {
 		display: grid;
 		grid-template-columns: 320px 1fr;
 		grid-template-rows: 1fr;
@@ -33,7 +33,7 @@
 		min-height: 0;
 	}
 
-	.work-space {
+	.workspace {
 		display: flex;
 		flex-direction: column;
 		flex: 1;
@@ -44,7 +44,7 @@
 	}
 
 	@media (prefers-color-scheme: dark) {
-		.work-space-shell {
+		.workspace-shell {
 			background: var(--tim-surface-bg);
 		}
 
@@ -53,7 +53,7 @@
 			border-color: var(--tim-divider);
 		}
 
-		.work-space {
+		.workspace {
 			background: var(--tim-surface-bg);
 		}
 	}

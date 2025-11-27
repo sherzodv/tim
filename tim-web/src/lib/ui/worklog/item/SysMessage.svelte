@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { WorkLogItemSysMessage } from '../types';
+	import type { WorklogItemSysMessage } from '../types';
 
-	let { item }: { item: WorkLogItemSysMessage } = $props();
+	let { item }: { item: WorklogItemSysMessage } = $props();
 </script>
 
 <article class="sys-row" aria-label="System message">

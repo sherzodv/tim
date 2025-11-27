@@ -2,7 +2,7 @@ import type { SpaceEvent, Timite, Timestamp } from '../../gen/tim/api/g1/api_pb'
 import type { TimClient } from '../tim-client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
 import type { TimSpaceStorage } from './storage';
-import type { WorkLogItem } from '../ui/work-log/types';
+import type { WorklogItem } from '../ui/worklog/types';
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -67,11 +67,11 @@ export class TimSpace implements TimSpaceHandler {
 		});
 	}
 
-	private append(item: WorkLogItem) {
+	private append(item: WorklogItem) {
 		this.storage.append(item);
 	}
 
-	private buildHistoryItems(events: SpaceEvent[]): WorkLogItem[] {
+	private buildHistoryItems(events: SpaceEvent[]): WorklogItem[] {
 		const sorted = [...events].sort((left, right) => {
 			const leftId = left.metadata?.id ?? 0n;
 			const rightId = right.metadata?.id ?? 0n;
@@ -80,10 +80,10 @@ export class TimSpace implements TimSpaceHandler {
 		});
 		return sorted
 			.map((event) => this.asMessageItem(event))
-			.filter((item): item is WorkLogItem => item !== null);
+			.filter((item): item is WorklogItem => item !== null);
 	}
 
-	private asMessageItem(update: SpaceEvent): WorkLogItem | null {
+	private asMessageItem(update: SpaceEvent): WorklogItem | null {
 		if (update.data?.case !== 'eventNewMessage') return null;
 		const message = update.data.value?.message;
 		if (!message) return null;

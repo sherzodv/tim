@@ -1,4 +1,4 @@
-export type WorkLogItemMessage = {
+export type WorklogItemMessage = {
 	kind: 'msg';
 	id: bigint;
 	author: String;
@@ -6,11 +6,11 @@ export type WorkLogItemMessage = {
 	time?: string;
 };
 
-export type WorkLogItemSysMessage = {
+export type WorklogItemSysMessage = {
 	kind: 'sysmsg';
 	id: bigint;
 	author: String;
 	content: String;
 };
 
-export type WorkLogItem = WorkLogItemMessage | WorkLogItemSysMessage;
+export type WorklogItem = WorklogItemMessage | WorklogItemSysMessage;

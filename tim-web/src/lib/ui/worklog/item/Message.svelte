@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { WorkLogItemMessage } from '../types';
+	import type { WorklogItemMessage } from '../types';
 
-	let { item }: { item: WorkLogItemMessage } = $props();
+	let { item }: { item: WorklogItemMessage } = $props();
 
 	const avatarLabel = deriveAvatar(item.author);
 	const avatarGradient = buildAvatarGradient(item.author);
@@ -39,7 +39,7 @@
 
 <article class="message-row" aria-label="Message row">
 	<div class="avatar" aria-hidden="true" style={`background:${avatarGradient}`}>{avatarLabel}</div>
-	<div class="work-log-item message" data-kind="message">
+	<div class="worklog-item message" data-kind="message">
 		<header>
 			<span class="author" style={`color:${authorColor}`}>{item.author}</span>
 			{#if item.time}
@@ -72,7 +72,7 @@
 		box-shadow: var(--tim-avatar-shadow);
 	}
 
-	.work-log-item {
+	.worklog-item {
 		display: inline-flex;
 		flex-direction: column;
 		gap: 0.35rem;

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import WorkSpace from '$lib/ui/work-space/WorkSpace.svelte';
+	import Workspace from '$lib/ui/workspace/Workspace.svelte';
 	import { createTimClient } from '$lib/tim-client';
 	import { createTimConnect } from '$lib/tim-connect';
 	import { createTimSpace } from '$lib/tim-space';
@@ -29,5 +29,5 @@
 </svelte:head>
 
 <main aria-label="Workspace">
-	<WorkSpace space={timSpace} storage={spaceStorage} />
+	<Workspace space={timSpace} storage={spaceStorage} />
 </main>
