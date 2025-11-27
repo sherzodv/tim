@@ -8,9 +8,11 @@ import {
 	ClientInfoSchema,
 	SendMessageReqSchema,
 	SubscribeToSpaceReqSchema,
+	GetTimelineReqSchema,
 	type TrustedRegisterReq,
 	type SendMessageReq,
-	type SubscribeToSpaceReq
+	type SubscribeToSpaceReq,
+	type GetTimelineRes
 } from '../../gen/tim/api/g1/api_pb';
 
 const SESSION_HEADER = 'tim-session-key' as const;
@@ -79,6 +81,14 @@ export class TimClient {
 		const request = buildSubscribeRequest(receiveOwnMessages);
 		return this.client.subscribeToSpace(request, {
 			signal,
+			headers: buildSessionHeaders(sessionKey)
+		});
+	}
+
+	async getTimeline(offset: bigint = 0n, size = 50): Promise<GetTimelineRes> {
+		const sessionKey = await this.ensureSession();
+		const request = create(GetTimelineReqSchema, { offset, size });
+		return this.client.getTimeline(request, {
 			headers: buildSessionHeaders(sessionKey)
 		});
 	}

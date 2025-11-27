@@ -4,6 +4,10 @@ import "google/protobuf/timestamp.proto";
 
 package tim.api.g1;
 
+message Space {
+  uint64 last_event_id = 1;
+}
+
 message Timite {
   uint64 id = 1;
   string nick = 2;

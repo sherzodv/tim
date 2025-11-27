@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { tick } from 'svelte';
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import type { WorkLogItem } from './types';
 	import WorkLogItemC from './WorkLogItem.svelte';
 
 	let { items }: { items: WorkLogItem[] } = $props();
+
+	console.log("hello")
 
 	let virtualList: HTMLElement;
 	let virtualElems: HTMLDivElement[] = $state([]);
@@ -21,11 +22,6 @@
 			$v.setOptions({ count: items.length });
 			virtualElems.forEach((el) => $v.measureElement(el));
 		}
-		tick().then(() => {
-			if (virtualList) {
-				virtualList.scrollTop = virtualList.scrollHeight;
-			}
-		});
 	});
 </script>
 

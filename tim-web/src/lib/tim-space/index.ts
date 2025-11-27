@@ -1,12 +1,15 @@
-import type { SpaceEvent } from '../../gen/tim/api/g1/api_pb';
+import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
 import type { TimClient } from '../tim-client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
 import type { TimSpaceStorage } from './storage';
 import type { WorkLogItem } from '../ui/work-log/types';
 
+const HISTORY_PAGE_SIZE = 50;
+
 export class TimSpace implements TimSpaceHandler {
 	private localId = 0n;
 	private started = false;
+	private timites = new Map<bigint, string>();
 
 	constructor(
 		private readonly client: TimClient,
@@ -17,7 +20,7 @@ export class TimSpace implements TimSpaceHandler {
 	start() {
 		if (this.started) return;
 		this.started = true;
-		void this.connector.start(this);
+		void this.bootstrap();
 	}
 
 	stop() {
@@ -26,20 +29,31 @@ export class TimSpace implements TimSpaceHandler {
 		this.connector.stop();
 	}
 
+	private async bootstrap() {
+		await this.loadHistory();
+		if (!this.started) return;
+		await this.connector.start(this);
+	}
+
+	private async loadHistory() {
+		try {
+			const timeline = await this.client.getTimeline(0n, HISTORY_PAGE_SIZE);
+			this.captureTimites(timeline.timites);
+			const history = this.buildHistoryItems(timeline.events);
+			this.storage.set(history);
+		} catch (error) {
+			console.error('TimSpace: failed to load history', error);
+		}
+	}
+
 	async send(content: string) {
 		await this.client.sendMessage(content);
 	}
 
 	onSpaceUpdate(update: SpaceEvent) {
-		if (update.data?.case !== 'eventNewMessage') return;
-		const message = update.data.value?.message;
-		if (!message) return;
-		this.append({
-			id: message.id ?? this.nextLocalId(),
-			kind: 'msg',
-			author: this.formatAuthor(message.senderId),
-			content: message.content ?? ''
-		});
+		const item = this.asMessageItem(update);
+		if (!item) return;
+		this.append(item);
 	}
 
 	onPhaseChange(phase: ChannelPhase) {
@@ -57,13 +71,48 @@ export class TimSpace implements TimSpaceHandler {
 		this.storage.append(item);
 	}
 
+	private buildHistoryItems(events: SpaceEvent[]): WorkLogItem[] {
+		const sorted = [...events].sort((left, right) => {
+			const leftId = left.metadata?.id ?? 0n;
+			const rightId = right.metadata?.id ?? 0n;
+			if (leftId === rightId) return 0;
+			return leftId < rightId ? -1 : 1;
+		});
+		return sorted
+			.map((event) => this.asMessageItem(event))
+			.filter((item): item is WorkLogItem => item !== null);
+	}
+
+	private asMessageItem(update: SpaceEvent): WorkLogItem | null {
+		if (update.data?.case !== 'eventNewMessage') return null;
+		const message = update.data.value?.message;
+		if (!message) return null;
+		return {
+			id: message.id ?? this.nextLocalId(),
+			kind: 'msg',
+			author: this.formatAuthor(message.senderId),
+			content: message.content ?? ''
+		};
+	}
+
+	private captureTimites(timites: Timite[]) {
+		this.timites.clear();
+		for (const timite of timites) {
+			const nick = timite.nick.trim();
+			if (!nick) continue;
+			this.timites.set(timite.id, nick);
+		}
+	}
+
 	private nextLocalId(): bigint {
 		this.localId += 1n;
 		return this.localId;
 	}
 
 	private formatAuthor(senderId?: bigint): string {
-		return senderId !== undefined ? `timite#${senderId}` : 'unknown';
+		if (senderId === undefined) return 'unknown';
+		const nick = this.timites.get(senderId);
+		return nick ?? `timite#${senderId}`;
 	}
 
 	private describePhase(phase: ChannelPhase): string | null {
