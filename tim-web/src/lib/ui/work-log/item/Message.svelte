@@ -68,8 +68,8 @@
 		align-items: center;
 		justify-content: center;
 		font-weight: 800;
-		color: var(--tg-avatar-text);
-		box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+		color: var(--tim-avatar-text);
+		box-shadow: var(--tim-avatar-shadow);
 	}
 
 	.work-log-item {
@@ -79,16 +79,16 @@
 		padding: 0.9rem 1.05rem 0.95rem;
 		max-width: min(78%, 640px);
 		border-radius: 0.9rem 0.9rem 0.9rem 0.25rem;
-		background: var(--tg-bubble-bg);
-		border: 1px solid var(--tg-bubble-border);
-		box-shadow: var(--tg-bubble-shadow);
+		background: var(--tim-bubble-bg);
+		border: 1px solid var(--tim-bubble-border);
+		box-shadow: var(--tim-bubble-shadow);
 	}
 
 	header {
 		display: flex;
 		justify-content: space-between;
 		font-size: 0.78rem;
-		color: var(--tg-bubble-text);
+		color: var(--tim-bubble-text);
 		opacity: 0.9;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
@@ -102,14 +102,15 @@
 	.timestamp {
 		font-weight: 600;
 		font-size: 0.78rem;
-		color: rgba(255, 255, 255, 0.72);
+		color: var(--tim-bubble-text);
+		opacity: 0.8;
 	}
 
 	.content {
-		font-size: var(--tg-chat-font-size, 1.1rem);
+		font-size: var(--tim-chat-font-size, 1.1rem);
 		line-height: 1.4;
 		margin: 0;
-		color: var(--tg-bubble-text);
+		color: var(--tim-bubble-text);
 		white-space: pre-wrap;
 		word-break: break-word;
 	}

@@ -1,0 +1,41 @@
+.tim-theme {
+	--tim-font-family:
+		'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
+		'Open Sans', 'Helvetica Neue', sans-serif;
+	--tim-font-size: 16px;
+	--tim-line-height: 1.4;
+	--tim-surface-bg: #e6e9ee;
+	--tim-surface-text: #0f1419;
+	--tim-bubble-bg: #ffffff;
+	--tim-bubble-border: #d1d6dd;
+	--tim-bubble-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+	--tim-bubble-text: #0a0d12;
+	--tim-sys-bg: #eef1f5;
+	--tim-sys-border: #d8dde3;
+	--tim-sys-text: #222a33;
+	--tim-chat-font-size: 1.5rem;
+	--tim-avatar-bg: #d5dae1;
+	--tim-avatar-text: #0f1419;
+	--tim-avatar-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+	--tim-sidebar-bg: #f4f6f9;
+	--tim-divider: #d6dbe1;
+}
+
+@media (prefers-color-scheme: dark) {
+	.tim-theme {
+		--tim-surface-bg: #11161c;
+		--tim-surface-text: #f9fbff;
+		--tim-bubble-bg: #1e252e;
+		--tim-bubble-border: #2c343f;
+		--tim-bubble-shadow: 0 12px 28px rgba(0, 0, 0, 0.48);
+		--tim-bubble-text: #ffffff;
+		--tim-sys-bg: #1a212b;
+		--tim-sys-border: #2b323c;
+		--tim-sys-text: #ffffff;
+		--tim-chat-font-size: 1.3rem;
+		--tim-avatar-bg: #2b323c;
+		--tim-avatar-text: #ffffff;
+		--tim-sidebar-bg: #161c23;
+		--tim-divider: #252c36;
+	}
+}

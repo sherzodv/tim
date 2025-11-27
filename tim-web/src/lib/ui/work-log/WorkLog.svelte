@@ -36,6 +36,8 @@
 </section>
 
 <style>
+	@import '../theme.css';
+
 	.work-log {
 		display: block;
 		flex: 1 1 auto;
@@ -45,8 +47,11 @@
 		max-height: 100%;
 		overflow-y: auto;
 		padding: 1.75rem;
-		background: var(--tg-surface-bg);
-		color: var(--tg-surface-text);
+		background: var(--tim-surface-bg);
+		color: var(--tim-surface-text);
+		font-family: var(--tim-font-family);
+		font-size: var(--tim-font-size);
+		line-height: var(--tim-line-height);
 	}
 
 	.work-log-body {

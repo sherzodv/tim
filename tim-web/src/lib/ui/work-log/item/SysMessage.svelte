@@ -23,9 +23,9 @@
 		gap: 0.5rem;
 		padding: 0.4rem 0.9rem;
 		border-radius: 999px;
-		background: rgba(34, 32, 32, 0.239);
-		border: 1px solid rgba(0, 0, 0, 0.12);
-		color: rgba(179, 184, 190, 0.95);
+		background: var(--tim-sys-bg);
+		border: 1px solid var(--tim-sys-border);
+		color: var(--tim-sys-text);
 		font-size: 1.02rem;
 		font-weight: 800;
 		letter-spacing: 0.01em;

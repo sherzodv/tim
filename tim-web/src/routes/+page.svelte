@@ -28,6 +28,6 @@
 	<title>Tim</title>
 </svelte:head>
 
-<main class="blank-canvas" aria-label="Workspace">
+<main aria-label="Workspace">
 	<WorkSpace space={timSpace} storage={spaceStorage} />
 </main>
