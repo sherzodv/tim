@@ -16,34 +16,38 @@
 
 <style>
 	.work-log-item {
-		display: flex;
+		display: inline-flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		padding: 0.85rem 1rem;
-		border-radius: 0.75rem;
-		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+		gap: 0.3rem;
+		align-self: center;
+		padding: 0.7rem 1rem;
+		max-width: min(70%, 460px);
+		border-radius: 1rem;
+		background: var(--tg-sys-bg);
+		border: 1px solid var(--tg-sys-border);
+		box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+		color: var(--tg-sys-text);
 	}
 
 	header {
 		display: flex;
 		justify-content: space-between;
-		font-size: 0.75rem;
-		color: rgba(255, 255, 255, 0.65);
+		font-size: 0.72rem;
+		color: var(--tg-sys-text);
+		opacity: 0.95;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 	}
 
 	.author {
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.content {
-		font-size: 0.95rem;
-		line-height: 1.4;
+		font-size: var(--tg-chat-font-size, 1.1rem);
+		line-height: 1.35;
 		margin: 0;
-		color: rgba(255, 255, 255, 0.92);
+		color: var(--tg-sys-text);
 		white-space: pre-wrap;
 		word-break: break-word;
 	}

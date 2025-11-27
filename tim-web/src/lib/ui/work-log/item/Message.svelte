@@ -2,48 +2,105 @@
 	import type { WorkLogItemMessage } from '../types';
 
 	let { item }: { item: WorkLogItemMessage } = $props();
+
+	const avatarLabel = deriveAvatar(item.author);
+	const avatarGradient = buildAvatarGradient(item.author);
+	const authorColor = pickAuthorColor(item.author);
+
+	function deriveAvatar(author: String): string {
+		const text = `${author ?? ''}`.trim();
+		if (!text) return '?';
+		const firstWord = text.split(/\s+/)[0];
+		const alpha = firstWord.replace(/[^A-Za-z0-9]/g, '');
+		const candidate = alpha || firstWord;
+		return candidate.charAt(0).toUpperCase();
+	}
+
+	function buildAvatarGradient(author: String): string {
+		const base = hashHue(`${author ?? ''}`);
+		const start = `hsl(${base}, 60%, 52%)`;
+		const end = `hsl(${(base + 28) % 360}, 65%, 48%)`;
+		return `linear-gradient(145deg, ${start}, ${end})`;
+	}
+
+	function pickAuthorColor(author: String): string {
+		const base = hashHue(`${author ?? ''}`);
+		return `hsl(${base}, 68%, 50%)`;
+	}
+
+	function hashHue(input: string): number {
+		let hash = 0;
+		for (let i = 0; i < input.length; i += 1) {
+			hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+		}
+		return hash % 360;
+	}
 </script>
 
-<article class="work-log-item message" data-kind="message" aria-label="Message">
-	<header>
-		<span class="author">{item.author}</span>
-		<time datetime="">
-			{item.kind}
-		</time>
-	</header>
-	<p class="content">{item.content}</p>
+<article class="message-row" aria-label="Message row">
+	<div class="avatar" aria-hidden="true" style={`background:${avatarGradient}`}>{avatarLabel}</div>
+	<div class="work-log-item message" data-kind="message">
+		<header>
+			<span class="author" style={`color:${authorColor}`}>{item.author}</span>
+		</header>
+		<p class="content">{item.content}</p>
+	</div>
 </article>
 
 <style>
+	.message-row {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 0.75rem;
+		align-items: end;
+		width: 100%;
+		margin-bottom: 0.75rem;
+	}
+
+	.avatar {
+		width: 48px;
+		height: 48px;
+		border-radius: 50%;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 800;
+		color: var(--tg-avatar-text);
+		box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+	}
+
 	.work-log-item {
-		display: flex;
+		display: inline-flex;
 		flex-direction: column;
-		gap: 0.25rem;
-		padding: 0.85rem 1rem;
-		border-radius: 0.75rem;
-		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+		gap: 0.35rem;
+		padding: 0.9rem 1.05rem 0.95rem;
+		max-width: min(78%, 640px);
+		border-radius: 0.9rem 0.9rem 0.9rem 0.25rem;
+		background: var(--tg-bubble-bg);
+		border: 1px solid var(--tg-bubble-border);
+		box-shadow: var(--tg-bubble-shadow);
 	}
 
 	header {
 		display: flex;
-		justify-content: space-between;
-		font-size: 0.75rem;
-		color: rgba(255, 255, 255, 0.65);
+		justify-content: flex-start;
+		font-size: 0.78rem;
+		color: var(--tg-bubble-text);
+		opacity: 0.9;
 		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.06em;
 	}
 
 	.author {
-		font-weight: 600;
+		font-weight: 700;
+		font-size: 0.95rem;
 	}
 
 	.content {
-		font-size: 0.95rem;
+		font-size: var(--tg-chat-font-size, 1.1rem);
 		line-height: 1.4;
 		margin: 0;
-		color: rgba(255, 255, 255, 0.92);
+		color: var(--tg-bubble-text);
 		white-space: pre-wrap;
 		word-break: break-word;
 	}

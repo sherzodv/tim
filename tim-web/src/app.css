@@ -6,6 +6,7 @@
 		'Open Sans', 'Helvetica Neue', sans-serif;
 	--mono: 'Fira Mono', 'SFMono-Regular', ui-monospace, 'Source Code Pro', monospace;
 	--transition-base: 0.2s ease;
+	--base-font-size: 16px;
 }
 
 :root[data-theme='night'],
@@ -99,7 +100,8 @@ body {
 	background-image:
 		var(--background-gradient-1), var(--background-gradient-2), var(--background-gradient-3);
 	color: var(--shell-text);
-	font-family: var(--mono);
+	font-family: var(--base-font);
+	font-size: var(--base-font-size);
 	line-height: 1.4;
 	transition:
 		background-color var(--transition-base),

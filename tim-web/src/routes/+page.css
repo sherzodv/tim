@@ -5,4 +5,5 @@ main.blank-canvas {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	min-height: 0;
 }

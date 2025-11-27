@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
+	import { tick } from 'svelte';
 	import type { WorkLogItem } from './types';
 	import WorkLogItemC from './WorkLogItem.svelte';
 
 	let { items }: { items: WorkLogItem[] } = $props();
-
-	console.log("hello")
 
 	let virtualList: HTMLElement;
 	let virtualElems: HTMLDivElement[] = $state([]);
@@ -17,9 +16,10 @@
 		overscan: 5
 	});
 
-	$effect(() => {
+	$effect(async () => {
 		if ($v.options.count !== items.length) {
 			$v.setOptions({ count: items.length });
+			await tick();
 			virtualElems.forEach((el) => $v.measureElement(el));
 		}
 	});
@@ -45,12 +45,15 @@
 <style>
 	.work-log {
 		display: block;
-		flex: 1;
+		flex: 1 1 auto;
 		width: 100%;
 		height: 100%;
-		min-height: 100%;
+		min-height: 0;
+		max-height: 100%;
 		overflow-y: auto;
-		padding: 1.5rem;
+		padding: 1.75rem;
+		background: var(--tg-surface-bg);
+		color: var(--tg-surface-text);
 	}
 
 	.work-log-body {
