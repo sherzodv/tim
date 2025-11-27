@@ -109,6 +109,14 @@ impl TimApi {
             .as_ref()
             .ok_or_else(|| TimApiError::InvalidArgError("timite required".into()))?;
 
+        // Verify timite exists in database
+        let stored_timite = self.t_timite.get(timite.id)?;
+        if stored_timite.is_none() {
+            return Err(TimApiError::InvalidArgError(
+                format!("timite with id {} not found", timite.id)
+            ));
+        }
+
         let info = req
             .client_info
             .as_ref()
