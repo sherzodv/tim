@@ -1,4 +1,4 @@
-import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
+import type { SpaceEvent, Timite, Timestamp } from '../../gen/tim/api/g1/api_pb';
 import type { TimClient } from '../tim-client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
 import type { TimSpaceStorage } from './storage';
@@ -91,7 +91,8 @@ export class TimSpace implements TimSpaceHandler {
 			id: message.id ?? this.nextLocalId(),
 			kind: 'msg',
 			author: this.formatAuthor(message.senderId),
-			content: message.content ?? ''
+			content: message.content ?? '',
+			time: this.formatTime(update.metadata?.emittedAt)
 		};
 	}
 
@@ -113,6 +114,18 @@ export class TimSpace implements TimSpaceHandler {
 		if (senderId === undefined) return 'unknown';
 		const nick = this.timites.get(senderId);
 		return nick ?? `timite#${senderId}`;
+	}
+
+	private formatTime(timestamp?: Timestamp): string | undefined {
+		if (!timestamp) return undefined;
+		const millis = Number(timestamp.seconds) * 1000 + Math.floor((timestamp.nanos ?? 0) / 1_000_000);
+		const date = new Date(millis);
+		const year = date.getFullYear();
+		const month = `${date.getMonth() + 1}`.padStart(2, '0');
+		const day = `${date.getDate()}`.padStart(2, '0');
+		const hours = `${date.getHours()}`.padStart(2, '0');
+		const minutes = `${date.getMinutes()}`.padStart(2, '0');
+		return `${year}-${month}-${day} ${hours}:${minutes}`;
 	}
 
 	private describePhase(phase: ChannelPhase): string | null {

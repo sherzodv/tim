@@ -3,6 +3,7 @@ export type WorkLogItemMessage = {
 	id: bigint;
 	author: String;
 	content: String;
+	time?: string;
 };
 
 export type WorkLogItemSysMessage = {

@@ -42,6 +42,9 @@
 	<div class="work-log-item message" data-kind="message">
 		<header>
 			<span class="author" style={`color:${authorColor}`}>{item.author}</span>
+			{#if item.time}
+				<time class="timestamp" datetime={item.time}>{item.time}</time>
+			{/if}
 		</header>
 		<p class="content">{item.content}</p>
 	</div>
@@ -83,7 +86,7 @@
 
 	header {
 		display: flex;
-		justify-content: flex-start;
+		justify-content: space-between;
 		font-size: 0.78rem;
 		color: var(--tg-bubble-text);
 		opacity: 0.9;
@@ -94,6 +97,12 @@
 	.author {
 		font-weight: 700;
 		font-size: 0.95rem;
+	}
+
+	.timestamp {
+		font-weight: 600;
+		font-size: 0.78rem;
+		color: rgba(255, 255, 255, 0.72);
 	}
 
 	.content {
