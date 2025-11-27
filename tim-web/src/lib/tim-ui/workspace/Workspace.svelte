@@ -1,4 +1,5 @@
 <script lang="ts">
+	import LeftPanel from './LeftPanel.svelte';
 	import Worklog from './worklog/Worklog.svelte';
 	import type { TimSpace } from '$lib/api/space';
 	import type { TimStorage } from '$lib/api/storage';
@@ -7,7 +8,10 @@
 </script>
 
 <section class="workspace-shell tim-theme" aria-label="Workspace" data-space-active={space ? 'true' : 'false'}>
-	<Worklog items={$storage} />
+	<div class="workspace-body">
+		<LeftPanel />
+		<Worklog items={$storage} />
+	</div>
 </section>
 
 <style>
@@ -17,11 +21,18 @@
 		box-sizing: border-box;
 		display: flex;
 		flex-direction: column;
-		height: 100vh;
-		min-height: 100vh;
+		flex: 1 1 auto;
+		min-height: 0;
 		min-width: 0;
 		overflow: hidden;
 		background: var(--tim-surface-bg);
+	}
+
+	.workspace-body {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+		min-width: 0;
 	}
 
 	@media (prefers-color-scheme: dark) {

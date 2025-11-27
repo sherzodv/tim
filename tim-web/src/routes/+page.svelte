@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import Workspace from '$lib/tim-ui/workspace/Workspace.svelte';
+	import CommandLine from '$lib/tim-ui/command-line/CommandLine.svelte';
 	import { createTimClient } from '$lib/api/client';
 	import { createTimConnect } from '$lib/api/connect';
 	import { createTimSpace } from '$lib/api/space';
@@ -10,9 +11,9 @@
 		nick: 'bob',
 		platform: 'browser'
 	});
-const timConnect = createTimConnect(timClient);
-const timStorage = createTimStorage();
-const timSpace = createTimSpace(timClient, timConnect, timStorage);
+	const timConnect = createTimConnect(timClient);
+	const timStorage = createTimStorage();
+	const timSpace = createTimSpace(timClient, timConnect, timStorage);
 
 const lorem = [
 	'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
@@ -23,10 +24,10 @@ const lorem = [
 ];
 
 function startLoremFeed(enabled: boolean, intervalMs = 1400) {
-		if (!enabled) return () => {};
-		let canceled = false;
-		const pushLorem = () => {
-			if (canceled) return;
+	if (!enabled) return () => {};
+	let canceled = false;
+	const pushLorem = () => {
+		if (canceled) return;
 		const idx = Math.floor(Math.random() * lorem.length);
 		const id = BigInt(Date.now());
 		timStorage.append({
@@ -36,11 +37,11 @@ function startLoremFeed(enabled: boolean, intervalMs = 1400) {
 			content: lorem[idx],
 			time: new Date().toISOString()
 		});
-			setTimeout(pushLorem, intervalMs);
-		};
-		pushLorem();
-		return () => {
-			canceled = true;
+		setTimeout(pushLorem, intervalMs);
+	};
+	pushLorem();
+	return () => {
+		canceled = true;
 	};
 }
 
@@ -60,6 +61,27 @@ $effect(() => {
 	<title>Tim</title>
 </svelte:head>
 
-<main aria-label="Workspace">
-	<Workspace space={timSpace} storage={timStorage} />
+<main class="page-shell tim-theme" aria-label="Workspace">
+	<div class="workspace-region">
+		<Workspace space={timSpace} storage={timStorage} />
+	</div>
+	<CommandLine />
 </main>
+
+<style>
+	@import '$lib/tim-ui/theme.css';
+
+	.page-shell {
+		height: 100vh;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		background: var(--tim-surface-bg);
+	}
+
+	.workspace-region {
+		flex: 1 1 auto;
+		min-height: 0;
+		display: flex;
+	}
+</style>

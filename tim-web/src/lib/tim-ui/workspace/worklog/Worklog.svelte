@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { WorklogItem } from '$lib/api/worklog';
 	import WorklogItemCmp from './item/index.svelte';
+	import WorklogHeader from './WorklogHeader.svelte';
 
 	let { items }: { items: WorklogItem[] } = $props();
 
@@ -25,14 +26,29 @@
 	}
 </script>
 
-<section class="worklog" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
-	{#each items as item, i (`${item.kind}-${item.id}-${i}`)}
-		<WorklogItemCmp entry={item} />
-	{/each}
+<section class="worklog-container">
+	<WorklogHeader />
+	<div class="worklog" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
+		{#each items as item, i (`${item.kind}-${item.id}-${i}`)}
+			<WorklogItemCmp entry={item} />
+		{/each}
+	</div>
 </section>
 
 <style>
 	@import '$lib/tim-ui/theme.css';
+
+	.worklog-container {
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+		flex: 1 1 auto;
+		width: 100%;
+		height: 100%;
+		min-height: 0;
+		max-height: 100%;
+		background: var(--tim-surface-bg);
+	}
 
 	.worklog {
 		box-sizing: border-box;
@@ -40,10 +56,7 @@
 		flex-direction: column;
 		gap: 0.25rem;
 		flex: 1 1 auto;
-		width: 100%;
-		height: 100%;
 		min-height: 0;
-		max-height: 100%;
 		overflow-y: scroll;
 		scrollbar-gutter: stable both-edges;
 		padding: 1.75rem;
