@@ -32,7 +32,7 @@
 </section>
 
 <style>
-	@import '$lib/ui/theme.css';
+	@import '$lib/tim-ui/theme.css';
 
 	.worklog {
 		box-sizing: border-box;

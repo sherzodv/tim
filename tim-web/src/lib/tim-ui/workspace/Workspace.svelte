@@ -1,9 +1,9 @@
 <script lang="ts">
 	import Worklog from './worklog/Worklog.svelte';
-	import type { TimSpace } from '$lib/tim-space';
-	import type { TimSpaceStorage } from '$lib/tim-space/storage';
+	import type { TimSpace } from '$lib/api/space';
+	import type { TimStorage } from '$lib/api/storage';
 
-	let { space, storage }: { space: TimSpace; storage: TimSpaceStorage } = $props();
+	let { space, storage }: { space: TimSpace; storage: TimStorage } = $props();
 </script>
 
 <section class="workspace-shell tim-theme" aria-label="Workspace" data-space-active={space ? 'true' : 'false'}>
@@ -11,7 +11,7 @@
 </section>
 
 <style>
-	@import '$lib/ui/theme.css';
+	@import '$lib/tim-ui/theme.css';
 
 	.workspace-shell {
 		box-sizing: border-box;

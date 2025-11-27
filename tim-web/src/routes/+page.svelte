@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import Workspace from '$lib/ui/workspace/Workspace.svelte';
-	import { createTimClient } from '$lib/tim-client';
-	import { createTimConnect } from '$lib/tim-connect';
-	import { createTimSpace } from '$lib/tim-space';
-	import { createTimSpaceStorage } from '$lib/tim-space/storage';
+	import Workspace from '$lib/tim-ui/workspace/Workspace.svelte';
+	import { createTimClient } from '$lib/api/client';
+	import { createTimConnect } from '$lib/api/connect';
+	import { createTimSpace } from '$lib/api/space';
+	import { createTimStorage } from '$lib/api/storage';
 
 	const timClient = createTimClient({
 		nick: 'bob',
 		platform: 'browser'
 	});
 const timConnect = createTimConnect(timClient);
-const spaceStorage = createTimSpaceStorage();
-const timSpace = createTimSpace(timClient, timConnect, spaceStorage);
+const timStorage = createTimStorage();
+const timSpace = createTimSpace(timClient, timConnect, timStorage);
 
 const lorem = [
 	'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
@@ -29,7 +29,7 @@ function startLoremFeed(enabled: boolean, intervalMs = 1400) {
 			if (canceled) return;
 		const idx = Math.floor(Math.random() * lorem.length);
 		const id = BigInt(Date.now());
-		spaceStorage.append({
+		timStorage.append({
 			kind: 'msg',
 			id,
 			author: 'tester',
@@ -61,5 +61,5 @@ $effect(() => {
 </svelte:head>
 
 <main aria-label="Workspace">
-	<Workspace space={timSpace} storage={spaceStorage} />
+	<Workspace space={timSpace} storage={timStorage} />
 </main>

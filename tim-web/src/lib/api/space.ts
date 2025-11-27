@@ -1,9 +1,9 @@
 import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
-import type { TimClient } from '../tim-client';
-import type { ChannelPhase, TimConnect, TimSpaceHandler } from '../tim-connect';
-import type { TimSpaceStorage } from './storage';
-import type { WorklogItem } from '../api/worklog';
+import type { TimClient } from './client';
+import type { ChannelPhase, TimConnect, TimSpaceHandler } from './connect';
+import type { TimStorage } from './storage';
+import type { WorklogItem } from './worklog';
 
 const HISTORY_PAGE_SIZE = 50;
 
@@ -15,7 +15,7 @@ export class TimSpace implements TimSpaceHandler {
 	constructor(
 		private readonly client: TimClient,
 		private readonly connector: TimConnect,
-		private readonly storage: TimSpaceStorage
+		private readonly storage: TimStorage
 	) {}
 
 	start() {
@@ -148,7 +148,7 @@ export class TimSpace implements TimSpaceHandler {
 export const createTimSpace = (
 	client: TimClient,
 	connector: TimConnect,
-	storage: TimSpaceStorage
+	storage: TimStorage
 ) => new TimSpace(client, connector, storage);
 
-export type { TimSpaceStorage } from './storage';
+export type { TimStorage } from './storage';
