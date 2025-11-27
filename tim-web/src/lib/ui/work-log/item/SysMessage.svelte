@@ -4,50 +4,37 @@
 	let { item }: { item: WorkLogItemSysMessage } = $props();
 </script>
 
-<article class="work-log-item message" data-kind="sysmsg" aria-label="System message">
-	<header>
-		<span class="author">{item.author}</span>
-		<time datetime="">
-			{item.kind}
-		</time>
-	</header>
-	<p class="content">{item.content}</p>
+<article class="sys-row" aria-label="System message">
+	<div class="sys-pill">
+		<span class="content">{item.content}</span>
+	</div>
 </article>
 
 <style>
-	.work-log-item {
-		display: inline-flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		align-self: center;
-		padding: 0.7rem 1rem;
-		max-width: min(70%, 460px);
-		border-radius: 1rem;
-		background: var(--tg-sys-bg);
-		border: 1px solid var(--tg-sys-border);
-		box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
-		color: var(--tg-sys-text);
-	}
-
-	header {
+	.sys-row {
 		display: flex;
-		justify-content: space-between;
-		font-size: 0.72rem;
-		color: var(--tg-sys-text);
-		opacity: 0.95;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
+		justify-content: center;
+		margin: 0.35rem 0;
 	}
 
-	.author {
-		font-weight: 700;
+	.sys-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.9rem;
+		border-radius: 999px;
+		background: rgba(34, 32, 32, 0.239);
+		border: 1px solid rgba(0, 0, 0, 0.12);
+		color: rgba(179, 184, 190, 0.95);
+		font-size: 1.02rem;
+		font-weight: 800;
+		letter-spacing: 0.01em;
+		text-transform: capitalize;
+		box-shadow: none;
 	}
 
 	.content {
-		font-size: var(--tg-chat-font-size, 1.1rem);
-		line-height: 1.35;
 		margin: 0;
-		color: var(--tg-sys-text);
 		white-space: pre-wrap;
 		word-break: break-word;
 	}

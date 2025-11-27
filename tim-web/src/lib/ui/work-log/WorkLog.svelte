@@ -1,42 +1,35 @@
 <script lang="ts">
-	import { createVirtualizer } from '@tanstack/svelte-virtual';
-	import { tick } from 'svelte';
 	import type { WorkLogItem } from './types';
 	import WorkLogItemC from './WorkLogItem.svelte';
 
 	let { items }: { items: WorkLogItem[] } = $props();
 
-	let virtualList: HTMLElement;
-	let virtualElems: HTMLDivElement[] = $state([]);
+	let listEl: HTMLElement;
+	let atBottom = true;
 
-	const v = createVirtualizer({
-		count: 0,
-		estimateSize: () => 10,
-		getScrollElement: () => virtualList ?? null,
-		overscan: 5
-	});
-
-	$effect(async () => {
-		if ($v.options.count !== items.length) {
-			$v.setOptions({ count: items.length });
-			await tick();
-			virtualElems.forEach((el) => $v.measureElement(el));
+	$effect(() => {
+		// re-run when list changes
+		const _count = items.length;
+		if (atBottom && listEl) {
+			queueMicrotask(() => {
+				listEl.scrollTop = listEl.scrollHeight;
+			});
 		}
 	});
+
+	function handleScroll(event: Event) {
+		const target = event.currentTarget as HTMLElement | null;
+		if (!target) return;
+		const distance = target.scrollHeight - (target.scrollTop + target.clientHeight);
+		atBottom = distance < 48;
+	}
 </script>
 
-<section class="work-log" bind:this={virtualList} aria-live="polite">
-	<div
-		class="work-log-body"
-		style={`height:${$v.getTotalSize()}px; position:relative; width: 100%`}
-	>
-		{#each $v.getVirtualItems() as vi, idx (vi.index)}
-			<div
-				bind:this={virtualElems[idx]}
-				data-index={vi.index}
-				style="position: absolute; top: 0; left: 0; width: 100%; transform: translateY({vi.start}px);"
-			>
-				<WorkLogItemC item={items[vi.index]} />
+<section class="work-log" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
+	<div class="work-log-body">
+		{#each items as item, i (item.kind + '-' + item.id + '-' + i)}
+			<div class="log-row">
+				<WorkLogItemC {item} />
 			</div>
 		{/each}
 	</div>
@@ -57,8 +50,13 @@
 	}
 
 	.work-log-body {
-		display: block;
-		position: relative;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		width: 100%;
+	}
+
+	.log-row {
 		width: 100%;
 	}
 </style>
