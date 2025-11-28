@@ -119,7 +119,8 @@ export class TimSpace implements TimSpaceHandler {
 
 	private formatTime(timestamp?: Timestamp): string | undefined {
 		if (!timestamp) return undefined;
-		const millis = Number(timestamp.seconds) * 1000 + Math.floor((timestamp.nanos ?? 0) / 1_000_000);
+		const millis =
+			Number(timestamp.seconds) * 1000 + Math.floor((timestamp.nanos ?? 0) / 1_000_000);
 		const date = new Date(millis);
 		const year = date.getFullYear();
 		const month = `${date.getMonth() + 1}`.padStart(2, '0');
@@ -145,10 +146,7 @@ export class TimSpace implements TimSpaceHandler {
 	}
 }
 
-export const createTimSpace = (
-	client: TimClient,
-	connector: TimConnect,
-	storage: TimStorage
-) => new TimSpace(client, connector, storage);
+export const createTimSpace = (client: TimClient, connector: TimConnect, storage: TimStorage) =>
+	new TimSpace(client, connector, storage);
 
 export type { TimStorage } from './storage';

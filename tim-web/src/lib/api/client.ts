@@ -78,7 +78,10 @@ export class TimClient {
 				return sessionKey;
 			} catch (error) {
 				// Timite not found on server - clear localStorage and register new one
-				console.warn('TrustedConnect failed, clearing stored timite and registering new one', error);
+				console.warn(
+					'TrustedConnect failed, clearing stored timite and registering new one',
+					error
+				);
 				this.clearStoredTimite();
 				// Fall through to registration
 			}

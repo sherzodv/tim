@@ -1,5 +1,4 @@
-<aside class="left-panel tim-theme" aria-label="Navigation">
-</aside>
+<aside class="left-panel tim-theme" aria-label="Navigation"></aside>
 
 <style>
 	@import '$lib/ui/theme.css';

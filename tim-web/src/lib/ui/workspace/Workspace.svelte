@@ -7,7 +7,11 @@
 	let { space, storage }: { space: TimSpace; storage: TimStorage } = $props();
 </script>
 
-<section class="workspace-shell tim-theme" aria-label="Workspace" data-space-active={space ? 'true' : 'false'}>
+<section
+	class="workspace-shell tim-theme"
+	aria-label="Workspace"
+	data-space-active={space ? 'true' : 'false'}
+>
 	<div class="workspace-body">
 		<LeftPanel />
 		<Worklog items={$storage} />
