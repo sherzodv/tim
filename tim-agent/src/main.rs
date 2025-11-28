@@ -6,10 +6,10 @@ mod tim_client;
 use std::env;
 use std::time::Duration;
 
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 use crate::crawler::CrawlerConf;
 use crate::llm::AgentConf;
@@ -19,8 +19,8 @@ use crate::tim_client::TimClientConf;
 
 const JARVIS_USERP: &str = include_str!("../prompts/jarvis_userp.md");
 const ALICE_USERP: &str = include_str!("../prompts/alice_userp.md");
-const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(100);
-const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(100);
+const JARVIS_LIVE_INTERVAL: Duration = Duration::from_secs(6);
+const ALICE_LIVE_INTERVAL: Duration = Duration::from_secs(7);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

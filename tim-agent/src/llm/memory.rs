@@ -64,7 +64,7 @@ impl Memory {
         names: &HashMap<u64, String>,
     ) -> Option<String> {
         match &event.data {
-            Some(Event::EventNewMessage(msg)) => Self::render_new_message( msg, names),
+            Some(Event::EventNewMessage(msg)) => Self::render_new_message(msg, names),
             Some(Event::EventCallAbility(call)) => Self::render_call_ability(call, names),
             Some(Event::EventCallAbilityOutcome(outcome)) => Self::render_call_outcome(outcome),
             None => None,
@@ -80,7 +80,7 @@ impl Memory {
         if content.is_empty() {
             return None;
         }
-        let header = Self::format_timite_label( message.sender_id, names);
+        let header = Self::format_timite_label(message.sender_id, names);
         Some(format!("{header}: {content}"))
     }
 

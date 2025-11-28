@@ -1,10 +1,10 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Serialize;
 use tokio::time::Duration;
 use tracing::debug;
-use std::fmt::Debug;
 
 use super::ability;
 use super::chatgpt::ChatGpt;
@@ -63,9 +63,11 @@ impl Debug for Agent {
 #[derive(Debug, Serialize)]
 struct AgentPromptContext {
     nick: String,
+    history: String,
 }
 
 const TIM_SYSTEM_PROMPT: &str = include_str!("../../prompts/tim-sys.md");
+const TIM_HISTORY_TEMPLATE: &str = include_str!("../../prompts/tim-history.md");
 
 impl From<MemoryError> for AgentError {
     fn from(value: MemoryError) -> Self {
@@ -93,7 +95,7 @@ impl Agent {
         })
     }
 
-    async fn ask_llm(&mut self, mark: String) -> Result<(), AgentError> {
+    async fn ask_llm(&mut self) -> Result<(), AgentError> {
         let history = match self.memory.context().await? {
             Some(context) => context,
             None => "EMPTY_HISTORY".to_string(),
@@ -101,13 +103,15 @@ impl Agent {
         let nick = self.client.get_me().nick.clone();
         let ctx = AgentPromptContext {
             nick: nick.clone(),
+            history: history,
         };
         let sys_prompt = render(TIM_SYSTEM_PROMPT, &ctx)?;
         let user_prompt = render(&self.conf.userp, &ctx)?;
+        let msg = render(TIM_HISTORY_TEMPLATE, &ctx)?;
         let req = LlmReq {
             sysp: &sys_prompt,
             userp: &user_prompt,
-            msg: &(history + &mark),
+            msg: &msg,
         };
         debug!("{} sending LLM request: {:?}", nick, req);
         let answer = self
@@ -116,8 +120,8 @@ impl Agent {
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
         match answer {
-            super::llm::LlmRes::NoResponse => {
-                debug!("{} no response", nick);
+            super::llm::LlmRes::NoResponse(reason) => {
+                debug!("{} chose silence. Reason: {}", nick, reason);
                 Ok(())
             }
             LlmRes::Reply(message) => {
@@ -142,18 +146,13 @@ impl AgentTrait for Agent {
 
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
         match &update.data {
-            Some(Event::EventNewMessage(EventNewMessage {
-                message: Some(_),
-            })) => {
-                self.ask_llm("".to_string()).await?;
-                Ok(())
-            }
+            Some(Event::EventNewMessage(EventNewMessage { message: Some(_) })) => Ok(()),
             _ => Ok(()),
         }
     }
 
     async fn on_live(&mut self) -> Result<(), AgentError> {
-        self.ask_llm("\nTIMER-INIT".to_string()).await?;
+        self.ask_llm().await?;
         Ok(())
     }
 
