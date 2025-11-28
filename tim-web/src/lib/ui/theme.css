@@ -24,6 +24,10 @@
 	--tim-scrollbar-thumb-hover: #55627a;
 }
 
+.tim-theme *:focus {
+	outline: none;
+}
+
 @media (prefers-color-scheme: dark) {
 	.tim-theme {
 		--tim-surface-bg: #11161c;

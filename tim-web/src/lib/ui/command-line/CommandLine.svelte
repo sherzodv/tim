@@ -1,10 +1,56 @@
 <script lang="ts">
 	import type { TimSpace } from '$lib/api/space';
+	import { onMount } from 'svelte';
 
 	let { space }: { space: TimSpace } = $props();
 
 	let inputValue = $state('');
 	let inputEl: HTMLTextAreaElement;
+
+	$effect(() => {
+		inputEl?.focus();
+	});
+
+	function autoResize() {
+		if (!inputEl) return;
+		inputEl.style.height = '0';
+		inputEl.style.height = inputEl.scrollHeight + 'px';
+	}
+
+	$effect(() => {
+		if (inputValue !== undefined) {
+			autoResize();
+		}
+	});
+
+	onMount(() => {
+		autoResize();
+
+		const handleGlobalKeyDown = (event: KeyboardEvent) => {
+			// Don't interfere with special keys or when modifiers are pressed (except Shift for typing)
+			if (
+				event.ctrlKey ||
+				event.metaKey ||
+				event.altKey ||
+				event.key === 'Tab' ||
+				event.key === 'Escape' ||
+				event.key.startsWith('F')
+			) {
+				return;
+			}
+
+			// If typing a printable character and input is not focused, focus it
+			if (event.key.length === 1 && document.activeElement !== inputEl) {
+				inputEl?.focus();
+			}
+		};
+
+		window.addEventListener('keydown', handleGlobalKeyDown);
+
+		return () => {
+			window.removeEventListener('keydown', handleGlobalKeyDown);
+		};
+	});
 
 	function handleKeyDown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey) {
@@ -34,9 +80,10 @@
 			bind:this={inputEl}
 			bind:value={inputValue}
 			onkeydown={handleKeyDown}
+			oninput={autoResize}
 			placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
 			class="command-input"
-			rows="3"
+			rows="1"
 		></textarea>
 		<button onclick={sendMessage} class="send-button" disabled={!inputValue.trim()}>Send</button>
 	</div>
@@ -61,7 +108,6 @@
 	}
 
 	.command-surface {
-		min-height: 7rem;
 		display: flex;
 		gap: 0.75rem;
 		padding: 1rem;
@@ -70,7 +116,6 @@
 
 	.command-input {
 		flex: 1 1 auto;
-		min-height: 5rem;
 		padding: 0.75rem;
 		border: 1px solid var(--tim-divider);
 		border-radius: 4px;
@@ -79,8 +124,12 @@
 		font-family: var(--tim-font-family);
 		font-size: var(--tim-font-size);
 		line-height: var(--tim-line-height);
-		resize: vertical;
+		resize: none;
 		outline: none;
+		overflow: hidden;
+		max-height: 200px;
+		box-sizing: border-box;
+		min-height: 0;
 	}
 
 	.command-input:focus {
@@ -94,24 +143,6 @@
 	}
 
 	.send-button {
-		padding: 0.75rem 1.5rem;
-		border: none;
-		border-radius: 4px;
-		background: var(--tim-primary, #4a90e2);
-		color: white;
-		font-family: var(--tim-font-family);
-		font-size: var(--tim-font-size);
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.2s ease;
-	}
-
-	.send-button:hover:not(:disabled) {
-		background: var(--tim-primary-hover, #357abd);
-	}
-
-	.send-button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
+		display: none;
 	}
 </style>

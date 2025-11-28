@@ -15,6 +15,7 @@
    - Every plan includes a **naming consistency pass**.
    - Keep style uniform across all repositories.
    - Use `cargo +nightly fmt` for formatting.
+   - Use `npm run fmt` for tim-web formatting.
    - Pay attention to method grouping (how it already done in the code)
    - Pay attention to method signatures, e.g. all store_ methods return Result<(), Error>, etc.
 
