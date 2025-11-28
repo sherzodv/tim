@@ -22,6 +22,8 @@
 	--tim-scrollbar-track: #e1e6ef;
 	--tim-scrollbar-thumb: #6d7a90;
 	--tim-scrollbar-thumb-hover: #55627a;
+	--tim-input-bg: #ffffff;
+	--tim-input-font-size: 1.5rem;
 }
 
 .tim-theme *:focus {
@@ -47,5 +49,7 @@
 		--tim-scrollbar-track: #121922;
 		--tim-scrollbar-thumb: #3f4d63;
 		--tim-scrollbar-thumb-hover: #556078;
+		--tim-input-bg: #1e252e;
+		--tim-input-font-size: 1.3rem;
 	}
 }

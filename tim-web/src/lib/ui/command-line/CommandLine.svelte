@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { TimSpace } from '$lib/api/space';
 	import { onMount } from 'svelte';
+	import CommandLinePrompt from './CommandLinePrompt.svelte';
 
 	let { space }: { space: TimSpace } = $props();
 
@@ -76,12 +77,13 @@
 <section class="command-line tim-theme" aria-label="Command line">
 	<div class="status-line" aria-label="Command status"></div>
 	<div class="command-surface" aria-label="Command input area">
+		<CommandLinePrompt />
 		<textarea
 			bind:this={inputEl}
 			bind:value={inputValue}
 			onkeydown={handleKeyDown}
 			oninput={autoResize}
-			placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+			placeholder="Type a message"
 			class="command-input"
 			rows="1"
 		></textarea>
@@ -115,14 +117,14 @@
 	}
 
 	.command-input {
-		flex: 1 1 auto;
+		flex: 1 1 0;
 		padding: 0.75rem;
 		border: 1px solid var(--tim-divider);
 		border-radius: 4px;
-		background: var(--tim-surface-bg);
+		background: var(--tim-input-bg);
 		color: var(--tim-surface-text);
 		font-family: var(--tim-font-family);
-		font-size: var(--tim-font-size);
+		font-size: var(--tim-input-font-size);
 		line-height: var(--tim-line-height);
 		resize: none;
 		outline: none;
@@ -133,8 +135,8 @@
 	}
 
 	.command-input:focus {
-		border-color: var(--tim-primary, #4a90e2);
-		box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
+		border-color: var(--tim-divider);
+		box-shadow: none;
 	}
 
 	.command-input::placeholder {
