@@ -90,7 +90,7 @@ export class TimSpace implements TimSpaceHandler {
 		if (!message) return null;
 		return {
 			kind: 'msg',
-			id: message.id ?? this.nextLocalId(),
+			id: update.metadata?.id ?? this.nextLocalId(),
 			author: this.formatAuthor(message.senderId),
 			content: message.content ?? '',
 			time: this.formatTime(update.metadata?.emittedAt)

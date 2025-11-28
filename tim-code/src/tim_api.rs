@@ -26,6 +26,8 @@ use crate::api::TrustedRegisterReq;
 use crate::api::TrustedRegisterRes;
 use crate::tim_ability::TimAbility;
 use crate::tim_ability::TimAbilityError;
+use crate::tim_message::TimMessage;
+use crate::tim_message::TimMessageError;
 use crate::tim_session::TimSession;
 use crate::tim_session::TimSessionError;
 use crate::tim_space::TimSpace;
@@ -47,6 +49,9 @@ pub enum TimApiError {
     #[error("Ability error: {0}")]
     AbilityError(#[from] TimAbilityError),
 
+    #[error("Message error: {0}")]
+    MessageError(#[from] TimMessageError),
+
     #[error(
         "Call ability target mismatch (call ability targeted timite {call_ability_timite} but sender was {sender_timite})"
     )]
@@ -65,6 +70,7 @@ pub struct TimApi {
     t_space: Arc<TimSpace>,
     t_timite: Arc<TimTimite>,
     t_ability: Arc<TimAbility>,
+    t_message: Arc<TimMessage>,
 }
 
 impl TimApi {
@@ -73,12 +79,14 @@ impl TimApi {
         t_space: Arc<TimSpace>,
         t_timite: Arc<TimTimite>,
         t_ability: Arc<TimAbility>,
+        t_message: Arc<TimMessage>,
     ) -> Self {
         Self {
             t_session,
             t_space,
             t_timite,
             t_ability,
+            t_message,
         }
     }
 
@@ -112,9 +120,10 @@ impl TimApi {
         // Verify timite exists in database
         let stored_timite = self.t_timite.get(timite.id)?;
         if stored_timite.is_none() {
-            return Err(TimApiError::InvalidArgError(
-                format!("timite with id {} not found", timite.id)
-            ));
+            return Err(TimApiError::InvalidArgError(format!(
+                "timite with id {} not found",
+                timite.id
+            )));
         }
 
         let info = req
@@ -153,7 +162,8 @@ impl TimApi {
             "message received from timite {}: {}",
             session.timite_id, &req.content
         );
-        Ok(self.t_space.process(req, session).await?)
+        self.t_message.process_message(req, session).await?;
+        Ok(SendMessageRes { error: None })
     }
 
     pub fn subscribe(

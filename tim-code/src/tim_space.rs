@@ -18,8 +18,6 @@ use crate::api::EventCallAbility;
 use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
 use crate::api::Message;
-use crate::api::SendMessageReq;
-use crate::api::SendMessageRes;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
@@ -48,26 +46,16 @@ struct Subscriber {
 }
 
 pub struct TimSpace {
-    msg_counter: AtomicU64,
     upd_counter: AtomicU64,
     subscribers: RwLock<HashMap<String, Subscriber>>,
     storage: Arc<TimStorage>,
 }
 
-fn event_new_message(
-    upd_id: u64,
-    msg_id: u64,
-    req: &SendMessageReq,
-    session: &Session,
-) -> SpaceEvent {
+fn event_new_message(upd_id: u64, message: &Message) -> SpaceEvent {
     SpaceEvent {
         metadata: event_metadata(upd_id),
         data: Some(EventData::EventNewMessage(EventNewMessage {
-            message: Some(Message {
-                id: msg_id,
-                sender_id: session.timite_id,
-                content: req.content.to_string(),
-            }),
+            message: Some(message.clone()),
         })),
     }
 }
@@ -110,20 +98,16 @@ fn event_metadata(upd_id: u64) -> Option<EventMetadata> {
 }
 
 impl TimSpace {
-    pub fn new(storage: Arc<TimStorage>) -> TimSpace {
-        TimSpace {
-            msg_counter: AtomicU64::new(0),
-            upd_counter: AtomicU64::new(0),
+    pub fn new(storage: Arc<TimStorage>) -> Result<TimSpace, TimSpaceError> {
+        let max_event_id = storage.fetch_max_event_id()?;
+        Ok(TimSpace {
+            upd_counter: AtomicU64::new(max_event_id),
             subscribers: RwLock::new(HashMap::new()),
             storage,
-        }
+        })
     }
 
-    pub async fn process(
-        &self,
-        req: &SendMessageReq,
-        session: &Session,
-    ) -> Result<SendMessageRes, TimSpaceError> {
+    pub async fn publish_message(&self, message: &Message) -> Result<(), TimSpaceError> {
         let snapshot = {
             let guard = self
                 .subscribers
@@ -136,13 +120,12 @@ impl TimSpace {
         };
 
         let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
-        let msg_id = self.msg_counter.fetch_add(1, Ordering::Relaxed);
-        let event = event_new_message(upd_id, msg_id, req, session);
+        let event = event_new_message(upd_id, message);
         self.storage.store_space_event(&event)?;
 
         let mut disconnected = Vec::new();
         for sub in snapshot {
-            if !sub.receive_own_messages && sub.session.timite_id == session.timite_id {
+            if !sub.receive_own_messages && sub.session.timite_id == message.sender_id {
                 continue;
             }
             // Check if receiver was dropped before attempting send
@@ -167,7 +150,7 @@ impl TimSpace {
             }
         }
 
-        Ok(SendMessageRes { error: None })
+        Ok(())
     }
 
     pub fn subscribe(

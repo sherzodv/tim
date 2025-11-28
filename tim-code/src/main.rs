@@ -5,6 +5,7 @@ use tim_code::api::tim_grpc_api_server::TimGrpcApiServer;
 use tim_code::tim_ability::TimAbility;
 use tim_code::tim_api::TimApi;
 use tim_code::tim_grpc_api::TimGrpcApiService;
+use tim_code::tim_message::TimMessage;
 use tim_code::tim_session::SessionLayer;
 use tim_code::tim_session::TimSession;
 use tim_code::tim_space::TimSpace;
@@ -42,15 +43,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let storage_svc = Arc::new(TimStorage::new(&data_dir)?);
     let session_svc = Arc::new(TimSession::new(storage_svc.clone()));
-    let space_svc = Arc::new(TimSpace::new(storage_svc.clone()));
+    let space_svc = Arc::new(TimSpace::new(storage_svc.clone())?);
     let timite_svc = Arc::new(TimTimite::new(storage_svc.clone())?);
     let ability_svc = Arc::new(TimAbility::new(storage_svc.clone(), space_svc.clone())?);
+    let message_svc = Arc::new(TimMessage::new(storage_svc.clone(), space_svc.clone())?);
 
     let api_svc = Arc::new(TimApi::new(
         session_svc.clone(),
         space_svc.clone(),
         timite_svc.clone(),
         ability_svc.clone(),
+        message_svc.clone(),
     ));
 
     let api_svc = TimGrpcApiService::new(api_svc.clone());

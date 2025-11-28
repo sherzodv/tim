@@ -20,6 +20,7 @@ pub use tim::code::db::g1 as storage;
 pub mod tim_ability;
 pub mod tim_api;
 pub mod tim_grpc_api;
+pub mod tim_message;
 pub mod tim_session;
 pub mod tim_space;
 pub mod tim_storage;

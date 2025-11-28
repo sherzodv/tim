@@ -3,6 +3,7 @@ use tim_lib::kvstore::KvStoreError;
 
 use crate::api::Ability;
 use crate::api::CallAbility;
+use crate::api::Message;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::Timite;
@@ -50,6 +51,16 @@ mod key {
 
     pub fn timeline_event(id: u64) -> Vec<u8> {
         let mut k = timeline_prefix();
+        k.extend(id.to_be_bytes());
+        k
+    }
+
+    pub fn message_prefix() -> Vec<u8> {
+        b"msg:".to_vec()
+    }
+
+    pub fn message(id: u64) -> Vec<u8> {
+        let mut k = message_prefix();
         k.extend(id.to_be_bytes());
         k
     }
@@ -208,5 +219,34 @@ impl TimStorage {
         Ok(self
             .store
             .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?)
+    }
+
+    pub fn fetch_max_message_id(&self) -> Result<u64, TimStorageError> {
+        let record = self
+            .store
+            .fetch_max_log::<Message>(&key::message_prefix())?;
+        Ok(record.map(|entry| entry.id).unwrap_or(0))
+    }
+
+    pub fn store_message(&self, msg_id: u64, message: &Message) -> Result<(), TimStorageError> {
+        let mut rec = message.clone();
+        rec.id = msg_id;
+        self.store.store_log(&key::message(msg_id), &rec)?;
+        Ok(())
+    }
+
+    pub fn fetch_message(&self, msg_id: u64) -> Result<Option<Message>, TimStorageError> {
+        let record = self.store.fetch_log::<Message>(&key::message(msg_id))?;
+        Ok(record)
+    }
+
+    pub fn fetch_max_event_id(&self) -> Result<u64, TimStorageError> {
+        let record = self
+            .store
+            .fetch_max_log::<SpaceEvent>(&key::timeline_prefix())?;
+        Ok(record
+            .and_then(|event| event.metadata)
+            .map(|meta| meta.id)
+            .unwrap_or(0))
     }
 }
