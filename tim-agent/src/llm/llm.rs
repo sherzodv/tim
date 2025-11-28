@@ -13,9 +13,15 @@ use tracing::trace;
 use tracing::warn;
 
 #[derive(Debug)]
+pub struct LlmInputItem {
+    pub role: &'static str,
+    pub content: String,
+}
+
+#[derive(Debug)]
 pub struct LlmReq<'a> {
     pub sysp: &'a str,
-    pub msg: &'a str,
+    pub inputs: &'a [LlmInputItem],
 }
 
 pub enum LlmRes {

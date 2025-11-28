@@ -17,6 +17,7 @@ use super::memory::Memory;
 use crate::agent::Agent as AgentTrait;
 use crate::agent::AgentBuilder;
 use crate::agent::AgentError;
+use crate::llm::llm::LlmInputItem;
 use crate::llm::memory::MemoryError;
 use crate::llm::prompt::render;
 use crate::tim_client::Event;
@@ -65,11 +66,8 @@ impl Debug for Agent {
 #[derive(Debug, Serialize)]
 struct AgentPromptContext {
     nick: String,
-    history: String,
     now: String,
 }
-
-const TIM_HISTORY_TEMPLATE: &str = include_str!("../../prompts/history.md");
 
 impl From<MemoryError> for AgentError {
     fn from(value: MemoryError) -> Self {
@@ -98,23 +96,22 @@ impl Agent {
     }
 
     async fn ask_llm(&mut self) -> Result<(), AgentError> {
-        let history = match self.memory.context().await? {
-            Some(context) => context,
-            None => "EMPTY_HISTORY".to_string(),
-        };
+        let history: Vec<LlmInputItem> = self.memory.context().await?;
         let nick = self.client.get_me().nick.clone();
         let ctx = AgentPromptContext {
             nick: nick.clone(),
-            history: history,
-            now: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+            now: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         };
         let sysp = render(&self.conf.sysp, &ctx)?;
-        let msg = render(TIM_HISTORY_TEMPLATE, &ctx)?;
         let req = LlmReq {
             sysp: &sysp,
-            msg: &msg,
+            inputs: &history,
         };
-        trace!("{} sending LLM request: {}", nick, req.msg);
+        trace!(
+            "{} sending LLM request with {} messages",
+            nick,
+            history.len()
+        );
         let answer = self
             .llm
             .chat(&req)
@@ -126,7 +123,11 @@ impl Agent {
                 Ok(())
             }
             LlmRes::Reply(message) => {
-                debug!("{} chose to reply: {}", nick, message.chars().take(10).collect::<String>());
+                debug!(
+                    "{} chose to reply: {}",
+                    nick,
+                    message.chars().take(10).collect::<String>()
+                );
                 self.client.send_message(&message).await?;
                 Ok(())
             }

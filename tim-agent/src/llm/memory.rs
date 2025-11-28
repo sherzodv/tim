@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use chrono::{SecondsFormat, TimeZone, Utc};
+use chrono::SecondsFormat;
+use chrono::TimeZone;
+use chrono::Utc;
 use thiserror::Error;
 use tokio_stream::StreamExt;
 
+use crate::llm::llm::LlmInputItem;
 use crate::tim_client::tim_api::EventCallAbility;
 use crate::tim_client::tim_api::EventCallAbilityOutcome;
 use crate::tim_client::tim_api::EventNewMessage;
@@ -29,26 +32,21 @@ impl Memory {
         Self { client }
     }
 
-    pub(super) async fn context(&mut self) -> Result<Option<String>, MemoryError> {
-        let me = self.client.get_me();
-        let mut buf = String::new();
+    pub(super) async fn context(&mut self) -> Result<Vec<LlmInputItem>, MemoryError> {
+        let self_id = self.client.timite_id();
+        let mut messages = Vec::new();
         let mut names = HashMap::new();
         let mut stream = Box::pin(self.client.timeline_stream(TIMELINE_PAGE_SIZE));
         while let Some(page) = stream.next().await {
             let page = page?;
             Self::collect_nicks(&mut names, &page.timites);
             for event in &page.events {
-                if let Some(line) = Self::render_event(event, &names, me.id) {
-                    buf.push_str(&line);
-                    buf.push('\n');
+                if let Some(message) = Self::render_event(event, &names, self_id) {
+                    messages.push(message);
                 }
             }
         }
-        if buf.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(buf.trim_end().to_string()))
-        }
+        Ok(messages)
     }
 
     fn collect_nicks(names: &mut HashMap<u64, String>, timites: &[Timite]) {
@@ -65,15 +63,21 @@ impl Memory {
         event: &crate::tim_client::SpaceEvent,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
-    ) -> Option<String> {
+    ) -> Option<LlmInputItem> {
         let emitted_at = event
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.emitted_at.as_ref());
         match &event.data {
-            Some(Event::EventNewMessage(msg)) => Self::render_new_message(msg, emitted_at, names, my_timite_id),
-            Some(Event::EventCallAbility(call)) => Self::render_call_ability(call, names),
-            Some(Event::EventCallAbilityOutcome(outcome)) => Self::render_call_outcome(outcome),
+            Some(Event::EventNewMessage(msg)) => {
+                Self::render_new_message(msg, emitted_at, names, my_timite_id)
+            }
+            Some(Event::EventCallAbility(call)) => {
+                Self::render_call_ability(call, names, my_timite_id)
+            }
+            Some(Event::EventCallAbilityOutcome(outcome)) => {
+                Self::render_call_outcome(outcome, my_timite_id)
+            }
             None => None,
         }
     }
@@ -83,7 +87,7 @@ impl Memory {
         emitted_at: Option<&prost_types::Timestamp>,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
-    ) -> Option<String> {
+    ) -> Option<LlmInputItem> {
         let message = new_message.message.as_ref()?;
         let content = message.content.trim();
         if content.is_empty() {
@@ -91,28 +95,34 @@ impl Memory {
         }
         let timestamp = Self::format_emitted_at(emitted_at).unwrap_or_else(|| "-".to_string());
         let nick = Self::timite_nick(message.sender_id, names);
-        if message.sender_id == my_timite_id {
-            Some(format!("[{timestamp}|{nick}-assistant]: {content}"))
-        } else {
-            Some(format!("[{timestamp}|{nick}]: {content}"))
-        }
+        let role = Self::role_for_timite(Some(message.sender_id), my_timite_id);
+        let content = format!("[{timestamp}:{nick}]: {content}");
+        Some(LlmInputItem { role, content })
     }
 
     fn render_call_ability(
         call: &EventCallAbility,
         names: &HashMap<u64, String>,
-    ) -> Option<String> {
+        my_timite_id: u64,
+    ) -> Option<LlmInputItem> {
         let payload = call.call_ability.as_ref()?;
         let sender = Self::format_timite_label(payload.sender_id, names);
-        Some(format!(
-            "CallAbility:{} sender={} payload={}",
-            payload.name.trim(),
-            sender,
-            payload.payload.trim()
-        ))
+        let role = Self::role_for_timite(Some(payload.sender_id), my_timite_id);
+        Some(LlmInputItem {
+            role,
+            content: format!(
+                "CallAbility:{} sender={} payload={}",
+                payload.name.trim(),
+                sender,
+                payload.payload.trim()
+            ),
+        })
     }
 
-    fn render_call_outcome(outcome: &EventCallAbilityOutcome) -> Option<String> {
+    fn render_call_outcome(
+        outcome: &EventCallAbilityOutcome,
+        my_timite_id: u64,
+    ) -> Option<LlmInputItem> {
         let payload = outcome.call_ability_outcome.as_ref()?;
         let mut parts = Vec::new();
         if let Some(data) = payload
@@ -136,7 +146,10 @@ impl Memory {
             line.push(' ');
             line.push_str(&parts.join(" "));
         }
-        Some(line)
+        Some(LlmInputItem {
+            role: Self::role_for_timite(None, my_timite_id),
+            content: line,
+        })
     }
 
     fn format_emitted_at(emitted_at: Option<&prost_types::Timestamp>) -> Option<String> {
@@ -156,5 +169,12 @@ impl Memory {
     fn format_timite_label(timite_id: u64, names: &HashMap<u64, String>) -> String {
         let nick = Self::timite_nick(timite_id, names);
         format!("[{}]", nick)
+    }
+
+    fn role_for_timite(timite_id: Option<u64>, my_timite_id: u64) -> &'static str {
+        match timite_id {
+            Some(id) if id == my_timite_id => "assistant",
+            _ => "user",
+        }
     }
 }

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::fmt;
+use std::fmt::Debug;
 
 use async_trait::async_trait;
 use eventsource_stream::Eventsource;
@@ -18,8 +18,11 @@ use super::llm::LlmReq;
 use super::llm::LlmStreamEvent;
 use super::llm::ResponseStream;
 
-pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
-pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
+pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/responses";
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4.1";
+
+const STR_DBG_LEN: usize = 40;
+const VEC_DBG_LEN: usize = 3;
 
 #[derive(Clone)]
 pub struct ChatGpt {
@@ -72,31 +75,65 @@ impl ChatGpt {
 }
 
 #[derive(Serialize)]
-struct StreamChatReq {
+struct ResponsesReq {
     model: String,
-    messages: Vec<ChatMessage>,
+    input: Vec<InputMessage>,
     temperature: f32,
     stream: bool,
-    tools: Option<Vec<ToolDefinition>>,
+    store: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tool_choice: Option<serde_json::Value>,
+    tools: Option<Vec<ToolDefinition>>,
+}
+
+impl Debug for ResponsesReq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let last3: Vec<&InputMessage> = self.input.iter().rev().take(VEC_DBG_LEN).collect();
+        f.debug_struct("ResponsesReq")
+            .field("m", &self.model)
+            .field("t", &self.temperature)
+            .field("input", &format!("{:?}", last3))
+            .finish()
+    }
 }
 
 #[derive(Serialize)]
-struct ChatMessage {
+struct InputMessage {
     role: &'static str,
-    content: String,
+    content: Vec<InputContent>,
+}
+
+impl Debug for InputMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let content_preview = if let Some(first_content) = self.content.first() {
+            match first_content {
+                InputContent::InputText { text } => {
+                    text.chars().take(STR_DBG_LEN).collect::<String>()
+                }
+                InputContent::OutputText { text } => {
+                    text.chars().take(STR_DBG_LEN).collect::<String>()
+                }
+            }
+        } else {
+            "no-content".to_string()
+        };
+        f.debug_struct("InputMessage")
+            .field("role", &self.role)
+            .field("content_preview", &content_preview)
+            .finish()
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum InputContent {
+    InputText { text: String },
+    OutputText { text: String },
 }
 
 #[derive(Serialize)]
 struct ToolDefinition {
     #[serde(rename = "type")]
     kind: String,
-    function: ToolFunction,
-}
-
-#[derive(Serialize)]
-struct ToolFunction {
     name: String,
     description: String,
     parameters: serde_json::Value,
@@ -105,85 +142,83 @@ struct ToolFunction {
 fn silence_tool() -> ToolDefinition {
     ToolDefinition {
         kind: "function".to_string(),
-        function: ToolFunction {
-            name: "TIM-LLM-SILENCE".to_string(),
-            description: "Use when you choose to not respond.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "Very short reason for choosing to remain silent."
-                    },
+        name: "TIM-LLM-SILENCE".to_string(),
+        description: "Use when you choose to not respond.".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Very short reason for choosing to remain silent."
                 },
-                "required": ["reason"],
-                "additionalProperties": false
-            }),
-        },
+            },
+            "required": ["reason"],
+            "additionalProperties": false
+        }),
     }
 }
 
 #[derive(Deserialize)]
-struct OaiChunk {
-    choices: Vec<OaiChoice>,
+struct SseEvent {
+    #[serde(rename = "type")]
+    kind: String,
+    delta: Option<String>,
+    item: Option<serde_json::Value>,
+    _response: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
-struct OaiChoice {
-    delta: Option<OaiDelta>,
-    finish_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct OaiDelta {
-    content: Option<String>,
-    tool_calls: Option<Vec<OaiToolCall>>,
-}
-
-#[derive(Deserialize)]
-struct OaiToolCall {
-    index: Option<usize>,
-    id: Option<String>,
-    function: Option<OaiFunctionCall>,
-}
-
-#[derive(Deserialize)]
-struct OaiFunctionCall {
-    name: Option<String>,
-    arguments: Option<String>,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ResponseItem {
+    FunctionCall {
+        id: Option<String>,
+        call_id: Option<String>,
+        name: String,
+        arguments: String,
+    },
+    #[serde(other)]
+    Other,
 }
 
 #[async_trait]
 impl Llm for ChatGpt {
     async fn chat_stream(&self, req: &LlmReq<'_>) -> Result<ResponseStream, LlmError> {
-        if req.msg.trim().is_empty() {
+        if req.inputs.is_empty() && req.sysp.trim().is_empty() {
             return Err(LlmError::EmptyPrompt);
         }
 
-        let payload = StreamChatReq {
+        let mut input = Vec::with_capacity(req.inputs.len() + 1);
+        input.push(InputMessage {
+            role: "system",
+            content: vec![InputContent::InputText {
+                text: req.sysp.trim().to_string(),
+            }],
+        });
+        for ev in req.inputs {
+            let content = match ev.role {
+                "assistant" => InputContent::OutputText {
+                    text: ev.content.clone(),
+                },
+                _ => InputContent::InputText {
+                    text: ev.content.clone(),
+                },
+            };
+            input.push(InputMessage {
+                role: ev.role,
+                content: vec![content],
+            });
+        }
+
+        let payload = ResponsesReq {
             model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system",
-                    content: req.sysp.trim().to_string(),
-                },
-                ChatMessage {
-                    role: "user",
-                    content: req.msg.trim().to_string(),
-                },
-            ],
+            input,
             temperature: self.temperature,
             stream: true,
+            store: false,
             tools: Some(vec![silence_tool()]),
-            tool_choice: None,
         };
-        debug!(
-            "chat_stream request endpoint={} model={} temperature={} prompt_len={}",
-            self.endpoint,
-            self.model,
-            self.temperature,
-            req.msg.len()
-        );
+
+        debug!("chatgpt req: {:?}", payload);
 
         let response = self
             .client
@@ -202,11 +237,9 @@ impl Llm for ChatGpt {
         let (tx, rx) = mpsc::channel(32);
         let mut events = response.bytes_stream().eventsource();
         tokio::spawn(async move {
-            // Track tool call ids so later deltas without an id still map to the same call.
-            let mut call_ids: HashMap<(usize, usize), String> = HashMap::new();
             while let Some(next) = events.next().await {
                 let results = match next {
-                    Ok(ev) => map_sse_event(ev, &mut call_ids),
+                    Ok(ev) => map_sse_event(ev),
                     Err(err) => vec![Err(LlmError::Stream(err.to_string()))],
                 };
                 for item in results {
@@ -221,92 +254,43 @@ impl Llm for ChatGpt {
     }
 }
 
-fn map_sse_event(
-    event: eventsource_stream::Event,
-    call_ids: &mut HashMap<(usize, usize), String>,
-) -> Vec<Result<LlmStreamEvent, LlmError>> {
+fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent, LlmError>> {
     trace!("sse event: {}", event.data);
-    if event.data.trim() == "[DONE]" {
-        return vec![Ok(LlmStreamEvent::Completed)];
-    }
-
-    let chunk = match serde_json::from_str::<OaiChunk>(&event.data) {
-        Ok(chunk) => chunk,
+    let parsed = match serde_json::from_str::<SseEvent>(&event.data) {
+        Ok(val) => val,
         Err(err) => return vec![Err(LlmError::Stream(err.to_string()))],
     };
 
-    map_chunk(chunk, call_ids)
-}
-
-fn map_chunk(
-    chunk: OaiChunk,
-    call_ids: &mut HashMap<(usize, usize), String>,
-) -> Vec<Result<LlmStreamEvent, LlmError>> {
-    let mut out = Vec::new();
-    for (choice_idx, choice) in chunk.choices.into_iter().enumerate() {
-        if let Some(delta) = choice.delta {
-            append_tool_calls(
-                choice_idx,
-                &choice.finish_reason,
-                delta.tool_calls,
-                call_ids,
-                &mut out,
-            );
-            if let Some(content) = delta.content {
-                out.push(Ok(LlmStreamEvent::ContentDelta(content)));
+    match parsed.kind.as_str() {
+        "response.output_text.delta" => parsed
+            .delta
+            .map(LlmStreamEvent::ContentDelta)
+            .map(|ev| vec![Ok(ev)])
+            .unwrap_or_default(),
+        "response.output_item.done" => {
+            if let Some(item_val) = parsed.item {
+                match serde_json::from_value::<ResponseItem>(item_val) {
+                    Ok(ResponseItem::FunctionCall {
+                        id,
+                        call_id,
+                        name,
+                        arguments,
+                    }) => {
+                        let id = call_id.or(id).unwrap_or_else(|| name.clone());
+                        vec![Ok(LlmStreamEvent::ToolCallDelta {
+                            id,
+                            name: Some(name),
+                            arguments_delta: arguments,
+                            finished: true,
+                        })]
+                    }
+                    _ => Vec::new(),
+                }
+            } else {
+                Vec::new()
             }
         }
-        if choice.finish_reason.as_deref() == Some("stop") {
-            out.push(Ok(LlmStreamEvent::Completed));
-        }
+        "response.completed" => vec![Ok(LlmStreamEvent::Completed)],
+        _ => Vec::new(),
     }
-    out
-}
-
-fn append_tool_calls(
-    choice_idx: usize,
-    finish_reason: &Option<String>,
-    tool_calls: Option<Vec<OaiToolCall>>,
-    call_ids: &mut HashMap<(usize, usize), String>,
-    out: &mut Vec<Result<LlmStreamEvent, LlmError>>,
-) {
-    let Some(tool_calls) = tool_calls else { return };
-
-    for call in tool_calls {
-        let id = resolve_call_id(choice_idx, &call, call_ids);
-        let args = call
-            .function
-            .as_ref()
-            .and_then(|f| f.arguments.clone())
-            .unwrap_or_default();
-        let name = call.function.as_ref().and_then(|f| f.name.clone());
-        let finished = finish_reason.as_deref() == Some("tool_calls");
-        out.push(Ok(LlmStreamEvent::ToolCallDelta {
-            id,
-            name,
-            arguments_delta: args,
-            finished,
-        }));
-    }
-}
-
-fn resolve_call_id(
-    choice_idx: usize,
-    call: &OaiToolCall,
-    call_ids: &mut HashMap<(usize, usize), String>,
-) -> String {
-    let index = call.index.unwrap_or(0);
-    let key = (choice_idx, index);
-    let id = call
-        .id
-        .as_ref()
-        .cloned()
-        .or_else(|| call_ids.get(&key).cloned())
-        .unwrap_or_else(|| format!("choice{choice_idx}-call{index}"));
-    if let Some(explicit_id) = call.id.clone() {
-        call_ids.insert(key, explicit_id);
-    } else {
-        call_ids.entry(key).or_insert_with(|| id.clone());
-    }
-    id
 }

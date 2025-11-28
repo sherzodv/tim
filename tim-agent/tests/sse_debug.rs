@@ -5,6 +5,7 @@ use tim_agent::llm::chatgpt::ChatGpt;
 use tim_agent::llm::chatgpt::OPENAI_DEFAULT_ENDPOINT;
 use tim_agent::llm::chatgpt::OPENAI_DEFAULT_MODEL;
 use tim_agent::llm::llm::Llm;
+use tim_agent::llm::llm::LlmInputItem;
 use tim_agent::llm::llm::LlmReq;
 use tim_agent::llm::llm::LlmStreamEvent;
 use tracing_subscriber::EnvFilter;
@@ -32,9 +33,13 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
 
     let chatgpt = ChatGpt::new(api_key, endpoint.clone(), model.clone(), 0.2)?;
 
+    let history = vec![LlmInputItem {
+        role: "user",
+        content: prompt,
+    }];
     let req = LlmReq {
         sysp: "You are a test harness. If tools are provided, call them.",
-        msg: &prompt,
+        inputs: &history,
     };
 
     let mut stream = chatgpt.chat_stream(&req).await?;
