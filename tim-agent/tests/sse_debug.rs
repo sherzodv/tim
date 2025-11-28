@@ -34,7 +34,6 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
 
     let req = LlmReq {
         sysp: "You are a test harness. If tools are provided, call them.",
-        userp: "",
         msg: &prompt,
     };
 

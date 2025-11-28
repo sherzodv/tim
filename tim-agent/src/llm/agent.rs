@@ -2,9 +2,11 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::SecondsFormat;
 use serde::Serialize;
 use tokio::time::Duration;
 use tracing::debug;
+use tracing::trace;
 
 use super::ability;
 use super::chatgpt::ChatGpt;
@@ -24,7 +26,7 @@ use crate::tim_client::TimClient;
 
 #[derive(Clone)]
 pub struct AgentConf {
-    pub userp: String,
+    pub sysp: String,
     pub api_key: String,
     pub endpoint: String,
     pub model: String,
@@ -42,7 +44,7 @@ pub struct Agent {
 impl Debug for AgentConf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AgentConf")
-            .field("userp", &self.userp)
+            .field("userp", &self.sysp)
             .field("endpoint", &self.endpoint)
             .field("model", &self.model)
             .field("temperature", &self.temperature)
@@ -64,10 +66,10 @@ impl Debug for Agent {
 struct AgentPromptContext {
     nick: String,
     history: String,
+    now: String,
 }
 
-const TIM_SYSTEM_PROMPT: &str = include_str!("../../prompts/tim-sys.md");
-const TIM_HISTORY_TEMPLATE: &str = include_str!("../../prompts/tim-history.md");
+const TIM_HISTORY_TEMPLATE: &str = include_str!("../../prompts/history.md");
 
 impl From<MemoryError> for AgentError {
     fn from(value: MemoryError) -> Self {
@@ -104,16 +106,15 @@ impl Agent {
         let ctx = AgentPromptContext {
             nick: nick.clone(),
             history: history,
+            now: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
         };
-        let sys_prompt = render(TIM_SYSTEM_PROMPT, &ctx)?;
-        let user_prompt = render(&self.conf.userp, &ctx)?;
+        let sysp = render(&self.conf.sysp, &ctx)?;
         let msg = render(TIM_HISTORY_TEMPLATE, &ctx)?;
         let req = LlmReq {
-            sysp: &sys_prompt,
-            userp: &user_prompt,
+            sysp: &sysp,
             msg: &msg,
         };
-        debug!("{} sending LLM request: {:?}", nick, req);
+        trace!("{} sending LLM request: {}", nick, req.msg);
         let answer = self
             .llm
             .chat(&req)
@@ -125,6 +126,7 @@ impl Agent {
                 Ok(())
             }
             LlmRes::Reply(message) => {
+                debug!("{} chose to reply: {}", nick, message.chars().take(10).collect::<String>());
                 self.client.send_message(&message).await?;
                 Ok(())
             }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{SecondsFormat, TimeZone, Utc};
 use thiserror::Error;
 use tokio_stream::StreamExt;
 
@@ -29,6 +30,7 @@ impl Memory {
     }
 
     pub(super) async fn context(&mut self) -> Result<Option<String>, MemoryError> {
+        let me = self.client.get_me();
         let mut buf = String::new();
         let mut names = HashMap::new();
         let mut stream = Box::pin(self.client.timeline_stream(TIMELINE_PAGE_SIZE));
@@ -36,7 +38,7 @@ impl Memory {
             let page = page?;
             Self::collect_nicks(&mut names, &page.timites);
             for event in &page.events {
-                if let Some(line) = Self::render_event(event, &names) {
+                if let Some(line) = Self::render_event(event, &names, me.id) {
                     buf.push_str(&line);
                     buf.push('\n');
                 }
@@ -62,9 +64,14 @@ impl Memory {
     fn render_event(
         event: &crate::tim_client::SpaceEvent,
         names: &HashMap<u64, String>,
+        my_timite_id: u64,
     ) -> Option<String> {
+        let emitted_at = event
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.emitted_at.as_ref());
         match &event.data {
-            Some(Event::EventNewMessage(msg)) => Self::render_new_message(msg, names),
+            Some(Event::EventNewMessage(msg)) => Self::render_new_message(msg, emitted_at, names, my_timite_id),
             Some(Event::EventCallAbility(call)) => Self::render_call_ability(call, names),
             Some(Event::EventCallAbilityOutcome(outcome)) => Self::render_call_outcome(outcome),
             None => None,
@@ -73,15 +80,22 @@ impl Memory {
 
     fn render_new_message(
         new_message: &EventNewMessage,
+        emitted_at: Option<&prost_types::Timestamp>,
         names: &HashMap<u64, String>,
+        my_timite_id: u64,
     ) -> Option<String> {
         let message = new_message.message.as_ref()?;
         let content = message.content.trim();
         if content.is_empty() {
             return None;
         }
-        let header = Self::format_timite_label(message.sender_id, names);
-        Some(format!("{header}: {content}"))
+        let timestamp = Self::format_emitted_at(emitted_at).unwrap_or_else(|| "-".to_string());
+        let nick = Self::timite_nick(message.sender_id, names);
+        if message.sender_id == my_timite_id {
+            Some(format!("[{timestamp}|{nick}-assistant]: {content}"))
+        } else {
+            Some(format!("[{timestamp}|{nick}]: {content}"))
+        }
     }
 
     fn render_call_ability(
@@ -125,11 +139,22 @@ impl Memory {
         Some(line)
     }
 
+    fn format_emitted_at(emitted_at: Option<&prost_types::Timestamp>) -> Option<String> {
+        let ts = emitted_at?;
+        Utc.timestamp_opt(ts.seconds, ts.nanos as u32)
+            .single()
+            .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Secs, true))
+    }
+
+    fn timite_nick(timite_id: u64, names: &HashMap<u64, String>) -> String {
+        names
+            .get(&timite_id)
+            .map(|nick| nick.to_string())
+            .unwrap_or_else(|| format!("timite {}", timite_id))
+    }
+
     fn format_timite_label(timite_id: u64, names: &HashMap<u64, String>) -> String {
-        if let Some(nick) = names.get(&timite_id) {
-            format!("[{}]", nick)
-        } else {
-            format!("[timite {}]", timite_id)
-        }
+        let nick = Self::timite_nick(timite_id, names);
+        format!("[{}]", nick)
     }
 }

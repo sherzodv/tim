@@ -15,7 +15,6 @@ use tracing::warn;
 #[derive(Debug)]
 pub struct LlmReq<'a> {
     pub sysp: &'a str,
-    pub userp: &'a str,
     pub msg: &'a str,
 }
 

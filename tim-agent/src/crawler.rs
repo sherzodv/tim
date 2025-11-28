@@ -155,11 +155,6 @@ impl WebCrawlerAgent {
 impl Agent for WebCrawlerAgent {
     async fn on_start(&mut self) -> Result<(), AgentError> {
         self.declare().await?;
-        let announce = format!(
-            "Crawler ready. Call `{}` ability with a URL payload.",
-            self.conf.ability_name
-        );
-        self.client.send_message(&announce).await?;
         Ok(())
     }
 

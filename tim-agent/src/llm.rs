@@ -7,4 +7,3 @@ mod prompt;
 
 pub use agent::AgentConf;
 pub use chatgpt::OPENAI_DEFAULT_ENDPOINT;
-pub use chatgpt::OPENAI_DEFAULT_MODEL;

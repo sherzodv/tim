@@ -113,7 +113,7 @@ fn silence_tool() -> ToolDefinition {
                 "properties": {
                     "reason": {
                         "type": "string",
-                        "description": "The reason for choosing to remain silent."
+                        "description": "Very short reason for choosing to remain silent."
                     },
                 },
                 "required": ["reason"],
@@ -165,7 +165,7 @@ impl Llm for ChatGpt {
             messages: vec![
                 ChatMessage {
                     role: "system",
-                    content: format!("{}\n{}", req.sysp.trim(), req.userp.trim()),
+                    content: req.sysp.trim().to_string(),
                 },
                 ChatMessage {
                     role: "user",
