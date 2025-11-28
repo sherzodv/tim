@@ -3,7 +3,7 @@
 </section>
 
 <style>
-	@import '$lib/tim-ui/theme.css';
+	@import '$lib/ui/theme.css';
 
 	.worklog-header {
 		box-sizing: border-box;

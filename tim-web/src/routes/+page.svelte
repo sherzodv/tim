@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import Workspace from '$lib/tim-ui/workspace/Workspace.svelte';
-	import CommandLine from '$lib/tim-ui/command-line/CommandLine.svelte';
+	import Workspace from '$lib/ui/workspace/Workspace.svelte';
+	import CommandLine from '$lib/ui/command-line/CommandLine.svelte';
 	import { createTimClient } from '$lib/api/client';
 	import { createTimConnect } from '$lib/api/connect';
 	import { createTimSpace } from '$lib/api/space';
@@ -69,7 +69,7 @@ $effect(() => {
 </main>
 
 <style>
-	@import '$lib/tim-ui/theme.css';
+	@import '$lib/ui/theme.css';
 
 	.page-shell {
 		height: 100vh;

@@ -15,7 +15,7 @@
 </section>
 
 <style>
-	@import '$lib/tim-ui/theme.css';
+	@import '$lib/ui/theme.css';
 
 	.workspace-shell {
 		box-sizing: border-box;

@@ -43,7 +43,7 @@
 </section>
 
 <style>
-	@import '$lib/tim-ui/theme.css';
+	@import '$lib/ui/theme.css';
 
 	.command-line {
 		position: sticky;

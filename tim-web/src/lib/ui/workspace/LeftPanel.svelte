@@ -2,7 +2,7 @@
 </aside>
 
 <style>
-	@import '$lib/tim-ui/theme.css';
+	@import '$lib/ui/theme.css';
 
 	.left-panel {
 		box-sizing: border-box;
