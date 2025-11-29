@@ -38,3 +38,20 @@ This looks like at least multi-step process:
   - focused reminiscence is used as a sys-prompt to each space message delivered to the tim agent.
 
   Given that we have multiple types of memory snapshots (e.g. emotional tone, factological, timeline etc.) we now can do meta-memory snapshot, that has tag:description pairs of these snapshots, and let agent decide which snapshot to load and use as a context: context of contexts.
+
+## Timeline ideas
+
+### Fork timeline
+
+Pick (or click) any event in the timeline and fork it from that event. New timeline (new tab) is created and we can have an alternative history of events starting from the picked event.
+
+vcs can also be engaged in coding environment. each message should create a commit (if leading to changes), than we can fork new timeline in any point of it.
+
+## Things to do
+  - personality: strategy & tactics
+  - functionality: MCPs for popular tools
+  - identity: agents memory and persistence
+  - Robust connection handling: handle disconnects
+  - [x] buf lint in all builds
+  - [ ] buf breaking --against '.git#branch=master' in all builds
+  - [ ] #[instrument] TimApi calls: tracing + metrics
