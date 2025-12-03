@@ -3,10 +3,15 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::debug;
+use tracing::error;
+use tracing::field;
+use tracing::instrument;
+use tracing::Span;
 
 use crate::api::space_event::Data as SpaceEventData;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
+use crate::api::ErrorCode;
 use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesRes;
@@ -90,6 +95,7 @@ impl TimApi {
         }
     }
 
+    #[instrument(skip(self, req), level = "debug", fields(service = "api"))]
     pub async fn trusted_register(
         &self,
         req: &TrustedRegisterReq,
@@ -108,6 +114,11 @@ impl TimApi {
         })
     }
 
+    #[instrument(
+        skip(self, req),
+        level = "debug",
+        fields(service = "api", timite_id = field::Empty)
+    )]
     pub async fn trusted_connect(
         &self,
         req: &TrustedConnectReq,
@@ -116,14 +127,15 @@ impl TimApi {
             .timite
             .as_ref()
             .ok_or_else(|| TimApiError::InvalidArgError("timite required".into()))?;
+        Span::current().record("timite_id", timite.id);
 
-        // Verify timite exists in database
         let stored_timite = self.t_timite.get(timite.id)?;
         if stored_timite.is_none() {
-            return Err(TimApiError::InvalidArgError(format!(
-                "timite with id {} not found",
-                timite.id
-            )));
+            error!("timite not found in storage");
+            return Ok(TrustedConnectRes {
+                session: None,
+                error: ErrorCode::TimiteNotFound.into(),
+            });
         }
 
         let info = req
@@ -135,9 +147,15 @@ impl TimApi {
 
         Ok(TrustedConnectRes {
             session: Some(session),
+            error: ErrorCode::Unspecified.into(),
         })
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub async fn declare_abilities(
         &self,
         req: &DeclareAbilitiesReq,
@@ -148,11 +166,17 @@ impl TimApi {
         Ok(DeclareAbilitiesRes {})
     }
 
+    #[instrument(skip(self), level = "debug", fields(service = "api"))]
     pub async fn list_abilities(&self) -> Result<ListAbilitiesRes, TimApiError> {
         let abilities = self.t_ability.list()?;
         Ok(ListAbilitiesRes { abilities })
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub async fn send_message(
         &self,
         req: &SendMessageReq,
@@ -166,6 +190,11 @@ impl TimApi {
         Ok(SendMessageRes { error: None })
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub fn subscribe(
         &self,
         req: &SubscribeToSpaceReq,
@@ -174,10 +203,15 @@ impl TimApi {
         self.t_space.subscribe(req, &session)
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub fn get_timeline(
         &self,
         req: &GetTimelineReq,
-        _session: &Session,
+        session: &Session,
     ) -> Result<GetTimelineRes, TimApiError> {
         let events = self.t_space.timeline(req.offset, req.size)?;
         let mut timites: Vec<Timite> = Vec::new();
@@ -194,6 +228,11 @@ impl TimApi {
         })
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub async fn send_call_ability(
         &self,
         req: &SendCallAbilityReq,
@@ -210,6 +249,11 @@ impl TimApi {
         Ok(SendCallAbilityRes { call_ability_id })
     }
 
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub async fn send_call_ability_outcome(
         &self,
         req: &SendCallAbilityOutcomeReq,

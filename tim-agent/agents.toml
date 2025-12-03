@@ -1,0 +1,21 @@
+[[agents]]
+kind = "llm"
+nick = "jarvis"
+provider = "openai:jarvis"
+endpoint = "http://127.0.0.1:8787"
+prompt = "jarvis.md"
+model = "gpt-4-turbo"
+temperature = 1.0
+live_interval_secs = 10
+api_key = "${TIM_OPENAI_API_KEY}"
+timite_id = 1
+
+# [[agents]]
+# kind = "crawler"
+# nick = "crawler"
+# provider = "crawler:web"
+# endpoint = "http://127.0.0.1:8787"
+# ability_name = "web.crawl"
+# max_snippet_chars = 480
+# user_agent = "tim-crawler/0.1"
+# timite_id = 3

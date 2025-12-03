@@ -3,6 +3,7 @@ import { createGrpcWebTransport } from '@connectrpc/connect-web';
 import { ConnectError, Code } from '@connectrpc/connect';
 import { create } from '@bufbuild/protobuf';
 import {
+	ErrorCode,
 	TimGrpcApi,
 	TrustedRegisterReqSchema,
 	TrustedConnectReqSchema,
@@ -62,44 +63,29 @@ export class TimClient {
 		const storedTimite = this.loadStoredTimite();
 
 		if (storedTimite) {
-			try {
-				// Use trustedConnect with existing timite
-				const connectReq = create(TrustedConnectReqSchema, {
-					timite: storedTimite,
-					clientInfo: create(ClientInfoSchema, {
-						platform: this.conf.platform
-					})
-				});
-				const response = await this.client.trustedConnect(connectReq);
-				const sessionKey = response.session?.key;
-				if (sessionKey === undefined) {
-					throw new ConnectError('missing session key in trusted connect response', Code.Internal);
-				}
+			// Use trustedConnect with existing timite
+			const connectReq = create(TrustedConnectReqSchema, {
+				timite: storedTimite,
+				clientInfo: create(ClientInfoSchema, {
+					platform: this.conf.platform
+				})
+			});
+			const response = await this.client.trustedConnect(connectReq);
+			const sessionKey = response.session?.key;
+			if (sessionKey !== undefined) {
 				return sessionKey;
-			} catch (error) {
-				// Timite not found on server - clear localStorage and register new one
-				console.warn(
-					'TrustedConnect failed, clearing stored timite and registering new one',
-					error
-				);
-				this.clearStoredTimite();
-				// Fall through to registration
 			}
+			// If server explicitly says timite not found, clear and re-register.
+			if (response.error === ErrorCode.TIMITE_NOT_FOUND) {
+				this.clearStoredTimite();
+				console.warn('Stored timite not found on server, re-registering');
+				return this.registerTimite();
+			}
+			throw new ConnectError('missing session key in trusted connect response', Code.Internal);
 		}
 
 		// Register new timite
-		const request = buildTrustedRegisterRequest(this.conf);
-		const response = await this.client.trustedRegister(request);
-		const sessionKey = response.session?.key;
-		const timiteId = response.session?.timiteId;
-		if (sessionKey === undefined) {
-			throw new ConnectError('missing session key in trusted register response', Code.Internal);
-		}
-		// Store timite for future sessions
-		if (timiteId !== undefined) {
-			this.storeTimite(timiteId, this.conf.nick);
-		}
-		return sessionKey;
+		return this.registerTimite();
 	}
 
 	private loadStoredTimite() {
@@ -133,6 +119,20 @@ export class TimClient {
 		} catch (error) {
 			console.warn('Failed to clear timite from localStorage', error);
 		}
+	}
+
+	private async registerTimite(): Promise<string> {
+		const request = buildTrustedRegisterRequest(this.conf);
+		const response = await this.client.trustedRegister(request);
+		const sessionKey = response.session?.key;
+		const timiteId = response.session?.timiteId;
+		if (sessionKey === undefined) {
+			throw new ConnectError('missing session key in trusted register response', Code.Internal);
+		}
+		if (timiteId !== undefined) {
+			this.storeTimite(timiteId, this.conf.nick);
+		}
+		return sessionKey;
 	}
 
 	async sendMessage(content: string): Promise<void> {

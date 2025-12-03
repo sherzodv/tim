@@ -6,6 +6,7 @@ use tokio::time::interval_at;
 use tokio::time::Instant;
 use tokio::time::MissedTickBehavior;
 use tracing::debug;
+use tracing::info;
 
 use crate::tim_client::SpaceEvent;
 use crate::tim_client::TimClient;
@@ -66,13 +67,12 @@ impl AgentRunner {
     }
 
     pub async fn start<A: Agent>(&mut self, mut agent: A) -> Result<(), AgentError> {
+        info!("starting agent: {:?}", self.client);
         let mut stream = self.client.subscribe_to_space().await?;
-
         agent.on_start().await?;
-
         let mut live_timer = agent.live_interval().map(|period| {
             let safe_period = period.max(MIN_LIVE_INTERVAL);
-            debug!(?period, ?safe_period, "agent live timer configured");
+            info!(?period, ?safe_period, "agent live timer configured");
             let mut timer = interval_at(Instant::now() + safe_period, safe_period);
             timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
             timer

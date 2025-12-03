@@ -14,6 +14,8 @@ use tonic::body::Body as GrpcBody;
 use tower::Layer;
 use tower::Service;
 use tracing::error;
+use tracing::instrument;
+use tracing::trace;
 
 use crate::api::ClientInfo;
 use crate::api::Session;
@@ -115,15 +117,20 @@ where
     }
 }
 
+#[instrument(skip(sessions, req), level = "trace", fields(service = "session_middleware"))]
 fn extract_session<B>(sessions: &Arc<TimSession>, req: &http::Request<B>) -> Option<Session> {
+    trace!("req path: {}", req.uri().path());
     let token = req.headers().get(SESSION_METADATA_KEY)?.to_str().ok()?;
     match sessions.get(token) {
         Ok(Some(session)) => Some(session),
         Err(e) => {
-            error!("Failed to read session: {}", e);
+            error!("failed to read session: {}", e);
             None
         }
-        Ok(None) => None,
+        Ok(None) => {
+            trace!("session not found");
+            None
+        }
     }
 }
 

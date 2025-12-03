@@ -1,5 +1,6 @@
 use tim_lib::kvstore::KvStore;
 use tim_lib::kvstore::KvStoreError;
+use tracing::instrument;
 
 use crate::api::Ability;
 use crate::api::CallAbility;
@@ -85,11 +86,13 @@ impl TimStorage {
         Ok(Self { store: store })
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn store_timite(&self, timite: &Timite) -> Result<(), TimStorageError> {
         self.store.store_data(&key::timite(timite.id), timite)?;
         Ok(())
     }
 
+    #[instrument(skip(self, abilities), level = "trace", fields(service = "storage"))]
     pub fn store_timite_abilities(
         &self,
         timite_id: u64,
@@ -104,6 +107,7 @@ impl TimStorage {
         Ok(())
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn list_abilities(&self) -> Result<Vec<TimiteAbilities>, TimStorageError> {
         let list = self
             .store
@@ -123,16 +127,19 @@ impl TimStorage {
         Ok(result)
     }
 
+    #[instrument(skip(self, session), level = "trace", fields(service = "storage"))]
     pub fn store_session(&self, session: &Session) -> Result<(), TimStorageError> {
         self.store
             .store_secret(&key::session(&session.key), session)?;
         Ok(())
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn find_session(&self, key: &str) -> Result<Option<Session>, TimStorageError> {
         Ok(self.store.fetch_secret::<Session>(&key::session(key))?)
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_max_timite_id(&self) -> Result<u64, TimStorageError> {
         let timite_opt = self.store.fetch_max_data::<Timite>(&key::timite_prefix())?;
         Ok(if let Some(timite) = timite_opt {
@@ -142,10 +149,12 @@ impl TimStorage {
         })
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_timite(&self, timite_id: u64) -> Result<Option<Timite>, TimStorageError> {
         Ok(self.store.fetch_data::<Timite>(&key::timite(timite_id))?)
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_max_call_ability_id(&self) -> Result<u64, TimStorageError> {
         let record = self
             .store
@@ -155,6 +164,7 @@ impl TimStorage {
             .unwrap_or(0))
     }
 
+    #[instrument(skip(self, call_ability), level = "trace", fields(service = "storage"))]
     pub fn store_call_ability(
         &self,
         call_ability_id: u64,
@@ -167,6 +177,7 @@ impl TimStorage {
         Ok(())
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_call_ability(
         &self,
         call_ability_id: u64,
@@ -177,6 +188,7 @@ impl TimStorage {
         Ok(record)
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_timite_abilities(&self, timite_id: u64) -> Result<Vec<Ability>, TimStorageError> {
         let record = self
             .store
@@ -184,6 +196,7 @@ impl TimStorage {
         Ok(record.map(|entry| entry.abilities).unwrap_or_default())
     }
 
+    #[instrument(skip(self, event), level = "trace", fields(service = "storage"))]
     pub fn store_space_event(&self, event: &SpaceEvent) -> Result<(), TimStorageError> {
         let metadata = event
             .metadata
@@ -194,6 +207,7 @@ impl TimStorage {
         Ok(())
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimStorageError> {
         if size == 0 {
             return Ok(Vec::new());
@@ -221,6 +235,7 @@ impl TimStorage {
             .fetch_log_range::<SpaceEvent>(&prefix, &start, size as usize)?)
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_max_message_id(&self) -> Result<u64, TimStorageError> {
         let record = self
             .store
@@ -228,6 +243,7 @@ impl TimStorage {
         Ok(record.map(|entry| entry.id).unwrap_or(0))
     }
 
+    #[instrument(skip(self, message), level = "trace", fields(service = "storage"))]
     pub fn store_message(&self, msg_id: u64, message: &Message) -> Result<(), TimStorageError> {
         let mut rec = message.clone();
         rec.id = msg_id;
@@ -235,11 +251,13 @@ impl TimStorage {
         Ok(())
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_message(&self, msg_id: u64) -> Result<Option<Message>, TimStorageError> {
         let record = self.store.fetch_log::<Message>(&key::message(msg_id))?;
         Ok(record)
     }
 
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn fetch_max_event_id(&self) -> Result<u64, TimStorageError> {
         let record = self
             .store

@@ -16,12 +16,18 @@ use tonic_web::GrpcWebLayer;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
 use tracing::info;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 fn init_tracing() {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(default_filter))
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+        .with_ansi(true)
+        .with_level(true)
+        .with_thread_ids(true)
         .with_target(false)
+        .with_line_number(true)
         .init();
 }
 

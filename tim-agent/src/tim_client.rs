@@ -21,6 +21,7 @@ use tim_api::SendMessageReq;
 pub use tim_api::SpaceEvent;
 use tim_api::SubscribeToSpaceReq;
 use tim_api::TimiteAbilities;
+use tim_api::TrustedConnectReq;
 use tim_api::TrustedRegisterReq;
 use tokio_stream::Stream;
 use tonic::metadata::errors::InvalidMetadataValue;
@@ -28,14 +29,17 @@ use tonic::metadata::Ascii;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Endpoint;
 
+use crate::tim_client::tim_api::ErrorCode;
 use crate::tim_client::tim_api::Timite;
 
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
 
+#[derive(Clone)]
 pub struct TimClientConf {
     pub endpoint: String,
     pub nick: String,
     pub provider: String,
+    pub timite_id: Option<u64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -63,7 +67,8 @@ pub struct TimClient {
 
 impl Debug for TimClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TimClient")
+        f.debug_struct("tim")
+            .field("nick", &self.nick)
             .field("timite_id", &self.timite_id)
             .finish()
     }
@@ -75,19 +80,60 @@ impl TimClient {
         let channel = endpoint.connect().await?;
         let mut client = TimGrpcApiClient::new(channel);
 
-        let register_req = TrustedRegisterReq {
-            nick: conf.nick.to_string(),
-            client_info: Some(ClientInfo {
-                platform: conf.provider.to_string(),
-            }),
+        let session = match conf.timite_id {
+            Some(timite_id) => {
+                let connect_req = TrustedConnectReq {
+                    timite: Some(Timite {
+                        id: timite_id,
+                        nick: conf.nick.clone(),
+                    }),
+                    client_info: Some(ClientInfo {
+                        platform: conf.provider.to_string(),
+                    }),
+                };
+                let connect_res = client
+                    .trusted_connect(tonic::Request::new(connect_req))
+                    .await?
+                    .into_inner();
+
+                if let Some(session) = connect_res.session {
+                    session
+                } else {
+                    let err_code =
+                        ErrorCode::try_from(connect_res.error).unwrap_or(ErrorCode::Unspecified);
+                    if err_code == ErrorCode::TimiteNotFound {
+                        let register_req = TrustedRegisterReq {
+                            nick: conf.nick.to_string(),
+                            client_info: Some(ClientInfo {
+                                platform: conf.provider.to_string(),
+                            }),
+                        };
+                        client
+                            .trusted_register(tonic::Request::new(register_req))
+                            .await?
+                            .into_inner()
+                            .session
+                            .ok_or(TimClientError::MissingSession)?
+                    } else {
+                        return Err(TimClientError::MissingSession);
+                    }
+                }
+            }
+            None => {
+                let register_req = TrustedRegisterReq {
+                    nick: conf.nick.to_string(),
+                    client_info: Some(ClientInfo {
+                        platform: conf.provider.to_string(),
+                    }),
+                };
+                client
+                    .trusted_register(tonic::Request::new(register_req))
+                    .await?
+                    .into_inner()
+                    .session
+                    .ok_or(TimClientError::MissingSession)?
+            }
         };
-
-        let connect_res = client
-            .trusted_register(tonic::Request::new(register_req))
-            .await?
-            .into_inner();
-
-        let session = connect_res.session.ok_or(TimClientError::MissingSession)?;
 
         let token = MetadataValue::try_from(session.key.clone())?;
 

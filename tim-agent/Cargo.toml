@@ -31,6 +31,10 @@ thiserror = { version = "2.0.17" }
 tinytemplate = "1.2"
 tim-lib = { path = "../tim-lib" }
 eventsource-stream = "0.2"
+config = "0.14"
+dotenvy = "0.15"
+shellexpand = "3"
+toml_edit = "0.22"
 
 [build-dependencies]
 tonic-prost-build = "0.14"

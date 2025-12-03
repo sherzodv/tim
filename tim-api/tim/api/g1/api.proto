@@ -103,6 +103,11 @@ message Error {
   string description = 2;
 }
 
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_TIMITE_NOT_FOUND = 1;
+}
+
 message TrustedRegisterReq {
   string nick = 1;
   ClientInfo client_info = 2;
@@ -119,6 +124,7 @@ message TrustedConnectReq {
 
 message TrustedConnectRes {
   Session session = 1;
+  ErrorCode error = 2;
 }
 
 message SendMessageReq {
