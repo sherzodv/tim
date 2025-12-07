@@ -25,6 +25,14 @@
             clippy
             rustfmt
             nodejs_20
+
+            (pkgs.writeShellScriptBin "codex" ''
+              exec npx -y @openai/codex@latest "$@"
+            '')
+
+            (pkgs.writeShellScriptBin "claude" ''
+              exec npx -y @anthropic-ai/claude-code "$@"
+            '')
           ];
 
           buildInputs = with pkgs; [
