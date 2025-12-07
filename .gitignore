@@ -1,6 +1,7 @@
 # Project-wide ignores
 #
 **/.tim/
+.direnv/
 
 # OS
 .DS_Store
