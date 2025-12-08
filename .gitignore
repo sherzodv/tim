@@ -3,6 +3,10 @@
 **/.tim/
 .direnv/
 
+# Rust
+/target/
+**/*.rs.bk
+
 # OS
 .DS_Store
 Thumbs.db

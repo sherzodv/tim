@@ -1,0 +1,3 @@
+[workspace]
+members = ["tim-agent", "tim-code", "tim-lib"]
+resolver = "2"

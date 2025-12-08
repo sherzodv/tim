@@ -6,7 +6,8 @@
       "Bash(cargo build:*)",
       "Bash(cat:*)",
       "Bash(npm run apigen:*)",
-      "Bash(npx buf:*)"
+      "Bash(npx buf:*)",
+      "Bash(cargo generate-lockfile:*)"
     ],
     "deny": [],
     "ask": []
