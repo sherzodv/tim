@@ -71,12 +71,14 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
         .session
         .expect("missing beta session");
 
-    let mut beta_events = api.subscribe(
-        &SubscribeToSpaceReq {
-            receive_own_messages: false,
-        },
-        &beta_session,
-    );
+    let mut beta_events = api
+        .subscribe(
+            &SubscribeToSpaceReq {
+                receive_own_messages: false,
+            },
+            &beta_session,
+        )
+        .await?;
 
     let content = "ping from alpha";
     let send_res = api
@@ -92,15 +94,19 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
         "send_message should not include an error"
     );
 
-    let event = timeout(Duration::from_secs(1), beta_events.recv())
-        .await?
-        .expect("beta subscriber should receive an event");
+    let message = loop {
+        let event = timeout(Duration::from_secs(1), beta_events.recv())
+            .await?
+            .expect("beta subscriber should receive an event");
 
-    let message = match event.data {
-        Some(space_event::Data::EventNewMessage(event)) => {
-            event.message.expect("space event missing message")
+        match event.data {
+            Some(space_event::Data::EventNewMessage(event)) => {
+                break event.message.expect("space event missing message");
+            }
+            Some(space_event::Data::EventTimiteConnected(_)) => continue,
+            Some(space_event::Data::EventTimiteDisconnected(_)) => continue,
+            other => panic!("unexpected event event {:?}", other),
         }
-        _ => panic!("unexpected event event {:?}", event.data),
     };
 
     assert_eq!(message.content, content);

@@ -1,3 +1,4 @@
+import { writable, type Readable } from 'svelte/store';
 import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import type { TimClient } from './client';
@@ -11,6 +12,8 @@ export class TimSpace implements TimSpaceHandler {
 	private localId = 0n;
 	private started = false;
 	private timites = new Map<bigint, string>();
+	private readonly connectedTimite = writable<string | null>(null);
+	readonly timite: Readable<string | null> = this.connectedTimite;
 
 	constructor(
 		private readonly client: TimClient,
@@ -21,6 +24,7 @@ export class TimSpace implements TimSpaceHandler {
 	start() {
 		if (this.started) return;
 		this.started = true;
+		this.setConnectedTimite(this.client.getTimite());
 		void this.bootstrap();
 	}
 
@@ -42,6 +46,7 @@ export class TimSpace implements TimSpaceHandler {
 			this.captureTimites(timeline.timites);
 			const history = this.buildHistoryItems(timeline.events);
 			this.storage.set(history);
+			this.setConnectedTimite(this.client.getTimite());
 		} catch (error) {
 			console.error('TimSpace: failed to load history', error);
 		}
@@ -85,25 +90,35 @@ export class TimSpace implements TimSpaceHandler {
 	}
 
 	private asMessageItem(update: SpaceEvent): WorklogItem | null {
-		if (update.data?.case !== 'eventNewMessage') return null;
-		const message = update.data.value?.message;
-		if (!message) return null;
-		return {
-			kind: 'msg',
-			id: update.metadata?.id ?? this.nextLocalId(),
-			author: this.formatAuthor(message.senderId),
-			content: message.content ?? '',
-			time: this.formatTime(update.metadata?.emittedAt)
-		};
+		const payload = update.data;
+		if (!payload) return null;
+		switch (payload.case) {
+			case 'eventNewMessage': {
+				const message = payload.value?.message;
+				if (!message) return null;
+				return {
+					kind: 'msg',
+					id: update.metadata?.id ?? this.nextLocalId(),
+					author: this.formatAuthor(message.senderId),
+					content: message.content ?? '',
+					time: this.formatTime(update.metadata?.emittedAt)
+				};
+			}
+			case 'eventTimiteConnected':
+				return this.buildPresenceItem(update, payload.value?.timite, 'connected');
+			case 'eventTimiteDisconnected':
+				return this.buildPresenceItem(update, payload.value?.timite, 'disconnected');
+			default:
+				return null;
+		}
 	}
 
 	private captureTimites(timites: Timite[]) {
 		this.timites.clear();
 		for (const timite of timites) {
-			const nick = timite.nick.trim();
-			if (!nick) continue;
-			this.timites.set(timite.id, nick);
+			this.rememberTimite(timite);
 		}
+		this.setConnectedTimite(this.client.getTimite());
 	}
 
 	private nextLocalId(): bigint {
@@ -114,7 +129,13 @@ export class TimSpace implements TimSpaceHandler {
 	private formatAuthor(senderId?: bigint): string {
 		if (senderId === undefined) return 'unknown';
 		const nick = this.timites.get(senderId);
-		return nick ?? `timite#${senderId}`;
+		return this.formatTimite(senderId, nick);
+	}
+
+	private formatTimite(id: bigint, nick?: string): string {
+		const preferredNick = (nick ?? '').trim();
+		const label = preferredNick || 'timite';
+		return `${label}#${id}`;
 	}
 
 	private formatTime(timestamp?: Timestamp): string | undefined {
@@ -143,6 +164,38 @@ export class TimSpace implements TimSpaceHandler {
 			default:
 				return null;
 		}
+	}
+
+	private setConnectedTimite(timite: Timite | null) {
+		if (!timite) {
+			this.connectedTimite.set(null);
+			return;
+		}
+		this.rememberTimite(timite);
+		const knownNick = this.timites.get(timite.id) ?? timite.nick;
+		this.connectedTimite.set(this.formatTimite(timite.id, knownNick));
+	}
+
+	private buildPresenceItem(
+		update: SpaceEvent,
+		timite: Timite | undefined,
+		action: 'connected' | 'disconnected'
+	): WorklogItem | null {
+		if (!timite) return null;
+		this.rememberTimite(timite);
+		return {
+			kind: 'sysmsg',
+			id: update.metadata?.id ?? this.nextLocalId(),
+			author: 'system',
+			content: `${this.formatTimite(timite.id, timite.nick)} ${action}.`,
+			time: this.formatTime(update.metadata?.emittedAt)
+		};
+	}
+
+	private rememberTimite(timite: Timite) {
+		const nick = timite.nick.trim();
+		if (!nick) return;
+		this.timites.set(timite.id, nick);
 	}
 }
 

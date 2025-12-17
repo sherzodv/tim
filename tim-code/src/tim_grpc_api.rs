@@ -115,7 +115,11 @@ impl TimGrpcApi for TimGrpcApiService {
         req: Request<SubscribeToSpaceReq>,
     ) -> Result<Response<Self::SubscribeToSpaceStream>, Status> {
         let session = self.require_session(&req)?;
-        let stream = self.api.subscribe(&req.into_inner(), &session);
+        let stream = self
+            .api
+            .subscribe(&req.into_inner(), &session)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
         Ok(Response::new(
             Box::pin(ReceiverStream::new(stream).map(Ok::<SpaceEvent, Status>))
                 as Self::SubscribeToSpaceStream,

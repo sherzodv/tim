@@ -195,12 +195,16 @@ impl TimApi {
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
-    pub fn subscribe(
+    pub async fn subscribe(
         &self,
         req: &SubscribeToSpaceReq,
         session: &Session,
-    ) -> mpsc::Receiver<SpaceEvent> {
-        self.t_space.subscribe(req, &session)
+    ) -> Result<mpsc::Receiver<SpaceEvent>, TimApiError> {
+        let timite = self.t_timite.get(session.timite_id)?.unwrap_or(Timite {
+            id: session.timite_id,
+            nick: String::new(),
+        });
+        Ok(self.t_space.subscribe(req, &session, timite).await?)
     }
 
     #[instrument(
@@ -296,6 +300,16 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
                 }
             }
             SpaceEventData::EventCallAbilityOutcome(_) => {}
+            SpaceEventData::EventTimiteConnected(payload) => {
+                if let Some(timite) = payload.timite.as_ref() {
+                    ids.insert(timite.id);
+                }
+            }
+            SpaceEventData::EventTimiteDisconnected(payload) => {
+                if let Some(timite) = payload.timite.as_ref() {
+                    ids.insert(timite.id);
+                }
+            }
         }
     }
     ids

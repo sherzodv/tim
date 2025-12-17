@@ -11,6 +11,7 @@ export type WorklogItemSysMessage = {
 	id: bigint;
 	author: String;
 	content: String;
+	time?: string;
 };
 
 export type WorklogItem = WorklogItemMessage | WorklogItemSysMessage;

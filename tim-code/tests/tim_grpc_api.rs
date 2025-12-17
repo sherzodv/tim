@@ -76,16 +76,20 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         "send_message should indicate success"
     );
 
-    let event = timeout(Duration::from_secs(1), beta_events.next())
-        .await
-        .expect("timed out waiting for grpc event")
-        .expect("subscription ended unexpectedly")?;
+    let message = loop {
+        let event = timeout(Duration::from_secs(1), beta_events.next())
+            .await
+            .expect("timed out waiting for grpc event")
+            .expect("subscription ended unexpectedly")?;
 
-    let message = match event.data {
-        Some(space_event::Data::EventNewMessage(event)) => {
-            event.message.expect("space event missing message")
-        }
-        _ => panic!("unexpected event event {:?}", event.data),
+        match event.data {
+            Some(space_event::Data::EventNewMessage(event)) => {
+                break event.message.expect("space event missing message");
+            }
+            Some(space_event::Data::EventTimiteConnected(_)) => continue,
+            Some(space_event::Data::EventTimiteDisconnected(_)) => continue,
+            other => panic!("unexpected event event {:?}", other),
+        };
     };
 
     assert_eq!(message.content, "grpc ping");

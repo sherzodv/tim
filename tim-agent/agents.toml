@@ -8,7 +8,7 @@ model = "gpt-4-turbo"
 temperature = 1.0
 live_interval_secs = 10
 api_key = "${TIM_OPENAI_API_KEY}"
-timite_id = 1
+timite_id = 2
 
 # [[agents]]
 # kind = "crawler"

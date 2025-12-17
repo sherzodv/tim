@@ -81,6 +81,8 @@ message SpaceEvent {
     EventNewMessage event_new_message = 2;
     EventCallAbility event_call_ability = 3;
     EventCallAbilityOutcome event_call_ability_outcome = 4;
+    EventTimiteConnected event_timite_connected = 5;
+    EventTimiteDisconnected event_timite_disconnected = 6;
   }
 }
 
@@ -94,6 +96,14 @@ message EventCallAbility {
 
 message EventCallAbilityOutcome {
   CallAbilityOutcome call_ability_outcome = 1;
+}
+
+message EventTimiteConnected {
+  Timite timite = 1;
+}
+
+message EventTimiteDisconnected {
+  Timite timite = 1;
 }
 
 // --[ RPC req/res ]--

@@ -15,7 +15,7 @@ use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::fmt::format::FmtSpan;
 
 fn init_tracing() {
@@ -76,9 +76,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 interval.tick().await;
-                let removed = space.cleanup_disconnected();
-                if removed > 0 {
-                    info!("Cleaned up {removed} disconnected subscriber(s)");
+                match space.cleanup_disconnected().await {
+                    Ok(removed) if removed > 0 => {
+                        info!("Cleaned up {removed} disconnected subscriber(s)");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        warn!("Failed to cleanup disconnected subscribers: {error}");
+                    }
                 }
             }
         }

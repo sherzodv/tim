@@ -110,12 +110,14 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     )
     .await?;
 
-    let mut alpha_events = api.subscribe(
-        &SubscribeToSpaceReq {
-            receive_own_messages: false,
-        },
-        &alpha_session,
-    );
+    let mut alpha_events = api
+        .subscribe(
+            &SubscribeToSpaceReq {
+                receive_own_messages: false,
+            },
+            &alpha_session,
+        )
+        .await?;
 
     let beta_session = api
         .trusted_register(&TrustedRegisterReq {
@@ -149,15 +151,19 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         "call ability ids should be positive integers"
     );
 
-    let alpha_call_event = timeout(Duration::from_secs(1), alpha_events.recv())
-        .await?
-        .expect("alpha should receive call ability event");
+    let call_event = loop {
+        let alpha_call_event = timeout(Duration::from_secs(1), alpha_events.recv())
+            .await?
+            .expect("alpha should receive call ability event");
 
-    let call_event = match alpha_call_event.data {
-        Some(space_event::Data::EventCallAbility(event)) => {
-            event.call_ability.expect("missing call ability payload")
-        }
-        other => panic!("unexpected alpha event event: {:?}", other),
+        match alpha_call_event.data {
+            Some(space_event::Data::EventCallAbility(event)) => {
+                break event.call_ability.expect("missing call ability payload");
+            }
+            Some(space_event::Data::EventTimiteConnected(_))
+            | Some(space_event::Data::EventTimiteDisconnected(_)) => continue,
+            other => panic!("unexpected alpha event event: {:?}", other),
+        };
     };
 
     assert_eq!(
@@ -176,12 +182,14 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     assert_eq!(call_event.name, ability_name);
     assert_eq!(call_event.payload, ability_payload);
 
-    let mut beta_events = api.subscribe(
-        &SubscribeToSpaceReq {
-            receive_own_messages: false,
-        },
-        &beta_session,
-    );
+    let mut beta_events = api
+        .subscribe(
+            &SubscribeToSpaceReq {
+                receive_own_messages: false,
+            },
+            &beta_session,
+        )
+        .await?;
 
     let outcome_payload = "echo-complete";
     api.send_call_ability_outcome(
@@ -196,15 +204,21 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     )
     .await?;
 
-    let beta_outcome_event = timeout(Duration::from_secs(1), beta_events.recv())
-        .await?
-        .expect("beta should receive call ability outcome");
+    let outcome_event = loop {
+        let beta_outcome_event = timeout(Duration::from_secs(1), beta_events.recv())
+            .await?
+            .expect("beta should receive call ability outcome");
 
-    let outcome_event = match beta_outcome_event.data {
-        Some(space_event::Data::EventCallAbilityOutcome(event)) => event
-            .call_ability_outcome
-            .expect("missing call ability outcome payload"),
-        other => panic!("unexpected beta event event: {:?}", other),
+        match beta_outcome_event.data {
+            Some(space_event::Data::EventCallAbilityOutcome(event)) => {
+                break event
+                    .call_ability_outcome
+                    .expect("missing call ability outcome payload");
+            }
+            Some(space_event::Data::EventTimiteConnected(_))
+            | Some(space_event::Data::EventTimiteDisconnected(_)) => continue,
+            other => panic!("unexpected beta event event: {:?}", other),
+        };
     };
 
     assert_eq!(

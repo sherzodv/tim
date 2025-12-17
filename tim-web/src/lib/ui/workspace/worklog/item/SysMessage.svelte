@@ -7,6 +7,9 @@
 <article class="sys-row" aria-label="System message">
 	<div class="sys-pill">
 		<span class="content">{item.content}</span>
+		{#if item.time}
+			<time class="timestamp" datetime={item.time}>{item.time}</time>
+		{/if}
 	</div>
 </article>
 
@@ -37,5 +40,13 @@
 		margin: 0;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	.timestamp {
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: var(--tim-sys-text);
+		opacity: 0.8;
+		letter-spacing: 0.03em;
 	}
 </style>

@@ -12,6 +12,7 @@ import {
 	SubscribeToSpaceReqSchema,
 	GetTimelineReqSchema,
 	TimiteSchema,
+	type Timite,
 	type TrustedRegisterReq,
 	type SendMessageReq,
 	type SubscribeToSpaceReq,
@@ -29,6 +30,7 @@ export type TimClientConf = {
 export class TimClient {
 	private readonly client: Client<typeof TimGrpcApi>;
 	private readonly conf: TimClientConf;
+	private timite: Timite | null = null;
 	private sessionKey: string | null = null;
 	private sessionInit: Promise<string> | null = null;
 
@@ -88,25 +90,31 @@ export class TimClient {
 		return this.registerTimite();
 	}
 
-	private loadStoredTimite() {
+	private loadStoredTimite(): Timite | null {
 		if (typeof window === 'undefined') return null;
 		try {
 			const stored = localStorage.getItem('tim-timite');
 			if (!stored) return null;
 			const data = JSON.parse(stored);
-			return create(TimiteSchema, {
+			const timite = create(TimiteSchema, {
 				id: BigInt(data.id),
 				nick: data.nick
 			});
+			this.timite = timite;
+			return timite;
 		} catch {
 			return null;
 		}
 	}
 
-	private storeTimite(id: bigint, nick: string) {
+	private storeTimite(timite: Timite) {
 		if (typeof window === 'undefined') return;
 		try {
-			localStorage.setItem('tim-timite', JSON.stringify({ id: id.toString(), nick }));
+			this.timite = timite;
+			localStorage.setItem(
+				'tim-timite',
+				JSON.stringify({ id: timite.id.toString(), nick: timite.nick })
+			);
 		} catch (error) {
 			console.warn('Failed to store timite in localStorage', error);
 		}
@@ -115,6 +123,7 @@ export class TimClient {
 	private clearStoredTimite() {
 		if (typeof window === 'undefined') return;
 		try {
+			this.timite = null;
 			localStorage.removeItem('tim-timite');
 		} catch (error) {
 			console.warn('Failed to clear timite from localStorage', error);
@@ -130,7 +139,11 @@ export class TimClient {
 			throw new ConnectError('missing session key in trusted register response', Code.Internal);
 		}
 		if (timiteId !== undefined) {
-			this.storeTimite(timiteId, this.conf.nick);
+			const timite = create(TimiteSchema, {
+				id: timiteId,
+				nick: this.conf.nick
+			});
+			this.storeTimite(timite);
 		}
 		return sessionKey;
 	}
@@ -166,6 +179,10 @@ export class TimClient {
 	resetSession() {
 		this.sessionKey = null;
 		this.sessionInit = null;
+	}
+
+	getTimite(): Timite | null {
+		return this.timite;
 	}
 }
 

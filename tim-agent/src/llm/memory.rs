@@ -78,6 +78,8 @@ impl Memory {
             Some(Event::EventCallAbilityOutcome(outcome)) => {
                 Self::render_call_outcome(outcome, my_timite_id)
             }
+            Some(Event::EventTimiteConnected(_)) => None,
+            Some(Event::EventTimiteDisconnected(_)) => None,
             None => None,
         }
     }

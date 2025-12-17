@@ -117,7 +117,11 @@ where
     }
 }
 
-#[instrument(skip(sessions, req), level = "trace", fields(service = "session_middleware"))]
+#[instrument(
+    skip(sessions, req),
+    level = "trace",
+    fields(service = "session_middleware")
+)]
 fn extract_session<B>(sessions: &Arc<TimSession>, req: &http::Request<B>) -> Option<Session> {
     trace!("req path: {}", req.uri().path());
     let token = req.headers().get(SESSION_METADATA_KEY)?.to_str().ok()?;

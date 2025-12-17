@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -17,10 +17,13 @@ use crate::api::CallAbilityOutcome;
 use crate::api::EventCallAbility;
 use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
+use crate::api::EventTimiteConnected;
+use crate::api::EventTimiteDisconnected;
 use crate::api::Message;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::Timite;
 use crate::tim_storage::TimStorage;
 use crate::tim_storage::TimStorageError;
 
@@ -43,6 +46,7 @@ struct Subscriber {
     receive_own_messages: bool,
     chan: mpsc::Sender<SpaceEvent>,
     session: Session,
+    timite: Timite,
 }
 
 pub struct TimSpace {
@@ -80,6 +84,26 @@ fn event_call_ability(upd_id: u64, call_ability: &CallAbility) -> SpaceEvent {
     }
 }
 
+fn event_timite_connected(upd_id: u64, timite: &Timite) -> SpaceEvent {
+    SpaceEvent {
+        metadata: event_metadata(upd_id),
+        data: Some(EventData::EventTimiteConnected(EventTimiteConnected {
+            timite: Some(timite.clone()),
+        })),
+    }
+}
+
+fn event_timite_disconnected(upd_id: u64, timite: &Timite) -> SpaceEvent {
+    SpaceEvent {
+        metadata: event_metadata(upd_id),
+        data: Some(EventData::EventTimiteDisconnected(
+            EventTimiteDisconnected {
+                timite: Some(timite.clone()),
+            },
+        )),
+    }
+}
+
 fn now_timestamp_ms() -> Timestamp {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -108,70 +132,50 @@ impl TimSpace {
     }
 
     pub async fn publish_message(&self, message: &Message) -> Result<(), TimSpaceError> {
-        let snapshot = {
-            let guard = self
-                .subscribers
-                .read()
-                .expect("space events subscribers lock poisoned");
-            guard
-                .iter()
-                .map(|(_, entry)| entry.clone())
-                .collect::<Vec<_>>()
-        };
-
         let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
         let event = event_new_message(upd_id, message);
         self.storage.store_space_event(&event)?;
 
-        let mut disconnected = Vec::new();
-        for sub in snapshot {
-            if !sub.receive_own_messages && sub.session.timite_id == message.sender_id {
-                continue;
-            }
-            // Check if receiver was dropped before attempting send
-            if sub.chan.is_closed() {
-                disconnected.push(sub.session.key.clone());
-                continue;
-            }
-            // Fallback: check send error in case channel closed during send
-            if sub.chan.send(event.clone()).await.is_err() {
-                disconnected.push(sub.session.key.clone());
-            }
-        }
+        let disconnected = self
+            .broadcast_event(&event, Some(message.sender_id))
+            .await?;
+        let removed = self.prune_disconnected(disconnected);
+        self.publish_disconnected_batch(removed).await
+    }
 
-        // Remove disconnected subscribers
-        if !disconnected.is_empty() {
+    pub async fn subscribe(
+        &self,
+        req: &SubscribeToSpaceReq,
+        session: &Session,
+        timite: Timite,
+    ) -> Result<mpsc::Receiver<SpaceEvent>, TimSpaceError> {
+        let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
+        let was_present = {
             let mut guard = self
                 .subscribers
                 .write()
                 .expect("space events subscribers lock poisoned");
-            for key in disconnected {
-                guard.remove(&key);
-            }
+            guard.retain(|_, sub| !sub.chan.is_closed());
+            let present = guard
+                .values()
+                .any(|subscriber| subscriber.timite.id == timite.id);
+            guard.insert(
+                session.key.clone(),
+                Subscriber {
+                    receive_own_messages: req.receive_own_messages,
+                    chan: sender,
+                    session: session.clone(),
+                    timite: timite.clone(),
+                },
+            );
+            present
+        };
+
+        if !was_present {
+            self.publish_timite_connected(&timite).await?;
         }
 
-        Ok(())
-    }
-
-    pub fn subscribe(
-        &self,
-        req: &SubscribeToSpaceReq,
-        session: &Session,
-    ) -> mpsc::Receiver<SpaceEvent> {
-        let (sender, receiver) = mpsc::channel(BUFFER_SIZE);
-        let mut guard = self
-            .subscribers
-            .write()
-            .expect("space events subscribers lock poisoned");
-        guard.insert(
-            session.key.clone(),
-            Subscriber {
-                receive_own_messages: req.receive_own_messages,
-                chan: sender,
-                session: session.clone(),
-            },
-        );
-        receiver
+        Ok(receiver)
     }
 
     pub async fn publish_call_outcome(
@@ -179,95 +183,26 @@ impl TimSpace {
         outcome: &CallAbilityOutcome,
         sender_timite_id: u64,
     ) -> Result<(), TimSpaceError> {
-        let snapshot = {
-            let guard = self
-                .subscribers
-                .read()
-                .expect("space events subscribers lock poisoned");
-            guard
-                .iter()
-                .map(|(_, entry)| entry.clone())
-                .collect::<Vec<_>>()
-        };
-
         let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
         let event = event_call_ability_outcome(upd_id, outcome);
         self.storage.store_space_event(&event)?;
 
-        let mut disconnected = Vec::new();
-        for sub in snapshot {
-            if !sub.receive_own_messages && sub.session.timite_id == sender_timite_id {
-                continue;
-            }
-            // Check if receiver was dropped before attempting send
-            if sub.chan.is_closed() {
-                disconnected.push(sub.session.key.clone());
-                continue;
-            }
-            // Fallback: check send error in case channel closed during send
-            if sub.chan.send(event.clone()).await.is_err() {
-                disconnected.push(sub.session.key.clone());
-            }
-        }
-
-        // Remove disconnected subscribers
-        if !disconnected.is_empty() {
-            let mut guard = self
-                .subscribers
-                .write()
-                .expect("space events subscribers lock poisoned");
-            for key in disconnected {
-                guard.remove(&key);
-            }
-        }
-
-        Ok(())
+        let disconnected = self.broadcast_event(&event, Some(sender_timite_id)).await?;
+        let removed = self.prune_disconnected(disconnected);
+        self.publish_disconnected_batch(removed).await
     }
 
     pub async fn publish_call_ability(
         &self,
         call_ability: &CallAbility,
     ) -> Result<(), TimSpaceError> {
-        let snapshot = {
-            let guard = self
-                .subscribers
-                .read()
-                .expect("space events subscribers lock poisoned");
-            guard
-                .iter()
-                .map(|(_, entry)| entry.clone())
-                .collect::<Vec<_>>()
-        };
-
         let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
         let event = event_call_ability(upd_id, call_ability);
         self.storage.store_space_event(&event)?;
 
-        let mut disconnected = Vec::new();
-        for sub in snapshot {
-            // Check if receiver was dropped before attempting send
-            if sub.chan.is_closed() {
-                disconnected.push(sub.session.key.clone());
-                continue;
-            }
-            // Fallback: check send error in case channel closed during send
-            if sub.chan.send(event.clone()).await.is_err() {
-                disconnected.push(sub.session.key.clone());
-            }
-        }
-
-        // Remove disconnected subscribers
-        if !disconnected.is_empty() {
-            let mut guard = self
-                .subscribers
-                .write()
-                .expect("space events subscribers lock poisoned");
-            for key in disconnected {
-                guard.remove(&key);
-            }
-        }
-
-        Ok(())
+        let disconnected = self.broadcast_event(&event, None).await?;
+        let removed = self.prune_disconnected(disconnected);
+        self.publish_disconnected_batch(removed).await
     }
 
     pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimSpaceError> {
@@ -275,16 +210,97 @@ impl TimSpace {
     }
 
     /// Periodic cleanup task that removes all disconnected subscribers
-    pub fn cleanup_disconnected(&self) -> usize {
+    pub async fn cleanup_disconnected(&self) -> Result<usize, TimSpaceError> {
+        let closed: Vec<Subscriber> = self
+            .subscriber_snapshot()
+            .into_iter()
+            .filter(|sub| sub.chan.is_closed())
+            .collect();
+        let removed = closed.len();
+        let removed_timites = self.prune_disconnected(closed);
+        self.publish_disconnected_batch(removed_timites).await?;
+        Ok(removed)
+    }
+
+    fn subscriber_snapshot(&self) -> Vec<Subscriber> {
+        let guard = self
+            .subscribers
+            .read()
+            .expect("space events subscribers lock poisoned");
+        guard.iter().map(|(_, entry)| entry.clone()).collect()
+    }
+
+    async fn publish_timite_connected(&self, timite: &Timite) -> Result<(), TimSpaceError> {
+        let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
+        let event = event_timite_connected(upd_id, timite);
+        self.storage.store_space_event(&event)?;
+        let disconnected = self.broadcast_event(&event, None).await?;
+        let removed = self.prune_disconnected(disconnected);
+        self.publish_disconnected_batch(removed).await
+    }
+
+    async fn publish_timite_disconnected(&self, timite: &Timite) -> Result<(), TimSpaceError> {
+        let upd_id = self.upd_counter.fetch_add(1, Ordering::Relaxed);
+        let event = event_timite_disconnected(upd_id, timite);
+        self.storage.store_space_event(&event)?;
+        let disconnected = self.broadcast_event(&event, None).await?;
+        let _ = self.prune_disconnected(disconnected);
+        Ok(())
+    }
+
+    fn prune_disconnected(&self, disconnected: Vec<Subscriber>) -> Vec<Timite> {
+        if disconnected.is_empty() {
+            return Vec::new();
+        }
+
         let mut guard = self
             .subscribers
             .write()
             .expect("space events subscribers lock poisoned");
 
-        let before_count = guard.len();
-        guard.retain(|_, sub| !sub.chan.is_closed());
-        let after_count = guard.len();
+        let mut removed_timites = Vec::new();
+        let mut seen = HashSet::new();
+        for sub in disconnected {
+            let removed = guard.remove(&sub.session.key);
+            if removed.is_none() {
+                continue;
+            }
+            if seen.insert(sub.timite.id)
+                && !guard
+                    .values()
+                    .any(|candidate| candidate.timite.id == sub.timite.id)
+            {
+                removed_timites.push(sub.timite.clone());
+            }
+        }
 
-        before_count - after_count
+        removed_timites
+    }
+
+    async fn broadcast_event(
+        &self,
+        event: &SpaceEvent,
+        skip_sender: Option<u64>,
+    ) -> Result<Vec<Subscriber>, TimSpaceError> {
+        let snapshot = self.subscriber_snapshot();
+        let mut disconnected = Vec::new();
+        for sub in snapshot {
+            if let Some(sender_id) = skip_sender {
+                if !sub.receive_own_messages && sub.session.timite_id == sender_id {
+                    continue;
+                }
+            }
+            if sub.chan.is_closed() || sub.chan.send(event.clone()).await.is_err() {
+                disconnected.push(sub);
+            }
+        }
+        Ok(disconnected)
+    }
+
+    async fn publish_disconnected_batch(&self, removed: Vec<Timite>) -> Result<(), TimSpaceError> {
+        for timite in removed {
+            self.publish_timite_disconnected(&timite).await?;
+        }
+        Ok(())
     }
 }

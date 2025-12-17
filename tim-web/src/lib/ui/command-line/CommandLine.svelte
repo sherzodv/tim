@@ -4,6 +4,7 @@
 	import CommandLinePrompt from './CommandLinePrompt.svelte';
 
 	let { space }: { space: TimSpace } = $props();
+	const timite = space.timite;
 
 	let inputValue = $state('');
 	let inputEl: HTMLTextAreaElement;
@@ -77,7 +78,7 @@
 <section class="command-line tim-theme" aria-label="Command line">
 	<div class="status-line" aria-label="Command status"></div>
 	<div class="command-surface" aria-label="Command input area">
-		<CommandLinePrompt />
+		<CommandLinePrompt timite={$timite} />
 		<textarea
 			bind:this={inputEl}
 			bind:value={inputValue}
