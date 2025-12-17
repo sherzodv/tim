@@ -8,7 +8,8 @@
       "Bash(npm run apigen:*)",
       "Bash(npx buf:*)",
       "Bash(cargo generate-lockfile:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

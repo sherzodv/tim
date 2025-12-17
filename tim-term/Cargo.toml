@@ -1,0 +1,28 @@
+[package]
+name = "tim-term"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tim-term"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { version = "1.38", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tokio-stream = "0.1"
+tonic = { version = "0.14", features = ["transport"] }
+tonic-prost = "0.14"
+prost = "0.14"
+prost-types = "0.14"
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+thiserror = "2.0"
+dotenvy = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+whoami = "1.5"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
