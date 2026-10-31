@@ -24,25 +24,23 @@ impl EventHandler {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let key_tx = tx.clone();
-        std::thread::spawn(move || {
-            loop {
-                if event::poll(tick_rate).unwrap_or(false) {
-                    match event::read() {
-                        Ok(CrosstermEvent::Key(key)) => {
-                            if key_tx.send(AppEvent::Key(key)).is_err() {
-                                break;
-                            }
+        std::thread::spawn(move || loop {
+            if event::poll(tick_rate).unwrap_or(false) {
+                match event::read() {
+                    Ok(CrosstermEvent::Key(key)) => {
+                        if key_tx.send(AppEvent::Key(key)).is_err() {
+                            break;
                         }
-                        Ok(CrosstermEvent::Paste(text)) => {
-                            if key_tx.send(AppEvent::Paste(text)).is_err() {
-                                break;
-                            }
-                        }
-                        _ => {}
                     }
-                } else if key_tx.send(AppEvent::Tick).is_err() {
-                    break;
+                    Ok(CrosstermEvent::Paste(text)) => {
+                        if key_tx.send(AppEvent::Paste(text)).is_err() {
+                            break;
+                        }
+                    }
+                    _ => {}
                 }
+            } else if key_tx.send(AppEvent::Tick).is_err() {
+                break;
             }
         });
 
@@ -54,9 +52,8 @@ impl EventHandler {
     }
 
     pub async fn next(&mut self) -> Result<AppEvent> {
-        self.rx
-            .recv()
-            .await
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "event channel closed").into())
+        self.rx.recv().await.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::Other, "event channel closed").into()
+        })
     }
 }

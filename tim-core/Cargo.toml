@@ -1,10 +1,10 @@
 [package]
-name = "tim-code"
+name = "tim-core"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "tim-code"
+name = "tim-core"
 path = "src/main.rs"
 
 [dependencies]

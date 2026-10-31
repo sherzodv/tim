@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package tim.code.db.g1;
+package tim.core.db.g1;
 
 import "tim/api/g1/api.proto";
 

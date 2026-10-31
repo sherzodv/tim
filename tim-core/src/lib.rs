@@ -8,7 +8,7 @@ pub mod tim {
     pub mod code {
         pub mod db {
             pub mod g1 {
-                tonic::include_proto!("tim.code.db.g1");
+                tonic::include_proto!("tim.core.db.g1");
             }
         }
     }

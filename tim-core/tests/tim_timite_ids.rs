@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use tempfile::tempdir;
-use tim_code::tim_storage::TimStorage;
-use tim_code::tim_timite::TimTimite;
+use tim_core::tim_storage::TimStorage;
+use tim_core::tim_timite::TimTimite;
 
 #[test]
 fn timite_ids_survive_restart() -> Result<(), Box<dyn std::error::Error>> {

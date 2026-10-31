@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use tempfile::tempdir;
 use tempfile::TempDir;
-use tim_code::tim_ability::TimAbility;
-use tim_code::tim_api::TimApi;
-use tim_code::tim_message::TimMessage;
-use tim_code::tim_session::TimSession;
-use tim_code::tim_space::TimSpace;
-use tim_code::tim_storage::TimStorage;
-use tim_code::tim_timite::TimTimite;
+use tim_core::tim_ability::TimAbility;
+use tim_core::tim_api::TimApi;
+use tim_core::tim_message::TimMessage;
+use tim_core::tim_session::TimSession;
+use tim_core::tim_space::TimSpace;
+use tim_core::tim_storage::TimStorage;
+use tim_core::tim_timite::TimTimite;
 
 pub struct TimApiTestCtx {
     _temp_dir: TempDir,

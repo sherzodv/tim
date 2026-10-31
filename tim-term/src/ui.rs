@@ -40,11 +40,22 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled(" Tim Terminal ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Tim Terminal ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" | "),
-        Span::styled(format!("@{}", app.my_nick), Style::default().fg(Color::Green)),
+        Span::styled(
+            format!("@{}", app.my_nick),
+            Style::default().fg(Color::Green),
+        ),
         Span::raw(" | "),
-        Span::styled(format!("[{}]", mode_str), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("[{}]", mode_str),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::raw(" | "),
         Span::styled("[F1] Help  [q] Quit", Style::default().fg(Color::DarkGray)),
     ]));
@@ -67,76 +78,92 @@ fn render_timeline(frame: &mut Frame, app: &App, area: Rect) {
     let lines: Vec<Line> = app
         .timeline
         .iter()
-        .flat_map(|item| {
-            match item {
-                TimelineItem::Message { sender, content, timestamp } => {
-                    let time = format_timestamp(*timestamp);
-                    let prefix_len = format!("[{}] {}: ", time, sender).chars().count();
+        .flat_map(|item| match item {
+            TimelineItem::Message {
+                sender,
+                content,
+                timestamp,
+            } => {
+                let time = format_timestamp(*timestamp);
+                let prefix_len = format!("[{}] {}: ", time, sender).chars().count();
 
-                    let msg_lines: Vec<Line> = content
-                        .lines()
-                        .enumerate()
-                        .map(|(i, line_content)| {
-                            if i == 0 {
-                                Line::from(vec![
-                                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                                    Span::styled(format!("{}: ", sender), Style::default().fg(Color::Cyan)),
-                                    Span::raw(line_content),
-                                ])
-                            } else {
-                                Line::from(vec![
-                                    Span::raw(" ".repeat(prefix_len)),
-                                    Span::raw(line_content),
-                                ])
-                            }
-                        })
-                        .collect();
+                let msg_lines: Vec<Line> = content
+                    .lines()
+                    .enumerate()
+                    .map(|(i, line_content)| {
+                        if i == 0 {
+                            Line::from(vec![
+                                Span::styled(
+                                    format!("[{}] ", time),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                                Span::styled(
+                                    format!("{}: ", sender),
+                                    Style::default().fg(Color::Cyan),
+                                ),
+                                Span::raw(line_content),
+                            ])
+                        } else {
+                            Line::from(vec![
+                                Span::raw(" ".repeat(prefix_len)),
+                                Span::raw(line_content),
+                            ])
+                        }
+                    })
+                    .collect();
 
-                    if msg_lines.is_empty() {
-                        vec![Line::from(vec![
-                            Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                            Span::styled(format!("{}: ", sender), Style::default().fg(Color::Cyan)),
-                        ])]
-                    } else {
-                        msg_lines
-                    }
-                }
-                TimelineItem::TimiteConnected { nick, timestamp } => {
-                    let time = format_timestamp(*timestamp);
+                if msg_lines.is_empty() {
                     vec![Line::from(vec![
                         Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{} ", nick), Style::default().fg(Color::Green)),
-                        Span::styled("joined", Style::default().fg(Color::Green)),
+                        Span::styled(format!("{}: ", sender), Style::default().fg(Color::Cyan)),
                     ])]
+                } else {
+                    msg_lines
                 }
-                TimelineItem::TimiteDisconnected { nick, timestamp } => {
-                    let time = format_timestamp(*timestamp);
-                    vec![Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{} ", nick), Style::default().fg(Color::Red)),
-                        Span::styled("left", Style::default().fg(Color::Red)),
-                    ])]
-                }
-                TimelineItem::AbilityCall { caller, ability_name, timestamp } => {
-                    let time = format_timestamp(*timestamp);
-                    vec![Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{} ", caller), Style::default().fg(Color::Magenta)),
-                        Span::raw("called "),
-                        Span::styled(ability_name, Style::default().fg(Color::Yellow)),
-                    ])]
-                }
-                TimelineItem::AbilityOutcome { ability_name, success, timestamp } => {
-                    let time = format_timestamp(*timestamp);
-                    let status_color = if *success { Color::Green } else { Color::Red };
-                    let status_text = if *success { "completed" } else { "failed" };
-                    vec![Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(ability_name, Style::default().fg(Color::Yellow)),
-                        Span::raw(" "),
-                        Span::styled(status_text, Style::default().fg(status_color)),
-                    ])]
-                }
+            }
+            TimelineItem::TimiteConnected { nick, timestamp } => {
+                let time = format_timestamp(*timestamp);
+                vec![Line::from(vec![
+                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", nick), Style::default().fg(Color::Green)),
+                    Span::styled("joined", Style::default().fg(Color::Green)),
+                ])]
+            }
+            TimelineItem::TimiteDisconnected { nick, timestamp } => {
+                let time = format_timestamp(*timestamp);
+                vec![Line::from(vec![
+                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", nick), Style::default().fg(Color::Red)),
+                    Span::styled("left", Style::default().fg(Color::Red)),
+                ])]
+            }
+            TimelineItem::AbilityCall {
+                caller,
+                ability_name,
+                timestamp,
+            } => {
+                let time = format_timestamp(*timestamp);
+                vec![Line::from(vec![
+                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", caller), Style::default().fg(Color::Magenta)),
+                    Span::raw("called "),
+                    Span::styled(ability_name, Style::default().fg(Color::Yellow)),
+                ])]
+            }
+            TimelineItem::AbilityOutcome {
+                ability_name,
+                success,
+                timestamp,
+            } => {
+                let time = format_timestamp(*timestamp);
+                let status_color = if *success { Color::Green } else { Color::Red };
+                let status_text = if *success { "completed" } else { "failed" };
+                vec![Line::from(vec![
+                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
+                    Span::styled(ability_name, Style::default().fg(Color::Yellow)),
+                    Span::raw(" "),
+                    Span::styled(status_text, Style::default().fg(status_color)),
+                ])]
             }
         })
         .collect();
@@ -169,7 +196,9 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
         .values()
         .map(|t| {
             let style = if t.id == app.my_timite_id {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -181,12 +210,8 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let timites_list = List::new(timites)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Online "),
-        );
+    let timites_list =
+        List::new(timites).block(Block::default().borders(Borders::ALL).title(" Online "));
 
     frame.render_widget(timites_list, chunks[0]);
 
@@ -204,12 +229,8 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let abilities_list = List::new(abilities)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Abilities "),
-        );
+    let abilities_list =
+        List::new(abilities).block(Block::default().borders(Borders::ALL).title(" Abilities "));
 
     frame.render_widget(abilities_list, chunks[1]);
 }
@@ -262,33 +283,43 @@ fn render_help_popup(frame: &mut Frame) {
     let area = centered_rect(60, 70, frame.area());
 
     let help_text = vec![
-        Line::from(Span::styled("Keybindings", Style::default().add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Keybindings",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
-        Line::from(Span::styled("Normal Mode:", Style::default().fg(Color::Cyan))),
+        Line::from(Span::styled(
+            "Normal Mode:",
+            Style::default().fg(Color::Cyan),
+        )),
         Line::from("  i           Enter insert mode"),
         Line::from("  q/Ctrl+D    Quit"),
         Line::from("  j/k         Scroll down/up"),
         Line::from("  G           Scroll to bottom"),
         Line::from("  F1          Toggle help"),
         Line::from(""),
-        Line::from(Span::styled("Insert Mode:", Style::default().fg(Color::Cyan))),
+        Line::from(Span::styled(
+            "Insert Mode:",
+            Style::default().fg(Color::Cyan),
+        )),
         Line::from("  Esc         Return to normal mode"),
         Line::from("  Enter       Send message"),
         Line::from("  Ctrl+J      New line"),
         Line::from("  Backspace   Delete character"),
         Line::from("  Arrows      Move cursor"),
         Line::from(""),
-        Line::from(Span::styled("Press F1 or Esc to close", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            "Press F1 or Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )),
     ];
 
-    let help = Paragraph::new(help_text)
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Help ")
-                .style(Style::default().bg(Color::DarkGray)),
-        );
+    let help = Paragraph::new(help_text).wrap(Wrap { trim: true }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Help ")
+            .style(Style::default().bg(Color::DarkGray)),
+    );
 
     frame.render_widget(Clear, area);
     frame.render_widget(help, area);

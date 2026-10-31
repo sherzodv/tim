@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_root = "../tim-api";
-    let protos = &["tim/code/db/g1/db.proto"];
+    let protos = &["tim/core/db/g1/db.proto"];
 
     let status = Command::new("buf")
         .args(["lint", ".."])
@@ -16,6 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(protos, &[proto_root, "."])?;
 
     println!("cargo:rerun-if-changed={}", proto_root);
-    println!("cargo:rerun-if-changed=tim/code/db/g1/db.proto");
+    println!("cargo:rerun-if-changed=tim/core/db/g1/db.proto");
     Ok(())
 }

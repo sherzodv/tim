@@ -3,16 +3,16 @@ use std::time::Duration;
 mod common;
 
 use common::TimApiTestCtx;
-use tim_code::api::space_event;
-use tim_code::api::Ability;
-use tim_code::api::CallAbility;
-use tim_code::api::CallAbilityOutcome;
-use tim_code::api::ClientInfo;
-use tim_code::api::DeclareAbilitiesReq;
-use tim_code::api::SendCallAbilityOutcomeReq;
-use tim_code::api::SendCallAbilityReq;
-use tim_code::api::SubscribeToSpaceReq;
-use tim_code::api::TrustedRegisterReq;
+use tim_core::api::space_event;
+use tim_core::api::Ability;
+use tim_core::api::CallAbility;
+use tim_core::api::CallAbilityOutcome;
+use tim_core::api::ClientInfo;
+use tim_core::api::DeclareAbilitiesReq;
+use tim_core::api::SendCallAbilityOutcomeReq;
+use tim_core::api::SendCallAbilityReq;
+use tim_core::api::SubscribeToSpaceReq;
+use tim_core::api::TrustedRegisterReq;
 use tokio::time::timeout;
 
 fn client_info() -> ClientInfo {

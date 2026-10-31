@@ -159,7 +159,11 @@ async fn handle_key(
             KeyCode::Char('j') | KeyCode::Down => app.scroll_down(),
             KeyCode::Char('k') | KeyCode::Up => app.scroll_up(),
             KeyCode::Char('G') => app.scroll_to_bottom(),
-            KeyCode::Char('c') | KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => app.quit(),
+            KeyCode::Char('c') | KeyCode::Char('d')
+                if modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                app.quit()
+            }
             _ => {}
         },
         InputMode::Insert => match code {
@@ -179,7 +183,11 @@ async fn handle_key(
             KeyCode::Right => app.move_cursor_right(),
             KeyCode::Up => app.move_cursor_up(),
             KeyCode::Down => app.move_cursor_down(),
-            KeyCode::Char('c') | KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => app.quit(),
+            KeyCode::Char('c') | KeyCode::Char('d')
+                if modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                app.quit()
+            }
             // Handle carriage return as newline (for terminals that send \r when pasting)
             KeyCode::Char('\r') => app.enter_char('\n'),
             KeyCode::Char(c) => app.enter_char(c),

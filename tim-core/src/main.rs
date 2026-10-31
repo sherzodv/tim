@@ -1,16 +1,16 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tim_code::api::tim_grpc_api_server::TimGrpcApiServer;
-use tim_code::tim_ability::TimAbility;
-use tim_code::tim_api::TimApi;
-use tim_code::tim_grpc_api::TimGrpcApiService;
-use tim_code::tim_message::TimMessage;
-use tim_code::tim_session::SessionLayer;
-use tim_code::tim_session::TimSession;
-use tim_code::tim_space::TimSpace;
-use tim_code::tim_storage::TimStorage;
-use tim_code::tim_timite::TimTimite;
+use tim_core::api::tim_grpc_api_server::TimGrpcApiServer;
+use tim_core::tim_ability::TimAbility;
+use tim_core::tim_api::TimApi;
+use tim_core::tim_grpc_api::TimGrpcApiService;
+use tim_core::tim_message::TimMessage;
+use tim_core::tim_session::SessionLayer;
+use tim_core::tim_session::TimSession;
+use tim_core::tim_space::TimSpace;
+use tim_core::tim_storage::TimStorage;
+use tim_core::tim_timite::TimTimite;
 use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::Any;
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    info!("Starting tim-code gRPC backend on {addr}");
+    info!("Starting tim-core gRPC backend on {addr}");
 
     Server::builder()
         .accept_http1(true)

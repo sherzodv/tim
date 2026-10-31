@@ -1,11 +1,11 @@
 mod common;
 
 use common::TimApiTestCtx;
-use tim_code::api::space_event;
-use tim_code::api::ClientInfo;
-use tim_code::api::GetTimelineReq;
-use tim_code::api::SendMessageReq;
-use tim_code::api::TrustedRegisterReq;
+use tim_core::api::space_event;
+use tim_core::api::ClientInfo;
+use tim_core::api::GetTimelineReq;
+use tim_core::api::SendMessageReq;
+use tim_core::api::TrustedRegisterReq;
 
 fn client_info() -> ClientInfo {
     ClientInfo {
