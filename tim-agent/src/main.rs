@@ -26,7 +26,6 @@ use tracing_subscriber::EnvFilter;
 
 use crate::crawler::CrawlerConf;
 use crate::llm::AgentConf;
-use crate::llm::OPENAI_DEFAULT_ENDPOINT;
 use crate::tim_client::TimClient;
 use crate::tim_client::TimClientConf;
 
@@ -57,6 +56,7 @@ struct LlmAgentConfig {
     provider: String,
     endpoint: String,
     prompt: String,
+    llm_endpoint: String,
     model: String,
     temperature: f32,
     live_interval_secs: Option<u64>,
@@ -122,7 +122,7 @@ fn spawn_llm_agent(
     let llm_conf = AgentConf {
         sysp,
         api_key: conf.api_key,
-        endpoint: OPENAI_DEFAULT_ENDPOINT.to_string(),
+        endpoint: conf.llm_endpoint,
         model: conf.model,
         temperature: conf.temperature,
         live_interval: conf.live_interval_secs.map(Duration::from_secs),
