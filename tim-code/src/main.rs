@@ -1,0 +1,65 @@
+mod code;
+mod shell;
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use config::Config;
+use config::ConfigError;
+use config::File;
+use config::FileFormat;
+use serde::Deserialize;
+use tim_agent::agent;
+use tim_agent::tim_client::TimClientConf;
+use tracing_subscriber::fmt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
+
+use crate::code::CodeConf;
+
+const CONFIG_PATH: &str = "code.toml";
+
+#[derive(Deserialize)]
+struct AppConfig {
+    nick: String,
+    provider: String,
+    endpoint: String,
+    timite_id: Option<u64>,
+    workdir: Option<PathBuf>,
+    timeout_secs: u64,
+    max_output_chars: usize,
+}
+
+fn load_config() -> Result<AppConfig, ConfigError> {
+    Config::builder()
+        .add_source(File::new(CONFIG_PATH, FileFormat::Toml))
+        .build()?
+        .try_deserialize()
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(fmt::layer())
+        .init();
+
+    let config = load_config()?;
+
+    let tim_conf = TimClientConf {
+        endpoint: config.endpoint,
+        nick: config.nick,
+        provider: config.provider,
+        timite_id: config.timite_id,
+    };
+
+    let code_conf = CodeConf {
+        workdir: config.workdir.map_or_else(std::env::current_dir, Ok)?,
+        timeout: Duration::from_secs(config.timeout_secs),
+        max_output_chars: config.max_output_chars,
+    };
+
+    agent::spawn(tim_conf, code_conf).await?;
+    Ok(())
+}

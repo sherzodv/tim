@@ -2314,6 +2314,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tim-code"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "config",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tim-agent",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tim-core"
 version = "0.1.0"
 dependencies = [
@@ -2430,6 +2445,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
