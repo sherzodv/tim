@@ -204,7 +204,7 @@ impl TimApi {
             id: session.timite_id,
             nick: String::new(),
         });
-        Ok(self.t_space.subscribe(req, &session, timite).await?)
+        Ok(self.t_space.subscribe(req, timite)?)
     }
 
     #[instrument(
@@ -275,8 +275,7 @@ impl TimApi {
             });
         }
         self.t_space
-            .publish_call_outcome(outcome, session.timite_id)
-            .await?;
+            .publish_call_outcome(outcome, session.timite_id)?;
         Ok(SendCallAbilityOutcomeRes {})
     }
 }
@@ -299,7 +298,9 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
                     ids.insert(call_ability.timite_id);
                 }
             }
-            SpaceEventData::EventCallAbilityOutcome(_) => {}
+            SpaceEventData::EventCallAbilityOutcome(payload) => {
+                ids.insert(payload.sender_id);
+            }
             SpaceEventData::EventTimiteConnected(payload) => {
                 if let Some(timite) = payload.timite.as_ref() {
                     ids.insert(timite.id);

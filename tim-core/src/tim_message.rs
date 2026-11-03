@@ -50,7 +50,7 @@ impl TimMessage {
             content: req.content.to_string(),
         };
         self.t_store.store_message(msg_id, &message)?;
-        self.t_space.publish_message(&message).await?;
+        self.t_space.publish_message(&message)?;
         Ok(msg_id)
     }
 

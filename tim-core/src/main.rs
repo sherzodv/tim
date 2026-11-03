@@ -15,7 +15,7 @@ use tonic::transport::Server;
 use tonic_web::GrpcWebLayer;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
-use tracing::{info, warn};
+use tracing::info;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 fn init_tracing() {
@@ -68,26 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods(Any)
         .allow_headers(Any)
         .allow_origin(Any);
-
-    // Spawn periodic cleanup task for disconnected subscribers
-    tokio::spawn({
-        let space = space_svc.clone();
-        async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-            loop {
-                interval.tick().await;
-                match space.cleanup_disconnected().await {
-                    Ok(removed) if removed > 0 => {
-                        info!("Cleaned up {removed} disconnected subscriber(s)");
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        warn!("Failed to cleanup disconnected subscribers: {error}");
-                    }
-                }
-            }
-        }
-    });
 
     info!("Starting tim-core gRPC backend on {addr}");
 

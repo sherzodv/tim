@@ -96,6 +96,7 @@ message EventCallAbility {
 
 message EventCallAbilityOutcome {
   CallAbilityOutcome call_ability_outcome = 1;
+  uint64 sender_id = 2;
 }
 
 message EventTimiteConnected {

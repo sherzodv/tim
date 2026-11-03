@@ -53,9 +53,7 @@ impl TimAbility {
         let mut call_ability_with_id = call_ability.clone();
         call_ability_with_id.call_ability_id = Some(call_ability_id);
         call_ability_with_id.sender_id = session.timite_id;
-        self.t_space
-            .publish_call_ability(&call_ability_with_id)
-            .await?;
+        self.t_space.publish_call_ability(&call_ability_with_id)?;
         Ok(call_ability_id)
     }
 
