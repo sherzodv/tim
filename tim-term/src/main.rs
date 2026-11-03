@@ -17,12 +17,15 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
+use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::app::{App, InputMode};
 use crate::client::{ClientConfig, TimClient};
 use crate::error::Result;
 use crate::event::{AppEvent, EventHandler};
+
+const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -65,30 +68,28 @@ async fn main() -> Result<()> {
     }
 
     // Load timeline history
+    let mut cursor = None;
     if let Ok(res) = client.get_timeline(0, 100).await {
         for timite in &res.timites {
             app.add_timite_to_cache(timite);
         }
+        cursor = res
+            .events
+            .iter()
+            .filter_map(|event| event.metadata.as_ref())
+            .map(|metadata| metadata.id)
+            .max();
         for event in res.events {
             app.handle_space_event(event);
         }
         app.scroll_to_bottom();
     }
 
-    // Subscribe to space events
-    let mut space_stream = client.subscribe_to_space().await?;
-
     let mut events = EventHandler::new(Duration::from_millis(250));
     let event_tx = events.sender();
 
     // Spawn task to forward space events
-    tokio::spawn(async move {
-        while let Some(Ok(event)) = space_stream.next().await {
-            if event_tx.send(AppEvent::Space(event)).is_err() {
-                break;
-            }
-        }
-    });
+    tokio::spawn(forward_space_events(client.clone(), cursor, event_tx));
 
     let result = run_app(&mut terminal, &mut app, &mut events, &mut client).await;
 
@@ -102,6 +103,36 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     result
+}
+
+/// Keeps a space subscription alive, resuming after the last forwarded event on reconnect.
+async fn forward_space_events(
+    mut client: TimClient,
+    mut cursor: Option<u64>,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
+) {
+    loop {
+        match client.subscribe_to_space(cursor).await {
+            Ok(mut stream) => loop {
+                let event = match stream.next().await {
+                    Some(Ok(event)) => event,
+                    Some(Err(status)) => {
+                        tracing::warn!(%status, "space stream failed, reconnecting");
+                        break;
+                    }
+                    None => break,
+                };
+                if let Some(metadata) = &event.metadata {
+                    cursor = Some(metadata.id);
+                }
+                if event_tx.send(AppEvent::Space(event)).is_err() {
+                    return;
+                }
+            },
+            Err(error) => tracing::warn!(%error, "space subscription failed, reconnecting"),
+        }
+        tokio::time::sleep(RECONNECT_DELAY).await;
+    }
 }
 
 async fn run_app(

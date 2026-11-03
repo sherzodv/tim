@@ -65,7 +65,7 @@ struct Subscription {
     space: Arc<TimSpace>,
     timite_id: u64,
     receive_own_messages: bool,
-    /// Id of the last persisted event this subscription has passed.
+    /// Id of the last event this subscription has passed; earlier ones are never sent again.
     cursor: u64,
     live: broadcast::Receiver<SpaceEvent>,
     out: mpsc::Sender<SpaceEvent>,
@@ -213,11 +213,12 @@ impl TimSpace {
         if presence.subscriptions == 1 {
             self.append(&mut state, event_timite_connected(&timite))?;
         }
+        let head = state.next_id - 1;
         Ok(Subscription {
             space: self.clone(),
             timite_id: timite.id,
             receive_own_messages: req.receive_own_messages,
-            cursor: state.next_id - 1,
+            cursor: req.after_id.map_or(head, |after_id| after_id.min(head)),
             live: self.live.subscribe(),
             out,
         })
@@ -249,6 +250,9 @@ impl Subscription {
 
     /// Ends when the client stops reading or the space is dropped.
     async fn forward_live(&mut self) -> Result<(), TimSpaceError> {
+        if !self.replay().await? {
+            return Ok(());
+        }
         loop {
             let received = tokio::select! {
                 received = self.live.recv() => received,
@@ -265,7 +269,7 @@ impl Subscription {
         }
     }
 
-    /// Reads events the live channel has already dropped back from storage.
+    /// Forwards events between the cursor and the storage head.
     async fn replay(&mut self) -> Result<bool, TimSpaceError> {
         loop {
             let events = self.space.storage.timeline(self.cursor + 1, REPLAY_PAGE)?;

@@ -35,20 +35,23 @@ export class TimSpace implements TimSpaceHandler {
 	}
 
 	private async bootstrap() {
-		await this.loadHistory();
+		const lastEventId = await this.loadHistory();
 		if (!this.started) return;
-		await this.connector.start(this);
+		await this.connector.start(this, lastEventId);
 	}
 
-	private async loadHistory() {
+	/** Returns the id of the newest loaded event, so the live stream can continue after it. */
+	private async loadHistory(): Promise<bigint | undefined> {
 		try {
 			const timeline = await this.client.getTimeline(0n, HISTORY_PAGE_SIZE);
 			this.captureTimites(timeline.timites);
 			const history = this.buildHistoryItems(timeline.events);
 			this.storage.set(history);
 			this.setConnectedTimite(this.client.getTimite());
+			return maxEventId(timeline.events);
 		} catch (error) {
 			console.error('TimSpace: failed to load history', error);
+			return undefined;
 		}
 	}
 
@@ -203,3 +206,12 @@ export const createTimSpace = (client: TimClient, connector: TimConnect, storage
 	new TimSpace(client, connector, storage);
 
 export type { TimStorage } from './storage';
+
+function maxEventId(events: SpaceEvent[]): bigint | undefined {
+	let max: bigint | undefined;
+	for (const event of events) {
+		const id = event.metadata?.id;
+		if (id !== undefined && (max === undefined || id > max)) max = id;
+	}
+	return max;
+}

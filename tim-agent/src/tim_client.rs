@@ -204,9 +204,11 @@ impl TimClient {
 
     pub async fn subscribe_to_space(
         &mut self,
+        after_id: Option<u64>,
     ) -> Result<tonic::Streaming<SpaceEvent>, TimClientError> {
         let sub_req = SubscribeToSpaceReq {
             receive_own_messages: false,
+            after_id,
         };
         let mut sub_req = tonic::Request::new(sub_req);
         sub_req

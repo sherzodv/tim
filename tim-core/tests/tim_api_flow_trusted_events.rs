@@ -75,6 +75,7 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe(
             &SubscribeToSpaceReq {
                 receive_own_messages: false,
+                after_id: None,
             },
             &beta_session,
         )

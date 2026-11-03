@@ -56,6 +56,7 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         .subscribe_to_space(request_with_session(
             SubscribeToSpaceReq {
                 receive_own_messages: false,
+                after_id: None,
             },
             &beta_session,
         ))

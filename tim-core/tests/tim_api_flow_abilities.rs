@@ -114,6 +114,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .subscribe(
             &SubscribeToSpaceReq {
                 receive_own_messages: false,
+                after_id: None,
             },
             &alpha_session,
         )
@@ -186,6 +187,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .subscribe(
             &SubscribeToSpaceReq {
                 receive_own_messages: false,
+                after_id: None,
             },
             &beta_session,
         )

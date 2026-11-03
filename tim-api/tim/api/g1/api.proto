@@ -147,7 +147,8 @@ message SendMessageRes {
 }
 
 message SubscribeToSpaceReq {
-   bool receive_own_messages = 1;
+  bool receive_own_messages = 1;
+  optional uint64 after_id = 2;  // unset: live only; set: replay events with id > after_id first
 }
 
 message SendCallAbilityReq {

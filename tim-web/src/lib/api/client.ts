@@ -159,9 +159,13 @@ export class TimClient {
 		});
 	}
 
-	async subscribeToSpace(receiveOwnMessages: boolean, signal: AbortSignal) {
+	async subscribeToSpace(
+		receiveOwnMessages: boolean,
+		afterId: bigint | undefined,
+		signal: AbortSignal
+	) {
 		const sessionKey = await this.ensureSession();
-		const request = buildSubscribeRequest(receiveOwnMessages);
+		const request = buildSubscribeRequest(receiveOwnMessages, afterId);
 		return this.client.subscribeToSpace(request, {
 			signal,
 			headers: buildSessionHeaders(sessionKey)
@@ -204,9 +208,13 @@ function buildSendMessageRequest(content: string): SendMessageReq {
 	});
 }
 
-function buildSubscribeRequest(receiveOwnMessages: boolean): SubscribeToSpaceReq {
+function buildSubscribeRequest(
+	receiveOwnMessages: boolean,
+	afterId: bigint | undefined
+): SubscribeToSpaceReq {
 	return create(SubscribeToSpaceReqSchema, {
-		receiveOwnMessages
+		receiveOwnMessages,
+		afterId
 	});
 }
 

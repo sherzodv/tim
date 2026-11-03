@@ -14,7 +14,8 @@ export type TimConnectOptions = {
 };
 
 export interface TimConnect {
-	start(handler: TimSpaceHandler): Promise<void>;
+	/** Streams events after `afterId` (or only new ones when omitted), resuming across reconnects. */
+	start(handler: TimSpaceHandler, afterId?: bigint): Promise<void>;
 	stop(): void;
 }
 
@@ -23,6 +24,7 @@ class TimConnectImpl implements TimConnect {
 	private readonly receiveOwnMessages: boolean;
 
 	private phase: ChannelPhase = 'idle';
+	private afterId: bigint | undefined;
 	private loopAbort: AbortController | null = null;
 	private runner: Promise<void> | null = null;
 
@@ -31,10 +33,11 @@ class TimConnectImpl implements TimConnect {
 		this.receiveOwnMessages = options.receiveOwnMessages ?? true;
 	}
 
-	async start(handler: TimSpaceHandler): Promise<void> {
+	async start(handler: TimSpaceHandler, afterId?: bigint): Promise<void> {
 		if (this.runner) {
 			return;
 		}
+		this.afterId = afterId;
 		this.loopAbort = new AbortController();
 		const { signal } = this.loopAbort;
 		const runner = this.run(handler, signal);
@@ -66,11 +69,16 @@ class TimConnectImpl implements TimConnect {
 		while (!signal.aborted) {
 			try {
 				this.setPhase(attempt === 0 ? 'connecting' : 'reconnecting', handler);
-				const stream = await this.client.subscribeToSpace(this.receiveOwnMessages, signal);
+				const stream = await this.client.subscribeToSpace(
+					this.receiveOwnMessages,
+					this.afterId,
+					signal
+				);
 				this.setPhase('open', handler);
 				attempt = 0;
 				for await (const update of stream) {
 					if (signal.aborted) break;
+					if (update.metadata) this.afterId = update.metadata.id;
 					handler.onSpaceUpdate(update);
 				}
 				if (signal.aborted) break;

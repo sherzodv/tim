@@ -3,10 +3,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tinytemplate::error::Error as TemplateError;
 use tokio::time::interval_at;
+use tokio::time::sleep;
 use tokio::time::Instant;
+use tokio::time::Interval;
 use tokio::time::MissedTickBehavior;
 use tracing::debug;
 use tracing::info;
+use tracing::warn;
 
 use crate::tim_client::SpaceEvent;
 use crate::tim_client::TimClient;
@@ -14,6 +17,7 @@ use crate::tim_client::TimClientConf;
 use crate::tim_client::TimClientError;
 
 const MIN_LIVE_INTERVAL: Duration = Duration::from_secs(5);
+const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
@@ -68,7 +72,6 @@ impl AgentRunner {
 
     pub async fn start<A: Agent>(&mut self, mut agent: A) -> Result<(), AgentError> {
         info!("starting agent: {:?}", self.client);
-        let mut stream = self.client.subscribe_to_space().await?;
         agent.on_start().await?;
         let mut live_timer = agent.live_interval().map(|period| {
             let safe_period = period.max(MIN_LIVE_INTERVAL);
@@ -77,32 +80,54 @@ impl AgentRunner {
             timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
             timer
         });
+        let mut cursor = None;
 
         loop {
-            if let Some(timer) = live_timer.as_mut() {
-                tokio::select! {
-                    maybe_update = stream.message() => {
-                        let maybe_update = maybe_update?;
-                        let Some(update) = maybe_update else {
-                            break;
-                        };
-                        agent.on_space_update(&update).await?;
-                    }
+            match self
+                .follow_space(&mut agent, live_timer.as_mut(), &mut cursor)
+                .await
+            {
+                Ok(()) => info!("space stream ended, reconnecting"),
+                Err(AgentError::TimGrpc(status)) => {
+                    warn!(%status, "space stream failed, reconnecting")
+                }
+                Err(AgentError::TimeClientError(error)) => {
+                    warn!(%error, "space subscription failed, reconnecting")
+                }
+                Err(error) => return Err(error),
+            }
+            sleep(RECONNECT_DELAY).await;
+        }
+    }
+
+    /// Feeds the agent from one subscription until its stream ends or fails.
+    async fn follow_space<A: Agent>(
+        &mut self,
+        agent: &mut A,
+        mut live_timer: Option<&mut Interval>,
+        cursor: &mut Option<u64>,
+    ) -> Result<(), AgentError> {
+        let mut stream = self.client.subscribe_to_space(*cursor).await?;
+        loop {
+            let maybe_update = match live_timer.as_mut() {
+                Some(timer) => tokio::select! {
+                    maybe_update = stream.message() => maybe_update?,
                     _ = timer.tick() => {
                         debug!("agent live tick");
                         agent.on_live().await?;
+                        continue;
                     }
-                }
-            } else {
-                let maybe_update = stream.message().await?;
-                let Some(update) = maybe_update else {
-                    break;
-                };
-                agent.on_space_update(&update).await?;
+                },
+                None => stream.message().await?,
+            };
+            let Some(update) = maybe_update else {
+                return Ok(());
+            };
+            if let Some(metadata) = &update.metadata {
+                *cursor = Some(metadata.id);
             }
+            agent.on_space_update(&update).await?;
         }
-
-        Ok(())
     }
 }
 
