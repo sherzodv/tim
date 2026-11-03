@@ -11,13 +11,11 @@ pub use tim_api::CallAbilityOutcome;
 use tim_api::ClientInfo;
 use tim_api::GetTimelineReq;
 pub use tim_api::GetTimelineRes;
-use tim_api::ListAbilitiesReq;
 pub use tim_api::Message;
 use tim_api::SendMessageReq;
 pub use tim_api::SpaceEvent;
 use tim_api::SubscribeToSpaceReq;
 pub use tim_api::Timite;
-pub use tim_api::TimiteAbilities;
 use tim_api::TrustedConnectReq;
 use tim_api::TrustedRegisterReq;
 use tonic::metadata::Ascii;
@@ -153,13 +151,5 @@ impl TimClient {
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         Ok(self.client.get_timeline(req).await?.into_inner())
-    }
-
-    pub async fn list_abilities(&mut self) -> Result<Vec<TimiteAbilities>> {
-        let mut req = tonic::Request::new(ListAbilitiesReq { timite_id: None });
-        req.metadata_mut()
-            .insert(SESSION_METADATA_KEY, self.token.clone());
-        let res = self.client.list_abilities(req).await?.into_inner();
-        Ok(res.abilities)
     }
 }

@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use crossterm::event::{self, Event as CrosstermEvent, KeyEvent};
+use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
 use tokio::sync::mpsc;
 
 use crate::client::SpaceEvent;
@@ -9,51 +7,49 @@ use crate::error::Result;
 #[derive(Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
+    Mouse(MouseEvent),
     Paste(String),
-    Tick,
+    Resize,
     Space(SpaceEvent),
 }
 
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<AppEvent>,
-    _tx: mpsc::UnboundedSender<AppEvent>,
+    tx: mpsc::UnboundedSender<AppEvent>,
 }
 
 impl EventHandler {
-    pub fn new(tick_rate: Duration) -> Self {
+    pub fn new() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        let key_tx = tx.clone();
+        let input_tx = tx.clone();
         std::thread::spawn(move || loop {
-            if event::poll(tick_rate).unwrap_or(false) {
-                match event::read() {
-                    Ok(CrosstermEvent::Key(key)) => {
-                        if key_tx.send(AppEvent::Key(key)).is_err() {
-                            break;
-                        }
-                    }
-                    Ok(CrosstermEvent::Paste(text)) => {
-                        if key_tx.send(AppEvent::Paste(text)).is_err() {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            } else if key_tx.send(AppEvent::Tick).is_err() {
+            let Ok(event) = event::read() else {
+                break;
+            };
+            let app_event = match event {
+                CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => AppEvent::Key(key),
+                CrosstermEvent::Mouse(mouse) => AppEvent::Mouse(mouse),
+                CrosstermEvent::Paste(text) => AppEvent::Paste(text),
+                CrosstermEvent::Resize(_, _) => AppEvent::Resize,
+                _ => continue,
+            };
+            if input_tx.send(app_event).is_err() {
                 break;
             }
         });
 
-        Self { rx, _tx: tx }
+        Self { rx, tx }
     }
 
     pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
-        self._tx.clone()
+        self.tx.clone()
     }
 
     pub async fn next(&mut self) -> Result<AppEvent> {
-        self.rx.recv().await.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "event channel closed").into()
-        })
+        self.rx
+            .recv()
+            .await
+            .ok_or_else(|| std::io::Error::other("event channel closed").into())
     }
 }

@@ -1,354 +1,166 @@
+use chrono::{Local, TimeZone};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Layout, Margin, Rect},
+    style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::Paragraph,
     Frame,
 };
+use textwrap::core::display_width;
 
-use crate::app::{App, InputMode, TimelineItem};
+use crate::app::{App, TimelineItem};
 
-const MAX_INPUT_HEIGHT: u16 = 10;
+const MAX_INPUT_HEIGHT: u16 = 8;
+const MIN_BODY_WIDTH: usize = 16;
+const PROMPT: &str = "› ";
 
-pub fn render(frame: &mut Frame, app: &App) {
-    // Calculate input height based on content (min 3, max MAX_INPUT_HEIGHT)
-    let input_lines = app.input_line_count() as u16;
-    let input_height = (input_lines + 2).clamp(3, MAX_INPUT_HEIGHT); // +2 for borders
+pub fn render(frame: &mut Frame, app: &mut App) {
+    let input_height = (app.input.lines().len() as u16).clamp(1, MAX_INPUT_HEIGHT);
+    let [header, timeline, rule, input, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(3),
+        Constraint::Length(1),
+        Constraint::Length(input_height),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(5),
-            Constraint::Length(input_height),
-        ])
-        .split(frame.area());
-
-    render_header(frame, app, chunks[0]);
-    render_main(frame, app, chunks[1]);
-    render_input(frame, app, chunks[2]);
-
-    if app.show_help {
-        render_help_popup(frame);
-    }
+    render_header(frame, app, header);
+    render_timeline(frame, app, timeline);
+    frame.render_widget(Paragraph::new("─".repeat(rule.width as usize)).dim(), rule);
+    render_input(frame, app, input);
+    frame.render_widget(
+        Paragraph::new(" Enter send · Ctrl+J newline · PgUp/PgDn scroll · Ctrl+C quit").dim(),
+        footer,
+    );
 }
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
-    let mode_str = match app.input_mode {
-        InputMode::Normal => "NORMAL",
-        InputMode::Insert => "INSERT",
-    };
+    let mut online: Vec<&str> = app
+        .online_timites
+        .values()
+        .map(|timite| timite.nick.as_str())
+        .collect();
+    online.sort_unstable();
 
-    let header = Paragraph::new(Line::from(vec![
+    let header = Line::from(vec![
+        Span::styled(" tim", Style::new().fg(Color::Cyan).bold()),
+        Span::styled(" · ", Style::new().dim()),
+        Span::styled(format!("@{}", app.my_nick), Style::new().fg(Color::Green)),
         Span::styled(
-            " Tim Terminal ",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            format!(" · online: {}", online.join(", ")),
+            Style::new().dim(),
         ),
-        Span::raw(" | "),
-        Span::styled(
-            format!("@{}", app.my_nick),
-            Style::default().fg(Color::Green),
-        ),
-        Span::raw(" | "),
-        Span::styled(
-            format!("[{}]", mode_str),
-            Style::default().fg(Color::Yellow),
-        ),
-        Span::raw(" | "),
-        Span::styled("[F1] Help  [q] Quit", Style::default().fg(Color::DarkGray)),
-    ]));
-
-    frame.render_widget(header, area);
+    ]);
+    frame.render_widget(Paragraph::new(header), area);
 }
 
-fn render_main(frame: &mut Frame, app: &App, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(30), Constraint::Length(25)])
-        .split(area);
-
-    render_timeline(frame, app, chunks[0]);
-    render_sidebar(frame, app, chunks[1]);
-}
-
-fn render_timeline(frame: &mut Frame, app: &App, area: Rect) {
-    // Build all lines for the timeline
+/// Pre-wrapped lines let the scroll offset count from the bottom in visual lines.
+fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
+    let area = area.inner(Margin::new(1, 0));
+    let width = area.width as usize;
     let lines: Vec<Line> = app
         .timeline
         .iter()
-        .flat_map(|item| match item {
-            TimelineItem::Message {
-                sender,
-                content,
-                timestamp,
-            } => {
-                let time = format_timestamp(*timestamp);
-                let prefix_len = format!("[{}] {}: ", time, sender).chars().count();
-
-                let msg_lines: Vec<Line> = content
-                    .lines()
-                    .enumerate()
-                    .map(|(i, line_content)| {
-                        if i == 0 {
-                            Line::from(vec![
-                                Span::styled(
-                                    format!("[{}] ", time),
-                                    Style::default().fg(Color::DarkGray),
-                                ),
-                                Span::styled(
-                                    format!("{}: ", sender),
-                                    Style::default().fg(Color::Cyan),
-                                ),
-                                Span::raw(line_content),
-                            ])
-                        } else {
-                            Line::from(vec![
-                                Span::raw(" ".repeat(prefix_len)),
-                                Span::raw(line_content),
-                            ])
-                        }
-                    })
-                    .collect();
-
-                if msg_lines.is_empty() {
-                    vec![Line::from(vec![
-                        Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{}: ", sender), Style::default().fg(Color::Cyan)),
-                    ])]
-                } else {
-                    msg_lines
-                }
-            }
-            TimelineItem::TimiteConnected { nick, timestamp } => {
-                let time = format_timestamp(*timestamp);
-                vec![Line::from(vec![
-                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", nick), Style::default().fg(Color::Green)),
-                    Span::styled("joined", Style::default().fg(Color::Green)),
-                ])]
-            }
-            TimelineItem::TimiteDisconnected { nick, timestamp } => {
-                let time = format_timestamp(*timestamp);
-                vec![Line::from(vec![
-                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", nick), Style::default().fg(Color::Red)),
-                    Span::styled("left", Style::default().fg(Color::Red)),
-                ])]
-            }
-            TimelineItem::AbilityCall {
-                caller,
-                ability_name,
-                timestamp,
-            } => {
-                let time = format_timestamp(*timestamp);
-                vec![Line::from(vec![
-                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", caller), Style::default().fg(Color::Magenta)),
-                    Span::raw("called "),
-                    Span::styled(ability_name, Style::default().fg(Color::Yellow)),
-                ])]
-            }
-            TimelineItem::AbilityOutcome {
-                ability_name,
-                success,
-                timestamp,
-            } => {
-                let time = format_timestamp(*timestamp);
-                let status_color = if *success { Color::Green } else { Color::Red };
-                let status_text = if *success { "completed" } else { "failed" };
-                vec![Line::from(vec![
-                    Span::styled(format!("[{}] ", time), Style::default().fg(Color::DarkGray)),
-                    Span::styled(ability_name, Style::default().fg(Color::Yellow)),
-                    Span::raw(" "),
-                    Span::styled(status_text, Style::default().fg(status_color)),
-                ])]
-            }
-        })
+        .flat_map(|item| item_lines(item, width))
         .collect();
 
-    let total_lines = lines.len();
+    let height = area.height as usize;
+    let max_offset = lines.len().saturating_sub(height);
+    app.scroll_offset = app.scroll_offset.min(max_offset);
+    app.timeline_height = height;
+    let skip = max_offset - app.scroll_offset;
 
-    // Calculate scroll to show end by default, but respect manual scroll
-    let scroll_y = app.timeline_scroll.min(total_lines.saturating_sub(1));
-
-    let timeline = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Timeline ({}) ", total_lines)),
-        )
-        .scroll((scroll_y as u16, 0));
-
-    frame.render_widget(timeline, area);
-}
-
-fn render_sidebar(frame: &mut Frame, app: &App, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-
-    // Online timites
-    let timites: Vec<ListItem> = app
-        .online_timites
-        .values()
-        .map(|t| {
-            let style = if t.id == app.my_timite_id {
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            let prefix = if t.id == app.my_timite_id { "> " } else { "  " };
-            ListItem::new(Line::from(Span::styled(
-                format!("{}{}", prefix, t.nick),
-                style,
-            )))
-        })
-        .collect();
-
-    let timites_list =
-        List::new(timites).block(Block::default().borders(Borders::ALL).title(" Online "));
-
-    frame.render_widget(timites_list, chunks[0]);
-
-    // Abilities
-    let abilities: Vec<ListItem> = app
-        .abilities
-        .iter()
-        .flat_map(|ta| {
-            ta.abilities.iter().map(|a| {
-                ListItem::new(Line::from(Span::styled(
-                    format!("  /{}", a.name),
-                    Style::default().fg(Color::Yellow),
-                )))
-            })
-        })
-        .collect();
-
-    let abilities_list =
-        List::new(abilities).block(Block::default().borders(Borders::ALL).title(" Abilities "));
-
-    frame.render_widget(abilities_list, chunks[1]);
+    frame.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), area);
 }
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
-    let input_style = match app.input_mode {
-        InputMode::Normal => Style::default(),
-        InputMode::Insert => Style::default().fg(Color::Yellow),
-    };
+    let [prompt, text] = Layout::horizontal([
+        Constraint::Length(display_width(PROMPT) as u16),
+        Constraint::Min(1),
+    ])
+    .areas(area);
+    frame.render_widget(Paragraph::new(PROMPT).fg(Color::Cyan), prompt);
+    frame.render_widget(&app.input, text);
+}
 
-    let (cursor_line, cursor_col) = app.cursor_line_col();
-    let inner_height = area.height.saturating_sub(2) as usize; // subtract borders
-    let inner_width = area.width.saturating_sub(2) as usize;
-
-    // Calculate scroll offset to keep cursor visible
-    let scroll_y = if cursor_line >= inner_height {
-        cursor_line - inner_height + 1
-    } else {
-        0
-    };
-
-    let scroll_x = if cursor_col >= inner_width {
-        cursor_col - inner_width + 1
-    } else {
-        0
-    };
-
-    let input = Paragraph::new(app.input.as_str())
-        .style(input_style)
-        .scroll((scroll_y as u16, scroll_x as u16))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Message (i to type, Enter to send, Ctrl+J for new line) "),
-        );
-
-    frame.render_widget(input, area);
-
-    if app.input_mode == InputMode::Insert {
-        let visual_line = cursor_line.saturating_sub(scroll_y);
-        let visual_col = cursor_col.saturating_sub(scroll_x);
-        frame.set_cursor_position((
-            area.x + visual_col as u16 + 1,
-            area.y + visual_line as u16 + 1,
-        ));
+fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
+    match item {
+        TimelineItem::Message {
+            sender,
+            content,
+            timestamp,
+        } => message_lines(format_time(*timestamp), sender, content, width),
+        TimelineItem::TimiteConnected { nick, timestamp } => {
+            vec![system_line(
+                format_time(*timestamp),
+                format!("{nick} joined"),
+            )]
+        }
+        TimelineItem::TimiteDisconnected { nick, timestamp } => {
+            vec![system_line(format_time(*timestamp), format!("{nick} left"))]
+        }
+        TimelineItem::AbilityCall {
+            caller,
+            ability_name,
+            timestamp,
+        } => vec![system_line(
+            format_time(*timestamp),
+            format!("{caller} called {ability_name}"),
+        )],
+        TimelineItem::AbilityOutcome {
+            ability_name,
+            success,
+            timestamp,
+        } => {
+            let status = if *success { "completed" } else { "failed" };
+            vec![system_line(
+                format_time(*timestamp),
+                format!("{ability_name} {status}"),
+            )]
+        }
     }
 }
 
-fn render_help_popup(frame: &mut Frame) {
-    let area = centered_rect(60, 70, frame.area());
+fn system_line(time: String, text: String) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(time, Style::new().dim()),
+        Span::styled(format!(" · {text}"), Style::new().dim()),
+    ])
+}
 
-    let help_text = vec![
-        Line::from(Span::styled(
-            "Keybindings",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Normal Mode:",
-            Style::default().fg(Color::Cyan),
-        )),
-        Line::from("  i           Enter insert mode"),
-        Line::from("  q/Ctrl+D    Quit"),
-        Line::from("  j/k         Scroll down/up"),
-        Line::from("  G           Scroll to bottom"),
-        Line::from("  F1          Toggle help"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Insert Mode:",
-            Style::default().fg(Color::Cyan),
-        )),
-        Line::from("  Esc         Return to normal mode"),
-        Line::from("  Enter       Send message"),
-        Line::from("  Ctrl+J      New line"),
-        Line::from("  Backspace   Delete character"),
-        Line::from("  Arrows      Move cursor"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press F1 or Esc to close",
-            Style::default().fg(Color::DarkGray),
-        )),
+/// Wraps the message under its `time sender:` head; continuation lines hang below the text.
+fn message_lines(time: String, sender: &str, content: &str, width: usize) -> Vec<Line<'static>> {
+    let head_width = display_width(&time) + display_width(sender) + 3;
+    let indent = " ".repeat(head_width);
+    let body_width = width.saturating_sub(head_width).max(MIN_BODY_WIDTH);
+    let head = vec![
+        Span::styled(time, Style::new().dim()),
+        Span::raw(" "),
+        Span::styled(format!("{sender}:"), Style::new().fg(Color::Cyan)),
+        Span::raw(" "),
     ];
 
-    let help = Paragraph::new(help_text).wrap(Wrap { trim: true }).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Help ")
-            .style(Style::default().bg(Color::DarkGray)),
-    );
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(help, area);
+    let mut lines = Vec::new();
+    for source in content.lines() {
+        for piece in textwrap::wrap(source, body_width) {
+            let mut spans = if lines.is_empty() {
+                head.clone()
+            } else {
+                vec![Span::raw(indent.clone())]
+            };
+            spans.push(Span::raw(piece.into_owned()));
+            lines.push(Line::from(spans));
+        }
+    }
+    if lines.is_empty() {
+        lines.push(Line::from(head));
+    }
+    lines
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
-}
-
-fn format_timestamp(ts: u64) -> String {
-    use chrono::{TimeZone, Utc};
-    let dt = Utc.timestamp_millis_opt(ts as i64).single();
-    match dt {
+fn format_time(ts: u64) -> String {
+    match Local.timestamp_millis_opt(ts as i64).single() {
         Some(dt) => dt.format("%H:%M").to_string(),
         None => "--:--".to_string(),
     }
