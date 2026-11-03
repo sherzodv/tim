@@ -1,20 +1,31 @@
-use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Debug;
 use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::Stream;
 use futures::StreamExt;
+use serde_json::json;
 use thiserror::Error;
-use tokio::sync::mpsc;
 use tracing::debug;
 use tracing::trace;
 use tracing::warn;
 
+use super::deepseek::DeepSeek;
+use super::openai::OpenAi;
+
+pub const SILENCE_TOOL_NAME: &str = "TIM-LLM-SILENCE";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmRole {
+    User,
+    Assistant,
+}
+
 #[derive(Debug)]
 pub struct LlmInputItem {
-    pub role: &'static str,
+    pub role: LlmRole,
     pub content: String,
 }
 
@@ -29,12 +40,59 @@ pub enum LlmRes {
     NoResponse(String), // Contains the reason for silence
 }
 
+/// Connection settings every provider needs; `endpoint` overrides the provider default.
+#[derive(Clone)]
+pub struct LlmConf {
+    pub api_key: String,
+    pub endpoint: Option<String>,
+    pub model: String,
+    pub temperature: f32,
+}
+
+impl Debug for LlmConf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LlmConf")
+            .field("endpoint", &self.endpoint)
+            .field("model", &self.model)
+            .field("temperature", &self.temperature)
+            .finish()
+    }
+}
+
+/// A function the model may call, described independently of any provider.
+pub struct LlmTool {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub parameters: serde_json::Value,
+}
+
+/// The one tool every provider offers: lets the model stay silent and say why.
+pub fn silence_tool() -> LlmTool {
+    LlmTool {
+        name: SILENCE_TOOL_NAME,
+        description: "Use when you choose to not respond.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Very short reason for choosing to remain silent."
+                },
+            },
+            "required": ["reason"],
+            "additionalProperties": false
+        }),
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum LlmError {
     #[error("llm prompt is empty")]
     EmptyPrompt,
-    #[error("missing OpenAI API key (set OPENAI_API_KEY)")]
+    #[error("llm api key is empty")]
     MissingApiKey,
+    #[error("unknown llm provider: {0}")]
+    UnknownProvider(String),
     #[error("http error while contacting LLM: {0}")]
     Http(#[from] reqwest::Error),
     #[error("failed to decode LLM response: {0}")]
@@ -50,57 +108,19 @@ pub enum LlmError {
 #[derive(Debug)]
 pub enum LlmStreamEvent {
     ContentDelta(String),
-    ToolCallDelta {
-        id: String,
-        name: Option<String>,
-        arguments_delta: String,
-        finished: bool,
-    },
+    ToolCall { name: String, arguments: String },
     Completed,
 }
 
-pub struct ResponseStream {
-    pub(crate) rx_event: mpsc::Receiver<Result<LlmStreamEvent, LlmError>>,
-}
-
-#[derive(Debug)]
-struct ToolCall {
-    _id: String,
-    name: Option<String>,
-    arguments: String,
-}
-
-impl ToolCall {
-    fn new(id: String) -> Self {
-        Self {
-            _id: id,
-            name: None,
-            arguments: String::new(),
-        }
-    }
-}
-
-impl Stream for ResponseStream {
-    type Item = Result<LlmStreamEvent, LlmError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.rx_event.poll_recv(cx)
-    }
-}
-
-#[derive(Debug)]
-struct CollectedStream {
-    message: String,
-    tool_calls: Vec<ToolCall>,
-}
+pub type LlmStream = Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>;
 
 #[async_trait]
 pub trait Llm: Send + Sync {
-    async fn chat_stream(&self, req: &LlmReq<'_>) -> Result<ResponseStream, LlmError>;
+    async fn chat_stream(&self, req: &LlmReq<'_>) -> Result<LlmStream, LlmError>;
 
     async fn chat(&self, req: &LlmReq<'_>) -> Result<LlmRes, LlmError> {
         let mut stream = self.chat_stream(req).await?;
-        let collected = collect_message_and_tool_calls(&mut stream).await?;
+        let collected = collect(&mut stream).await?;
 
         if let Some(reason) = silence_reason(&collected.tool_calls) {
             return Ok(LlmRes::NoResponse(reason));
@@ -113,38 +133,39 @@ pub trait Llm: Send + Sync {
     }
 }
 
-async fn collect_message_and_tool_calls(
-    stream: &mut ResponseStream,
-) -> Result<CollectedStream, LlmError> {
-    let mut message = String::new();
-    let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
+/// Picks the implementation by provider name, e.g. `openai`.
+pub fn build_llm(provider: &str, conf: &LlmConf) -> Result<Arc<dyn Llm>, LlmError> {
+    match provider {
+        "openai" => Ok(Arc::new(OpenAi::new(conf)?)),
+        "deepseek" => Ok(Arc::new(DeepSeek::new(conf)?)),
+        other => Err(LlmError::UnknownProvider(other.to_string())),
+    }
+}
+
+#[derive(Debug)]
+struct ToolCall {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Debug, Default)]
+struct Collected {
+    message: String,
+    tool_calls: Vec<ToolCall>,
+}
+
+async fn collect(stream: &mut LlmStream) -> Result<Collected, LlmError> {
+    let mut collected = Collected::default();
 
     while let Some(item) = stream.next().await {
         match item? {
             LlmStreamEvent::ContentDelta(delta) => {
                 trace!("LLM content delta: {:?}", delta);
-                message.push_str(&delta);
+                collected.message.push_str(&delta);
             }
-            LlmStreamEvent::ToolCallDelta {
-                id,
-                name,
-                arguments_delta,
-                finished,
-            } => {
-                trace!(
-                    "LLM tool call delta - id: {}, name: {:?}, args_delta: {:?}, finished: {}",
-                    id,
-                    name,
-                    arguments_delta,
-                    finished
-                );
-                let entry = tool_calls
-                    .entry(id.clone())
-                    .or_insert_with(|| ToolCall::new(id.clone()));
-                if let Some(name) = name {
-                    entry.name = Some(name);
-                }
-                entry.arguments.push_str(&arguments_delta);
+            LlmStreamEvent::ToolCall { name, arguments } => {
+                trace!("LLM tool call - name: {}, args: {:?}", name, arguments);
+                collected.tool_calls.push(ToolCall { name, arguments });
             }
             LlmStreamEvent::Completed => {
                 debug!("LLM stream completed");
@@ -153,23 +174,20 @@ async fn collect_message_and_tool_calls(
         }
     }
 
-    Ok(CollectedStream {
-        message,
-        tool_calls: tool_calls.into_values().collect(),
-    })
+    Ok(collected)
 }
 
 fn silence_reason(tool_calls: &[ToolCall]) -> Option<String> {
     let call = tool_calls
         .iter()
-        .find(|call| call.name.as_deref() == Some("TIM-LLM-SILENCE"))?;
+        .find(|call| call.name == SILENCE_TOOL_NAME)?;
 
     Some(parse_silence_reason(&call.arguments))
 }
 
 fn parse_silence_reason(args: &str) -> String {
     if args.trim().is_empty() {
-        debug!("TIM-LLM-SILENCE called without arguments, defaulting reason");
+        debug!("{SILENCE_TOOL_NAME} called without arguments, defaulting reason");
         return "No reason provided".to_string();
     }
 
@@ -178,12 +196,12 @@ fn parse_silence_reason(args: &str) -> String {
             .as_str()
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                warn!("TIM-LLM-SILENCE missing 'reason' field. Args: {}", args);
+                warn!("{SILENCE_TOOL_NAME} missing 'reason' field. Args: {}", args);
                 "No reason provided".to_string()
             }),
         Err(e) => {
             warn!(
-                "Failed to parse TIM-LLM-SILENCE arguments: {}. Args: {}",
+                "Failed to parse {SILENCE_TOOL_NAME} arguments: {}. Args: {}",
                 e, args
             );
             "No reason provided".to_string()

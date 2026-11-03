@@ -7,6 +7,7 @@ use thiserror::Error;
 use tokio_stream::StreamExt;
 
 use crate::llm::llm::LlmInputItem;
+use crate::llm::llm::LlmRole;
 use crate::tim_client::tim_api::EventCallAbility;
 use crate::tim_client::tim_api::EventCallAbilityOutcome;
 use crate::tim_client::tim_api::EventNewMessage;
@@ -173,10 +174,10 @@ impl Memory {
         format!("[{}]", nick)
     }
 
-    fn role_for_timite(timite_id: Option<u64>, my_timite_id: u64) -> &'static str {
+    fn role_for_timite(timite_id: Option<u64>, my_timite_id: u64) -> LlmRole {
         match timite_id {
-            Some(id) if id == my_timite_id => "assistant",
-            _ => "user",
+            Some(id) if id == my_timite_id => LlmRole::Assistant,
+            _ => LlmRole::User,
         }
     }
 }

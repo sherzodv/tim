@@ -1,0 +1,261 @@
+//! Wire format of the OpenAI Responses API: request types, transport and SSE parsing.
+//! Providers speaking this format own their defaults and any fields beyond the base request.
+
+use std::fmt;
+use std::fmt::Debug;
+
+use eventsource_stream::Eventsource;
+use futures::stream;
+use futures::StreamExt;
+use reqwest::Client;
+use serde::Deserialize;
+use serde::Serialize;
+use tracing::debug;
+use tracing::trace;
+
+use super::llm::silence_tool;
+use super::llm::LlmConf;
+use super::llm::LlmError;
+use super::llm::LlmReq;
+use super::llm::LlmRole;
+use super::llm::LlmStream;
+use super::llm::LlmStreamEvent;
+use super::llm::LlmTool;
+
+const STR_DBG_LEN: usize = 40;
+const VEC_DBG_LEN: usize = 3;
+
+#[derive(Clone)]
+pub(super) struct ResponsesClient {
+    http: Client,
+    api_key: String,
+    endpoint: String,
+    model: String,
+    temperature: f32,
+}
+
+impl Debug for ResponsesClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResponsesClient")
+            .field("endpoint", &self.endpoint)
+            .field("model", &self.model)
+            .field("temperature", &self.temperature)
+            .finish()
+    }
+}
+
+impl ResponsesClient {
+    pub(super) fn new(
+        conf: &LlmConf,
+        default_endpoint: &str,
+        default_model: &str,
+    ) -> Result<Self, LlmError> {
+        if conf.api_key.trim().is_empty() {
+            return Err(LlmError::MissingApiKey);
+        }
+        let endpoint = conf
+            .endpoint
+            .clone()
+            .unwrap_or_else(|| default_endpoint.to_string());
+        let model = if conf.model.trim().is_empty() {
+            default_model.to_string()
+        } else {
+            conf.model.clone()
+        };
+
+        Ok(Self {
+            http: Client::new(),
+            api_key: conf.api_key.clone(),
+            endpoint,
+            model,
+            temperature: conf.temperature.max(0.0),
+        })
+    }
+
+    /// The base request every provider sends; providers extend it with their own fields.
+    pub(super) fn request(&self, req: &LlmReq<'_>) -> Result<ResponsesReq, LlmError> {
+        if req.inputs.is_empty() && req.sysp.trim().is_empty() {
+            return Err(LlmError::EmptyPrompt);
+        }
+
+        let mut input = Vec::with_capacity(req.inputs.len() + 1);
+        input.push(system_message(req.sysp.trim().to_string()));
+        for item in req.inputs {
+            input.push(input_message(item.role, item.content.clone()));
+        }
+
+        Ok(ResponsesReq {
+            model: self.model.clone(),
+            input,
+            temperature: self.temperature,
+            stream: true,
+            store: false,
+            tools: vec![tool_definition(silence_tool())],
+        })
+    }
+
+    pub(super) async fn stream<P: Serialize + Debug>(
+        &self,
+        payload: &P,
+    ) -> Result<LlmStream, LlmError> {
+        debug!("responses req: {:?}", payload);
+
+        let response = self
+            .http
+            .post(&self.endpoint)
+            .bearer_auth(&self.api_key)
+            .json(payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(LlmError::Api(format!("status {status}: {body}")));
+        }
+
+        let events = response.bytes_stream().eventsource().flat_map(|next| {
+            let mapped = match next {
+                Ok(event) => map_sse_event(event),
+                Err(err) => vec![Err(LlmError::Stream(err.to_string()))],
+            };
+            stream::iter(mapped)
+        });
+        Ok(Box::pin(events))
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct ResponsesReq {
+    model: String,
+    input: Vec<InputMessage>,
+    temperature: f32,
+    stream: bool,
+    store: bool,
+    tools: Vec<ToolDefinition>,
+}
+
+impl Debug for ResponsesReq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let last3: Vec<&InputMessage> = self.input.iter().rev().take(VEC_DBG_LEN).collect();
+        f.debug_struct("ResponsesReq")
+            .field("m", &self.model)
+            .field("t", &self.temperature)
+            .field("input", &format!("{:?}", last3))
+            .finish()
+    }
+}
+
+#[derive(Serialize)]
+struct InputMessage {
+    role: &'static str,
+    content: Vec<InputContent>,
+}
+
+impl Debug for InputMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let content_preview = match self.content.first() {
+            Some(InputContent::InputText { text }) | Some(InputContent::OutputText { text }) => {
+                text.chars().take(STR_DBG_LEN).collect::<String>()
+            }
+            None => "no-content".to_string(),
+        };
+        f.debug_struct("InputMessage")
+            .field("role", &self.role)
+            .field("content_preview", &content_preview)
+            .finish()
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum InputContent {
+    InputText { text: String },
+    OutputText { text: String },
+}
+
+#[derive(Serialize)]
+struct ToolDefinition {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    name: &'static str,
+    description: &'static str,
+    parameters: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct SseEvent {
+    #[serde(rename = "type")]
+    kind: String,
+    delta: Option<String>,
+    item: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ResponseItem {
+    FunctionCall {
+        name: String,
+        arguments: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
+fn system_message(text: String) -> InputMessage {
+    InputMessage {
+        role: "system",
+        content: vec![InputContent::InputText { text }],
+    }
+}
+
+fn input_message(role: LlmRole, text: String) -> InputMessage {
+    match role {
+        LlmRole::User => InputMessage {
+            role: "user",
+            content: vec![InputContent::InputText { text }],
+        },
+        LlmRole::Assistant => InputMessage {
+            role: "assistant",
+            content: vec![InputContent::OutputText { text }],
+        },
+    }
+}
+
+fn tool_definition(tool: LlmTool) -> ToolDefinition {
+    ToolDefinition {
+        kind: "function",
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+    }
+}
+
+fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent, LlmError>> {
+    trace!("sse event: {}", event.data);
+    let parsed = match serde_json::from_str::<SseEvent>(&event.data) {
+        Ok(val) => val,
+        Err(err) => return vec![Err(LlmError::Stream(err.to_string()))],
+    };
+
+    match parsed.kind.as_str() {
+        "response.output_text.delta" => parsed
+            .delta
+            .map(LlmStreamEvent::ContentDelta)
+            .map(|ev| vec![Ok(ev)])
+            .unwrap_or_default(),
+        "response.output_item.done" => {
+            let Some(item) = parsed.item else {
+                return Vec::new();
+            };
+            match serde_json::from_value::<ResponseItem>(item) {
+                Ok(ResponseItem::FunctionCall { name, arguments }) => {
+                    vec![Ok(LlmStreamEvent::ToolCall { name, arguments })]
+                }
+                _ => Vec::new(),
+            }
+        }
+        "response.completed" => vec![Ok(LlmStreamEvent::Completed)],
+        _ => Vec::new(),
+    }
+}

@@ -1,10 +1,9 @@
 [[agents]]
 kind = "llm"
 nick = "jarvis"
-provider = "openai:jarvis"
+provider = "deepseek:jarvis"
 endpoint = "http://127.0.0.1:8787"
 prompt = "jarvis.md"
-llm_endpoint = "https://api.deepseek.com/v1/responses"
 model = "deepseek-v4-pro"
 temperature = 1.0
 live_interval_secs = 10

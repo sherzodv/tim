@@ -9,8 +9,9 @@ use tracing::debug;
 use tracing::trace;
 
 use super::ability;
-use super::chatgpt::ChatGpt;
+use super::llm::build_llm;
 use super::llm::Llm;
+use super::llm::LlmConf;
 use super::llm::LlmReq;
 use super::llm::LlmRes;
 use super::memory::Memory;
@@ -28,10 +29,8 @@ use crate::tim_client::TimClient;
 #[derive(Clone)]
 pub struct AgentConf {
     pub sysp: String,
-    pub api_key: String,
-    pub endpoint: String,
-    pub model: String,
-    pub temperature: f32,
+    pub provider: String,
+    pub llm: LlmConf,
     pub live_interval: Option<Duration>,
 }
 
@@ -46,9 +45,8 @@ impl Debug for AgentConf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AgentConf")
             .field("userp", &self.sysp)
-            .field("endpoint", &self.endpoint)
-            .field("model", &self.model)
-            .field("temperature", &self.temperature)
+            .field("provider", &self.provider)
+            .field("llm", &self.llm)
             .field("live_interval", &self.live_interval)
             .finish()
     }
@@ -77,15 +75,8 @@ impl From<MemoryError> for AgentError {
 
 impl Agent {
     pub fn new(conf: &AgentConf, client: TimClient) -> Result<Self, AgentError> {
-        let llm: Arc<dyn Llm> = Arc::new(
-            ChatGpt::new(
-                conf.api_key.clone(),
-                conf.endpoint.clone(),
-                conf.model.clone(),
-                conf.temperature,
-            )
-            .map_err(|err| AgentError::Llm(err.to_string()))?,
-        );
+        let llm =
+            build_llm(&conf.provider, &conf.llm).map_err(|err| AgentError::Llm(err.to_string()))?;
         let memory = Memory::new(client.clone());
         Ok(Self {
             client,
@@ -118,7 +109,7 @@ impl Agent {
             .await
             .map_err(|err| AgentError::Llm(err.to_string()))?;
         match answer {
-            super::llm::LlmRes::NoResponse(reason) => {
+            LlmRes::NoResponse(reason) => {
                 debug!("{} chose silence. Reason: {}", nick, reason);
                 Ok(())
             }

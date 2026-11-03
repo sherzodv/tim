@@ -1,13 +1,15 @@
 use std::env;
 
 use futures::StreamExt;
-use tim_agent::llm::chatgpt::ChatGpt;
-use tim_agent::llm::chatgpt::OPENAI_DEFAULT_ENDPOINT;
-use tim_agent::llm::chatgpt::OPENAI_DEFAULT_MODEL;
 use tim_agent::llm::llm::Llm;
+use tim_agent::llm::llm::LlmConf;
 use tim_agent::llm::llm::LlmInputItem;
 use tim_agent::llm::llm::LlmReq;
+use tim_agent::llm::llm::LlmRole;
 use tim_agent::llm::llm::LlmStreamEvent;
+use tim_agent::llm::openai::OpenAi;
+use tim_agent::llm::openai::OPENAI_DEFAULT_ENDPOINT;
+use tim_agent::llm::openai::OPENAI_DEFAULT_MODEL;
 use tracing_subscriber::EnvFilter;
 
 // Manual streaming test. Run with: cargo test --test sse_debug -- --ignored
@@ -31,10 +33,15 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
         "Reply with some brief greeting first, then include a simple tool call".to_string()
     });
 
-    let chatgpt = ChatGpt::new(api_key, endpoint.clone(), model.clone(), 0.2)?;
+    let openai = OpenAi::new(&LlmConf {
+        api_key,
+        endpoint: Some(endpoint.clone()),
+        model: model.clone(),
+        temperature: 0.2,
+    })?;
 
     let history = vec![LlmInputItem {
-        role: "user",
+        role: LlmRole::User,
         content: prompt,
     }];
     let req = LlmReq {
@@ -42,21 +49,15 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
         inputs: &history,
     };
 
-    let mut stream = chatgpt.chat_stream(&req).await?;
+    let mut stream = openai.chat_stream(&req).await?;
     println!("starting stream model={model} endpoint={endpoint}");
 
     while let Some(item) = stream.next().await {
         match item? {
             LlmStreamEvent::ContentDelta(delta) => println!("delta: {delta}"),
-            LlmStreamEvent::ToolCallDelta {
-                id,
-                name,
-                arguments_delta,
-                finished,
-            } => println!(
-                "tool_call id={id} name={:?} args_delta={arguments_delta} finished={finished}",
-                name
-            ),
+            LlmStreamEvent::ToolCall { name, arguments } => {
+                println!("tool_call name={name} args={arguments}")
+            }
             LlmStreamEvent::Completed => {
                 println!("completed");
                 break;

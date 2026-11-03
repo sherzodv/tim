@@ -25,6 +25,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::crawler::CrawlerConf;
+use crate::llm::llm::LlmConf;
 use crate::llm::AgentConf;
 use crate::tim_client::TimClient;
 use crate::tim_client::TimClientConf;
@@ -56,7 +57,7 @@ struct LlmAgentConfig {
     provider: String,
     endpoint: String,
     prompt: String,
-    llm_endpoint: String,
+    llm_endpoint: Option<String>,
     model: String,
     temperature: f32,
     live_interval_secs: Option<u64>,
@@ -106,26 +107,34 @@ fn spawn_agent(
     }
 }
 
+/// The llm implementation named by a provider such as `openai:jarvis`.
+fn llm_provider(provider: &str) -> &str {
+    provider.split(':').next().unwrap_or(provider)
+}
+
 fn spawn_llm_agent(
     conf: LlmAgentConfig,
     prompts_dir: &Path,
 ) -> Result<BoxFuture<'static, Result<(), agent::AgentError>>, Box<dyn std::error::Error>> {
     let sysp = load_prompt(prompts_dir, &conf.prompt)?;
 
+    let llm_conf = AgentConf {
+        sysp,
+        provider: llm_provider(&conf.provider).to_string(),
+        llm: LlmConf {
+            api_key: conf.api_key,
+            endpoint: conf.llm_endpoint,
+            model: conf.model,
+            temperature: conf.temperature,
+        },
+        live_interval: conf.live_interval_secs.map(Duration::from_secs),
+    };
+
     let tim_conf = TimClientConf {
         nick: conf.nick,
         provider: conf.provider,
         endpoint: conf.endpoint,
         timite_id: conf.timite_id,
-    };
-
-    let llm_conf = AgentConf {
-        sysp,
-        api_key: conf.api_key,
-        endpoint: conf.llm_endpoint,
-        model: conf.model,
-        temperature: conf.temperature,
-        live_interval: conf.live_interval_secs.map(Duration::from_secs),
     };
 
     Ok(Box::pin(
