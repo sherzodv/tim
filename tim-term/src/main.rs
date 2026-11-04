@@ -8,11 +8,9 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::{
-    event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind,
-    },
+    event::{DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyModifiers},
     execute,
+    style::Print,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::StreamExt;
@@ -26,7 +24,9 @@ use crate::error::Result;
 use crate::event::{AppEvent, EventHandler};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
-const WHEEL_LINES: usize = 3;
+/// Mouse stays with the terminal so text can be selected; the wheel arrives as arrow keys.
+const ENABLE_ALTERNATE_SCROLL: &str = "\x1b[?1007h";
+const DISABLE_ALTERNATE_SCROLL: &str = "\x1b[?1007l";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -55,8 +55,8 @@ async fn main() -> Result<()> {
     execute!(
         stdout,
         EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste
+        EnableBracketedPaste,
+        Print(ENABLE_ALTERNATE_SCROLL)
     )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -92,9 +92,9 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-        DisableBracketedPaste
+        Print(DISABLE_ALTERNATE_SCROLL),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
     )?;
     terminal.show_cursor()?;
 
@@ -142,7 +142,6 @@ async fn run_app(
 
         match events.next().await? {
             AppEvent::Key(key) => handle_key(app, client, key).await?,
-            AppEvent::Mouse(mouse) => handle_mouse(app, mouse),
             AppEvent::Paste(text) => app.paste(&text),
             AppEvent::Resize => {}
             AppEvent::Space(event) => app.handle_space_event(event),
@@ -167,17 +166,11 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         }
         KeyCode::PageUp => app.scroll_up(app.timeline_height),
         KeyCode::PageDown => app.scroll_down(app.timeline_height),
+        KeyCode::Up if app.input.lines().len() == 1 => app.scroll_up(1),
+        KeyCode::Down if app.input.lines().len() == 1 => app.scroll_down(1),
         _ => {
             app.input.input(key);
         }
     }
     Ok(())
-}
-
-fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::ScrollUp => app.scroll_up(WHEEL_LINES),
-        MouseEventKind::ScrollDown => app.scroll_down(WHEEL_LINES),
-        _ => {}
-    }
 }

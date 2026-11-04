@@ -30,7 +30,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new("─".repeat(rule.width as usize)).dim(), rule);
     render_input(frame, app, input);
     frame.render_widget(
-        Paragraph::new(" Enter send · Ctrl+J newline · PgUp/PgDn scroll · Ctrl+C quit").dim(),
+        Paragraph::new(" Enter send · Ctrl+J newline · ↑/↓ PgUp/PgDn scroll · Ctrl+C quit").dim(),
         footer,
     );
 }

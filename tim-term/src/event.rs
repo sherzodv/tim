@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent};
+use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind};
 use tokio::sync::mpsc;
 
 use crate::client::SpaceEvent;
@@ -7,7 +7,6 @@ use crate::error::Result;
 #[derive(Debug)]
 pub enum AppEvent {
     Key(KeyEvent),
-    Mouse(MouseEvent),
     Paste(String),
     Resize,
     Space(SpaceEvent),
@@ -29,7 +28,6 @@ impl EventHandler {
             };
             let app_event = match event {
                 CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => AppEvent::Key(key),
-                CrosstermEvent::Mouse(mouse) => AppEvent::Mouse(mouse),
                 CrosstermEvent::Paste(text) => AppEvent::Paste(text),
                 CrosstermEvent::Resize(_, _) => AppEvent::Resize,
                 _ => continue,
