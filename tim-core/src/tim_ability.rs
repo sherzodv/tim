@@ -47,6 +47,7 @@ impl TimAbility {
         call_ability: &CallAbility,
         session: &Session,
     ) -> Result<u64, TimAbilityError> {
+        self.t_space.validate_branch(call_ability.branch_id)?;
         let call_ability_id = self.call_ability_cnt.fetch_add(1, Ordering::Relaxed) + 1;
         self.t_store
             .store_call_ability(call_ability_id, call_ability)?;

@@ -3,9 +3,17 @@
 use tim_client::api::TaskModelEvent;
 use tim_client::api::TaskToolCall;
 use tim_client::client::TimClient;
+use tim_client::client::TimClientError;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::warn;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReportError {
+    #[error(transparent)]
+    Client(#[from] TimClientError),
+    #[error("task report worker failed: {0}")]
+    Worker(#[from] tokio::task::JoinError),
+}
 
 enum Report {
     Step(String),
@@ -16,20 +24,18 @@ enum Report {
 /// Keeps the space informed about one running task; `finish` reports its end.
 pub struct Reporter {
     reports: mpsc::UnboundedSender<Report>,
-    worker: JoinHandle<()>,
+    worker: JoinHandle<Result<(), TimClientError>>,
 }
 
 impl Reporter {
-    pub fn start(mut client: TimClient, task: String) -> Self {
+    pub async fn start(
+        mut client: TimClient,
+        task: String,
+        source_event_id: u64,
+    ) -> Result<Self, TimClientError> {
+        let task_id = client.send_task_started(&task, source_event_id).await?;
         let (tx, mut rx) = mpsc::unbounded_channel::<Report>();
         let worker = tokio::spawn(async move {
-            let task_id = match client.send_task_started(&task).await {
-                Ok(task_id) => task_id,
-                Err(error) => {
-                    warn!(%error, "task start report failed");
-                    return;
-                }
-            };
             while let Some(report) = rx.recv().await {
                 let sent = match report {
                     Report::Step(step) => client.send_task_step(task_id, &step).await,
@@ -44,24 +50,21 @@ impl Reporter {
                             .await
                     }
                 };
-                if let Err(error) = sent {
-                    warn!(%error, task_id, "task report failed");
-                }
+                sent?;
             }
-            if let Err(error) = client.send_task_finished(task_id).await {
-                warn!(%error, task_id, "task finish report failed");
-            }
+            client.send_task_finished(task_id).await
         });
-        Self {
+        Ok(Self {
             reports: tx,
             worker,
-        }
+        })
     }
 
     /// Reports the finish and waits until it is in the log, so a reply sent next comes after it.
-    pub async fn finish(self) {
+    pub async fn finish(self) -> Result<(), ReportError> {
         drop(self.reports);
-        let _ = self.worker.await;
+        self.worker.await??;
+        Ok(())
     }
 
     /// What the task is doing now, in a few words.
@@ -70,7 +73,13 @@ impl Reporter {
     }
 
     /// A tool call that returned; `task_id` and `timite_id` are filled in on the way.
-    pub fn tool_call(&self, tool: String, arguments: String, result: Result<String, String>) {
+    pub fn tool_call(
+        &self,
+        call_id: String,
+        tool: String,
+        arguments: String,
+        result: Result<String, String>,
+    ) {
         let (output, error) = match result {
             Ok(output) => (output, None),
             Err(error) => (String::new(), Some(error)),
@@ -78,6 +87,7 @@ impl Reporter {
         let _ = self.reports.send(Report::ToolCall(TaskToolCall {
             timite_id: 0,
             task_id: 0,
+            call_id,
             tool,
             arguments,
             output,

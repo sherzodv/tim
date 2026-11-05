@@ -44,6 +44,7 @@ impl TimMessage {
         req: &SendMessageReq,
         session: &Session,
     ) -> Result<u64, TimMessageError> {
+        self.t_space.validate_branch(req.branch_id)?;
         let msg_id = self.msg_counter.fetch_add(1, Ordering::Relaxed) + 1;
         let message = Message {
             id: msg_id,
@@ -52,7 +53,7 @@ impl TimMessage {
             mentions: self.resolve_mentions(&req.content)?,
         };
         self.t_store.store_message(msg_id, &message)?;
-        self.t_space.publish_message(&message)?;
+        self.t_space.publish_message(&message, req.branch_id)?;
         Ok(msg_id)
     }
 

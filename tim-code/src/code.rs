@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use tim_client::agent::Agent;
 use tim_client::agent::AgentBuilder;
@@ -10,7 +12,9 @@ use tim_client::api::CallAbilityOutcome;
 use tim_client::api::Message;
 use tim_client::api::SpaceEvent;
 use tim_client::client::TimClient;
+use tim_client::client::TimClientError;
 use tim_llm::llm::LlmConf;
+use tokio::sync::Mutex;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -18,8 +22,11 @@ use tracing::warn;
 use crate::claude::ClaudeCode;
 use crate::claude::ClaudeError;
 use crate::git::GitError;
+use crate::history::History;
+use crate::history::HistoryError;
 use crate::llm::LlmCode;
 use crate::llm::LlmCodeError;
+use crate::progress::ReportError;
 use crate::progress::Reporter;
 use crate::text::head;
 use crate::tools;
@@ -59,10 +66,20 @@ pub struct CodeAgent {
     client: TimClient,
     tools: Tools,
     engine: Engine,
+    execution: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, thiserror::Error)]
 enum CallError {
+    #[error(transparent)]
+    Client(#[from] TimClientError),
+
+    #[error(transparent)]
+    Report(#[from] ReportError),
+
+    #[error(transparent)]
+    History(#[from] HistoryError),
+
     #[error(transparent)]
     Tool(#[from] ToolError),
 
@@ -93,10 +110,17 @@ impl Engine {
         }
     }
 
-    async fn task(&self, description: &str, reporter: &Reporter) -> Result<String, CallError> {
+    async fn task(
+        &self,
+        description: &str,
+        history: History,
+        reporter: &Reporter,
+    ) -> Result<String, CallError> {
         match self {
-            Self::Claude(claude) => Ok(claude.task(description, reporter).await?),
-            Self::Llm(llm) => Ok(llm.task(description, reporter).await?),
+            Self::Claude(claude) => Ok(claude
+                .task(description, &history.transcript, reporter)
+                .await?),
+            Self::Llm(llm) => Ok(llm.task(description, history.items, reporter).await?),
         }
     }
 }
@@ -107,11 +131,12 @@ impl CodeAgent {
             client,
             tools: conf.tools.clone(),
             engine: Engine::new(&conf.engine, &conf.tools)?,
+            execution: Arc::new(Mutex::new(())),
         })
     }
 
     /// Runs a message that mentions this timite as a task and replies with the report.
-    fn handle_message(&self, message: &Message) {
+    async fn handle_message(&self, message: &Message, source_event_id: u64, branch_id: u64) {
         let me = self.client.get_me();
         if !message
             .mentions
@@ -126,11 +151,20 @@ impl CodeAgent {
         }
         let tools = self.tools.clone();
         let engine = self.engine.clone();
-        let mut client = self.client.clone();
+        let mut client = self.client.in_branch(branch_id);
+        let execution = self.execution.clone().lock_owned().await;
         tokio::spawn(async move {
-            let reporter = Reporter::start(client.clone(), head(&task, TASK_CHARS));
-            let result = report(&tools, &engine, &task, &reporter).await;
-            reporter.finish().await;
+            let _guard = execution;
+            let result = async {
+                let history = History::load(&mut client, source_event_id).await?;
+                let reporter =
+                    Reporter::start(client.clone(), head(&task, TASK_CHARS), source_event_id)
+                        .await?;
+                let result = report(&tools, &engine, &task, history, &reporter).await;
+                reporter.finish().await?;
+                result
+            }
+            .await;
             let reply = match result {
                 Ok(report) => report,
                 Err(err) => format!("task failed: {err}"),
@@ -147,7 +181,7 @@ impl CodeAgent {
     }
 
     /// Runs the call in a separate task: commands can take minutes.
-    fn handle_call(&self, call: &CallAbility) {
+    async fn handle_call(&self, call: &CallAbility, source_event_id: u64, branch_id: u64) {
         if call.timite_id != self.client.timite_id() {
             return;
         }
@@ -157,13 +191,26 @@ impl CodeAgent {
         };
         let tools = self.tools.clone();
         let engine = self.engine.clone();
-        let mut client = self.client.clone();
+        let mut client = self.client.in_branch(branch_id);
+        let execution = self.execution.clone().lock_owned().await;
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
-            let reporter = Reporter::start(client.clone(), ability.clone());
-            let result = dispatch(&tools, &engine, &reporter, &ability, &payload).await;
-            reporter.finish().await;
+            let _guard = execution;
+            let result = async {
+                let history = if ability == CODE_TASK {
+                    History::load(&mut client, source_event_id).await?
+                } else {
+                    History::default()
+                };
+                let reporter =
+                    Reporter::start(client.clone(), ability.clone(), source_event_id).await?;
+                let result =
+                    dispatch(&tools, &engine, &reporter, &ability, &payload, history).await;
+                reporter.finish().await?;
+                result
+            }
+            .await;
             let outcome = to_outcome(call_id, result);
             if let Err(err) = client.send_call_ability_outcome(&outcome).await {
                 error!(call_id, %err, "failed to send call ability outcome");
@@ -178,6 +225,7 @@ async fn dispatch(
     reporter: &Reporter,
     ability: &str,
     payload: &str,
+    history: History,
 ) -> Result<String, CallError> {
     if ability != CODE_TASK {
         return Ok(tools::call(tools, ability, payload).await?);
@@ -187,7 +235,7 @@ async fn dispatch(
         .as_str()
         .unwrap_or_default()
         .to_string();
-    report(tools, engine, &description, reporter).await
+    report(tools, engine, &description, history, reporter).await
 }
 
 /// The engine's summary of the task followed by the resulting git status.
@@ -195,9 +243,10 @@ async fn report(
     tools: &Tools,
     engine: &Engine,
     description: &str,
+    history: History,
     reporter: &Reporter,
 ) -> Result<String, CallError> {
-    let summary = engine.task(description, reporter).await?;
+    let summary = engine.task(description, history, reporter).await?;
     let git_status = tools.git.status().await?;
     Ok(format!("summary:\n{summary}\n\ngit status:\n{git_status}"))
 }
@@ -264,15 +313,18 @@ impl Agent for CodeAgent {
     }
 
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
+        let Some(meta) = &update.metadata else {
+            return Ok(());
+        };
         match &update.data {
             Some(Event::EventCallAbility(event)) => {
                 if let Some(call) = &event.call_ability {
-                    self.handle_call(call);
+                    self.handle_call(call, meta.id, meta.branch_id).await;
                 }
             }
             Some(Event::EventNewMessage(event)) => {
                 if let Some(message) = &event.message {
-                    self.handle_message(message);
+                    self.handle_message(message, meta.id, meta.branch_id).await;
                 }
             }
             _ => {}

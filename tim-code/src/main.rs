@@ -2,6 +2,7 @@ mod claude;
 mod code;
 mod fs;
 mod git;
+mod history;
 mod llm;
 mod progress;
 mod shell;

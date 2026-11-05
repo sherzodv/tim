@@ -55,6 +55,7 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
     let mut beta_events = service
         .subscribe_to_space(request_with_session(
             SubscribeToSpaceReq {
+                branch_id: None,
                 receive_own_messages: false,
                 after_id: None,
             },
@@ -66,6 +67,7 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
     let send_res = service
         .send_message(request_with_session(
             SendMessageReq {
+                branch_id: 0,
                 content: "grpc ping".into(),
             },
             &alpha_session,

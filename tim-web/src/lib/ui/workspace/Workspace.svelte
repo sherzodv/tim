@@ -4,7 +4,8 @@
 	import type { TimSpace } from '$lib/api/space';
 	import type { TimStorage } from '$lib/api/storage';
 
-	let { space, storage }: { space: TimSpace; storage: TimStorage } = $props();
+	let { space, storage, branchId }: { space: TimSpace; storage: TimStorage; branchId: bigint } =
+		$props();
 </script>
 
 <section
@@ -14,7 +15,7 @@
 >
 	<div class="workspace-body">
 		<LeftPanel />
-		<Worklog items={$storage} />
+		<Worklog items={$storage} {branchId} />
 	</div>
 </section>
 

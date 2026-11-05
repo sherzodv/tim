@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -51,6 +52,8 @@ const REPLAY_PAGE: u32 = 100;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimSpaceError {
+    #[error("Invalid event reference: {0}")]
+    InvalidEvent(u64),
     #[error("Lock poisoned: {0}")]
     LockPoisoned(String),
 
@@ -79,6 +82,7 @@ struct Subscription {
     space: Arc<TimSpace>,
     timite_id: u64,
     receive_own_messages: bool,
+    branches: Option<HashMap<u64, u64>>,
     /// Id of the last event this subscription has passed; earlier ones are never sent again.
     cursor: u64,
     live: broadcast::Receiver<SpaceEvent>,
@@ -168,10 +172,11 @@ fn now_timestamp_ms() -> Timestamp {
     }
 }
 
-fn event_metadata(id: u64) -> Option<EventMetadata> {
+fn event_metadata(id: u64, branch_id: u64) -> Option<EventMetadata> {
     Some(EventMetadata {
         id,
         emitted_at: Some(now_timestamp_ms()),
+        branch_id,
     })
 }
 
@@ -209,63 +214,119 @@ impl TimSpace {
         })
     }
 
-    pub fn publish_message(&self, message: &Message) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_new_message(message))
+    pub fn publish_message(&self, message: &Message, branch_id: u64) -> Result<(), TimSpaceError> {
+        self.append(
+            &mut self.lock_state(),
+            event_new_message(message),
+            branch_id,
+        )
     }
 
     pub fn publish_call_ability(&self, call_ability: &CallAbility) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_call_ability(call_ability))
+        self.append(
+            &mut self.lock_state(),
+            event_call_ability(call_ability),
+            call_ability.branch_id,
+        )
     }
 
     pub fn publish_call_outcome(
         &self,
         outcome: &CallAbilityOutcome,
         sender_id: u64,
+        branch_id: u64,
     ) -> Result<(), TimSpaceError> {
         self.append(
             &mut self.lock_state(),
             event_call_ability_outcome(outcome, sender_id),
+            branch_id,
         )
     }
 
-    pub fn publish_typing_started(&self, timite_id: u64) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_typing_started(timite_id))
+    pub fn publish_typing_started(
+        &self,
+        timite_id: u64,
+        branch_id: u64,
+    ) -> Result<(), TimSpaceError> {
+        self.append(
+            &mut self.lock_state(),
+            event_typing_started(timite_id),
+            branch_id,
+        )
     }
 
-    pub fn publish_typing_stopped(&self, timite_id: u64) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_typing_stopped(timite_id))
+    pub fn publish_typing_stopped(
+        &self,
+        timite_id: u64,
+        branch_id: u64,
+    ) -> Result<(), TimSpaceError> {
+        self.append(
+            &mut self.lock_state(),
+            event_typing_stopped(timite_id),
+            branch_id,
+        )
     }
 
     /// Returns the task id: the id of the event that started it.
-    pub fn publish_task_started(&self, timite_id: u64, task: &str) -> Result<u64, TimSpaceError> {
+    pub fn publish_task_started(
+        &self,
+        timite_id: u64,
+        task: &str,
+        branch_id: u64,
+        source_event_id: u64,
+    ) -> Result<u64, TimSpaceError> {
+        if source_event_id != 0 && !self.visible(source_event_id, branch_id)? {
+            return Err(TimSpaceError::InvalidEvent(source_event_id));
+        }
         let mut state = self.lock_state();
         let task_id = state.next_id;
         let task_started = TaskStarted {
             timite_id,
             task_id,
             task: task.to_string(),
+            source_event_id,
         };
-        self.append(&mut state, event_task_started(task_started))?;
+        self.append(&mut state, event_task_started(task_started), branch_id)?;
         Ok(task_id)
     }
 
     pub fn publish_task_step(&self, task_step: TaskStep) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_task_step(task_step))
+        let branch_id = self.task_branch(task_step.task_id, task_step.timite_id)?;
+        self.append(
+            &mut self.lock_state(),
+            event_task_step(task_step),
+            branch_id,
+        )
     }
 
     pub fn publish_task_tool_call(&self, tool_call: TaskToolCall) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_task_tool_call(tool_call))
+        let branch_id = self.task_branch(tool_call.task_id, tool_call.timite_id)?;
+        self.append(
+            &mut self.lock_state(),
+            event_task_tool_call(tool_call),
+            branch_id,
+        )
     }
 
     pub fn publish_task_model_event(
         &self,
         model_event: TaskModelEvent,
     ) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_task_model_event(model_event))
+        let branch_id = self.task_branch(model_event.task_id, model_event.timite_id)?;
+        self.append(
+            &mut self.lock_state(),
+            event_task_model_event(model_event),
+            branch_id,
+        )
     }
 
     pub fn publish_task_finished(&self, task_finished: TaskFinished) -> Result<(), TimSpaceError> {
-        self.append(&mut self.lock_state(), event_task_finished(task_finished))
+        let branch_id = self.task_branch(task_finished.task_id, task_finished.timite_id)?;
+        self.append(
+            &mut self.lock_state(),
+            event_task_finished(task_finished),
+            branch_id,
+        )
     }
 
     pub fn subscribe(
@@ -279,8 +340,90 @@ impl TimSpace {
         Ok(receiver)
     }
 
-    pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimSpaceError> {
-        self.storage.timeline(offset, size).map_err(Into::into)
+    pub fn timeline(
+        &self,
+        offset: u64,
+        size: u32,
+        branch_id: Option<u64>,
+    ) -> Result<Vec<SpaceEvent>, TimSpaceError> {
+        let Some(branch_id) = branch_id else {
+            return Ok(self.storage.timeline(offset, size)?);
+        };
+        let branches = self.branch_path(branch_id)?;
+        let mut result = VecDeque::new();
+        let mut cursor = offset.max(1);
+        if size == 0 {
+            return Ok(Vec::new());
+        }
+        loop {
+            let events = self.storage.timeline(cursor, REPLAY_PAGE)?;
+            if events.is_empty() {
+                break;
+            }
+            for event in events {
+                cursor = event_id(&event) + 1;
+                if !matches_branch(&event, Some(&branches)) {
+                    continue;
+                }
+                result.push_back(event);
+                if offset != 0 && result.len() == size as usize {
+                    return Ok(result.into());
+                }
+                if result.len() > size as usize {
+                    result.pop_front();
+                }
+            }
+        }
+        Ok(result.into())
+    }
+
+    pub fn validate_branch(&self, branch_id: u64) -> Result<(), TimSpaceError> {
+        if branch_id != 0 {
+            self.event(branch_id)?;
+        }
+        Ok(())
+    }
+
+    fn event(&self, id: u64) -> Result<SpaceEvent, TimSpaceError> {
+        self.storage
+            .fetch_space_event(id)?
+            .ok_or(TimSpaceError::InvalidEvent(id))
+    }
+
+    fn task_branch(&self, task_id: u64, timite_id: u64) -> Result<u64, TimSpaceError> {
+        let event = self.event(task_id)?;
+        match &event.data {
+            Some(EventData::EventTaskStarted(data))
+                if data
+                    .task_started
+                    .as_ref()
+                    .is_some_and(|t| t.timite_id == timite_id) =>
+            {
+                Ok(event.metadata.as_ref().map_or(0, |m| m.branch_id))
+            }
+            _ => Err(TimSpaceError::InvalidEvent(task_id)),
+        }
+    }
+
+    fn branch_path(&self, mut branch_id: u64) -> Result<HashMap<u64, u64>, TimSpaceError> {
+        let mut branches = HashMap::from([(branch_id, u64::MAX)]);
+        while branch_id != 0 {
+            let event = self.event(branch_id)?;
+            let parent = event.metadata.as_ref().map_or(0, |m| m.branch_id);
+            if parent >= branch_id {
+                return Err(TimSpaceError::InvalidEvent(branch_id));
+            }
+            branches.insert(parent, branch_id);
+            branch_id = parent;
+        }
+        Ok(branches)
+    }
+
+    fn visible(&self, event_id: u64, branch_id: u64) -> Result<bool, TimSpaceError> {
+        Ok(matches_branch(
+            &self.event(event_id)?,
+            Some(&self.branch_path(branch_id)?),
+        ))
     }
 
     fn lock_state(&self) -> MutexGuard<'_, SpaceState> {
@@ -289,9 +432,15 @@ impl TimSpace {
 
     /// Assigns the next id, persists the event and hands it to live subscriptions.
     /// Runs under the state lock so ids, storage and live delivery share one order.
-    fn append(&self, state: &mut SpaceState, data: EventData) -> Result<(), TimSpaceError> {
+    fn append(
+        &self,
+        state: &mut SpaceState,
+        data: EventData,
+        branch_id: u64,
+    ) -> Result<(), TimSpaceError> {
+        self.validate_branch(branch_id)?;
         let event = SpaceEvent {
-            metadata: event_metadata(state.next_id),
+            metadata: event_metadata(state.next_id, branch_id),
             data: Some(data),
         };
         self.storage.store_space_event(&event)?;
@@ -307,6 +456,7 @@ impl TimSpace {
         timite: Timite,
         out: mpsc::Sender<SpaceEvent>,
     ) -> Result<Subscription, TimSpaceError> {
+        let branches = req.branch_id.map(|id| self.branch_path(id)).transpose()?;
         let mut state = self.lock_state();
         let presence = state.online.entry(timite.id).or_insert_with(|| Presence {
             timite: timite.clone(),
@@ -314,13 +464,14 @@ impl TimSpace {
         });
         presence.subscriptions += 1;
         if presence.subscriptions == 1 {
-            self.append(&mut state, event_timite_connected(&timite))?;
+            self.append(&mut state, event_timite_connected(&timite), 0)?;
         }
         let head = state.next_id - 1;
         Ok(Subscription {
             space: self.clone(),
             timite_id: timite.id,
             receive_own_messages: req.receive_own_messages,
+            branches,
             cursor: req.after_id.map_or(head, |after_id| after_id.min(head)),
             live: self.live.subscribe(),
             out,
@@ -337,7 +488,7 @@ impl TimSpace {
             return Ok(());
         }
         let presence = entry.remove();
-        self.append(&mut state, event_timite_disconnected(&presence.timite))
+        self.append(&mut state, event_timite_disconnected(&presence.timite), 0)
     }
 }
 
@@ -394,7 +545,7 @@ impl Subscription {
             return true;
         }
         self.cursor = id;
-        if self.is_own(&event) {
+        if !matches_branch(&event, self.branches.as_ref()) || self.is_own(&event) {
             return true;
         }
         self.out.send(event).await.is_ok()
@@ -403,4 +554,16 @@ impl Subscription {
     fn is_own(&self, event: &SpaceEvent) -> bool {
         !self.receive_own_messages && event_sender_id(event) == Some(self.timite_id)
     }
+}
+
+fn matches_branch(event: &SpaceEvent, branches: Option<&HashMap<u64, u64>>) -> bool {
+    let Some(branches) = branches else {
+        return true;
+    };
+    let Some(meta) = &event.metadata else {
+        return false;
+    };
+    branches
+        .get(&meta.branch_id)
+        .is_some_and(|end| meta.id <= *end)
 }

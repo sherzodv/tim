@@ -207,7 +207,7 @@ impl TimApi {
         req: &GetTimelineReq,
         session: &Session,
     ) -> Result<GetTimelineRes, TimApiError> {
-        let events = self.t_space.timeline(req.offset, req.size)?;
+        let events = self.t_space.timeline(req.offset, req.size, req.branch_id)?;
         let mut timites: Vec<Timite> = Vec::new();
         for timite_id in collect_timite_ids(&events) {
             if let Some(timite) = self.t_timite.get(timite_id)? {
@@ -265,35 +265,37 @@ impl TimApi {
             });
         }
         self.t_space
-            .publish_call_outcome(outcome, session.timite_id)?;
+            .publish_call_outcome(outcome, session.timite_id, call_ability.branch_id)?;
         Ok(SendCallAbilityOutcomeRes {})
     }
 
     #[instrument(
-        skip(self, _req, session),
+        skip(self, req, session),
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
     pub fn send_typing_started(
         &self,
-        _req: &SendTypingStartedReq,
+        req: &SendTypingStartedReq,
         session: &Session,
     ) -> Result<SendTypingStartedRes, TimApiError> {
-        self.t_space.publish_typing_started(session.timite_id)?;
+        self.t_space
+            .publish_typing_started(session.timite_id, req.branch_id)?;
         Ok(SendTypingStartedRes {})
     }
 
     #[instrument(
-        skip(self, _req, session),
+        skip(self, req, session),
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
     pub fn send_typing_stopped(
         &self,
-        _req: &SendTypingStoppedReq,
+        req: &SendTypingStoppedReq,
         session: &Session,
     ) -> Result<SendTypingStoppedRes, TimApiError> {
-        self.t_space.publish_typing_stopped(session.timite_id)?;
+        self.t_space
+            .publish_typing_stopped(session.timite_id, req.branch_id)?;
         Ok(SendTypingStoppedRes {})
     }
 
@@ -307,9 +309,12 @@ impl TimApi {
         req: &SendTaskStartedReq,
         session: &Session,
     ) -> Result<SendTaskStartedRes, TimApiError> {
-        let task_id = self
-            .t_space
-            .publish_task_started(session.timite_id, &req.task)?;
+        let task_id = self.t_space.publish_task_started(
+            session.timite_id,
+            &req.task,
+            req.branch_id,
+            req.source_event_id,
+        )?;
         Ok(SendTaskStartedRes { task_id })
     }
 

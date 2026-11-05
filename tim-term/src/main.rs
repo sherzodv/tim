@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     };
 
     tracing::info!("Connecting to Tim server...");
-    let mut client = TimClient::new(config).await?;
+    let mut client = TimClient::new(config).await?.in_branch(0);
     let timite_id = client.timite_id();
 
     enable_raw_mode()?;
