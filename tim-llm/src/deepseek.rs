@@ -14,13 +14,14 @@ use crate::responses::ResponsesReq;
 pub const DEEPSEEK_DEFAULT_ENDPOINT: &str = "https://api.deepseek.com/v1/responses";
 pub const DEEPSEEK_DEFAULT_MODEL: &str = "deepseek-v4-pro";
 
-/// Thinking stays off: with it on, DeepSeek rejects any request whose past assistant
-/// turns come without their reasoning, and the agent does not keep reasoning yet.
-const REASONING_EFFORT: &str = "none";
+/// Thinking is off unless configured: with it on, DeepSeek rejects any request whose
+/// past turns come without their reasoning, so callers must pass turns back verbatim.
+const DEFAULT_REASONING_EFFORT: &str = "none";
 
 #[derive(Clone, Debug)]
 pub struct DeepSeek {
     client: ResponsesClient,
+    reasoning_effort: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -32,13 +33,20 @@ struct DeepSeekReq {
 
 #[derive(Serialize, Debug)]
 struct Reasoning {
-    effort: &'static str,
+    effort: String,
 }
 
 impl DeepSeek {
     pub fn new(conf: &LlmConf) -> Result<Self, LlmError> {
         let client = ResponsesClient::new(conf, DEEPSEEK_DEFAULT_ENDPOINT, DEEPSEEK_DEFAULT_MODEL)?;
-        Ok(Self { client })
+        let reasoning_effort = conf
+            .reasoning
+            .clone()
+            .unwrap_or_else(|| DEFAULT_REASONING_EFFORT.to_string());
+        Ok(Self {
+            client,
+            reasoning_effort,
+        })
     }
 }
 
@@ -48,7 +56,7 @@ impl Llm for DeepSeek {
         let payload = DeepSeekReq {
             base: self.client.request(req)?,
             reasoning: Reasoning {
-                effort: REASONING_EFFORT,
+                effort: self.reasoning_effort.clone(),
             },
         };
         self.client.stream(&payload).await

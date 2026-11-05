@@ -17,22 +17,26 @@ use crate::openai::OpenAi;
 
 pub const SILENCE_TOOL_NAME: &str = "TIM-LLM-SILENCE";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LlmRole {
-    User,
-    Assistant,
-}
-
+/// One entry of the conversation given to the model.
 #[derive(Debug)]
-pub struct LlmInputItem {
-    pub role: LlmRole,
-    pub content: String,
+pub enum LlmItem {
+    User(String),
+    Assistant(String),
+    /// A turn exactly as the model produced it, see [`LlmTurn::items`]; passing it back
+    /// verbatim keeps the model's reasoning and tool calls intact.
+    Turn(Vec<serde_json::Value>),
+    /// The result of a tool call the model made in an earlier turn.
+    ToolOutput {
+        call_id: String,
+        output: String,
+    },
 }
 
 #[derive(Debug)]
 pub struct LlmReq<'a> {
     pub sysp: &'a str,
-    pub inputs: &'a [LlmInputItem],
+    pub inputs: &'a [LlmItem],
+    pub tools: &'a [LlmTool],
 }
 
 pub enum LlmRes {
@@ -47,6 +51,8 @@ pub struct LlmConf {
     pub endpoint: Option<String>,
     pub model: String,
     pub temperature: f32,
+    /// Reasoning effort for models that think before answering; none when absent.
+    pub reasoning: Option<String>,
 }
 
 impl Debug for LlmConf {
@@ -55,18 +61,20 @@ impl Debug for LlmConf {
             .field("endpoint", &self.endpoint)
             .field("model", &self.model)
             .field("temperature", &self.temperature)
+            .field("reasoning", &self.reasoning)
             .finish()
     }
 }
 
 /// A function the model may call, described independently of any provider.
+#[derive(Debug)]
 pub struct LlmTool {
     pub name: &'static str,
     pub description: &'static str,
     pub parameters: serde_json::Value,
 }
 
-/// The one tool every provider offers: lets the model stay silent and say why.
+/// Lets the model stay silent and say why.
 pub fn silence_tool() -> LlmTool {
     LlmTool {
         name: SILENCE_TOOL_NAME,
@@ -108,25 +116,48 @@ pub enum LlmError {
 #[derive(Debug)]
 pub enum LlmStreamEvent {
     ContentDelta(String),
-    ToolCall { name: String, arguments: String },
+    /// A finished output item, kept as the provider sent it.
+    Item(serde_json::Value),
     Completed,
 }
 
 pub type LlmStream = Pin<Box<dyn Stream<Item = Result<LlmStreamEvent, LlmError>> + Send>>;
 
+#[derive(Debug)]
+pub struct LlmToolCall {
+    pub call_id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// Everything one model turn produced.
+#[derive(Debug, Default)]
+pub struct LlmTurn {
+    pub text: String,
+    pub tool_calls: Vec<LlmToolCall>,
+    /// All output items in order, to pass back as [`LlmItem::Turn`].
+    pub items: Vec<serde_json::Value>,
+}
+
 #[async_trait]
 pub trait Llm: Send + Sync {
     async fn chat_stream(&self, req: &LlmReq<'_>) -> Result<LlmStream, LlmError>;
 
-    async fn chat(&self, req: &LlmReq<'_>) -> Result<LlmRes, LlmError> {
+    /// Runs one turn to completion.
+    async fn turn(&self, req: &LlmReq<'_>) -> Result<LlmTurn, LlmError> {
         let mut stream = self.chat_stream(req).await?;
-        let collected = collect(&mut stream).await?;
+        collect(&mut stream).await
+    }
 
-        if let Some(reason) = silence_reason(&collected.tool_calls) {
+    /// Runs one turn and reads it as a reply or a silence.
+    async fn chat(&self, req: &LlmReq<'_>) -> Result<LlmRes, LlmError> {
+        let turn = self.turn(req).await?;
+
+        if let Some(reason) = silence_reason(&turn.tool_calls) {
             return Ok(LlmRes::NoResponse(reason));
         }
 
-        match collected.message.trim() {
+        match turn.text.trim() {
             "" => Err(LlmError::MissingContent),
             content => Ok(LlmRes::Reply(content.to_string())),
         }
@@ -142,30 +173,25 @@ pub fn build_llm(provider: &str, conf: &LlmConf) -> Result<Arc<dyn Llm>, LlmErro
     }
 }
 
-#[derive(Debug)]
-struct ToolCall {
-    name: String,
-    arguments: String,
-}
-
-#[derive(Debug, Default)]
-struct Collected {
-    message: String,
-    tool_calls: Vec<ToolCall>,
-}
-
-async fn collect(stream: &mut LlmStream) -> Result<Collected, LlmError> {
-    let mut collected = Collected::default();
+async fn collect(stream: &mut LlmStream) -> Result<LlmTurn, LlmError> {
+    let mut turn = LlmTurn::default();
 
     while let Some(item) = stream.next().await {
         match item? {
             LlmStreamEvent::ContentDelta(delta) => {
                 trace!("LLM content delta: {:?}", delta);
-                collected.message.push_str(&delta);
+                turn.text.push_str(&delta);
             }
-            LlmStreamEvent::ToolCall { name, arguments } => {
-                trace!("LLM tool call - name: {}, args: {:?}", name, arguments);
-                collected.tool_calls.push(ToolCall { name, arguments });
+            LlmStreamEvent::Item(item) => {
+                if let Some(call) = tool_call(&item) {
+                    trace!(
+                        "LLM tool call - name: {}, args: {:?}",
+                        call.name,
+                        call.arguments
+                    );
+                    turn.tool_calls.push(call);
+                }
+                turn.items.push(item);
             }
             LlmStreamEvent::Completed => {
                 debug!("LLM stream completed");
@@ -174,10 +200,21 @@ async fn collect(stream: &mut LlmStream) -> Result<Collected, LlmError> {
         }
     }
 
-    Ok(collected)
+    Ok(turn)
 }
 
-fn silence_reason(tool_calls: &[ToolCall]) -> Option<String> {
+fn tool_call(item: &serde_json::Value) -> Option<LlmToolCall> {
+    if item["type"].as_str() != Some("function_call") {
+        return None;
+    }
+    Some(LlmToolCall {
+        call_id: item["call_id"].as_str()?.to_string(),
+        name: item["name"].as_str()?.to_string(),
+        arguments: item["arguments"].as_str().unwrap_or_default().to_string(),
+    })
+}
+
+fn silence_reason(tool_calls: &[LlmToolCall]) -> Option<String> {
     let call = tool_calls
         .iter()
         .find(|call| call.name == SILENCE_TOOL_NAME)?;

@@ -13,8 +13,7 @@ use tim_client::api::EventNewMessage;
 use tim_client::api::Timite;
 use tim_client::client::TimClient;
 use tim_client::client::TimClientError;
-use tim_llm::llm::LlmInputItem;
-use tim_llm::llm::LlmRole;
+use tim_llm::llm::LlmItem;
 
 const TIMELINE_PAGE_SIZE: u32 = 128;
 
@@ -33,7 +32,7 @@ impl Memory {
         Self { client }
     }
 
-    pub(super) async fn context(&mut self) -> Result<Vec<LlmInputItem>, MemoryError> {
+    pub(super) async fn context(&mut self) -> Result<Vec<LlmItem>, MemoryError> {
         let self_id = self.client.timite_id();
         let mut messages = Vec::new();
         let mut names = HashMap::new();
@@ -64,7 +63,7 @@ impl Memory {
         event: &tim_client::api::SpaceEvent,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
-    ) -> Option<LlmInputItem> {
+    ) -> Option<LlmItem> {
         let emitted_at = event
             .metadata
             .as_ref()
@@ -91,7 +90,7 @@ impl Memory {
         emitted_at: Option<&prost_types::Timestamp>,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
-    ) -> Option<LlmInputItem> {
+    ) -> Option<LlmItem> {
         let message = new_message.message.as_ref()?;
         let content = message.content.trim();
         if content.is_empty() {
@@ -99,34 +98,38 @@ impl Memory {
         }
         let timestamp = Self::format_emitted_at(emitted_at).unwrap_or_else(|| "-".to_string());
         let username = Self::timite_username(message.sender_id, names);
-        let role = Self::role_for_timite(Some(message.sender_id), my_timite_id);
         let content = format!("[{timestamp}:{username}]: {content}");
-        Some(LlmInputItem { role, content })
+        Some(Self::item_for_timite(
+            Some(message.sender_id),
+            my_timite_id,
+            content,
+        ))
     }
 
     fn render_call_ability(
         call: &EventCallAbility,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
-    ) -> Option<LlmInputItem> {
+    ) -> Option<LlmItem> {
         let payload = call.call_ability.as_ref()?;
         let sender = Self::format_timite_label(payload.sender_id, names);
-        let role = Self::role_for_timite(Some(payload.sender_id), my_timite_id);
-        Some(LlmInputItem {
-            role,
-            content: format!(
-                "CallAbility:{} sender={} payload={}",
-                payload.name.trim(),
-                sender,
-                payload.payload.trim()
-            ),
-        })
+        let content = format!(
+            "CallAbility:{} sender={} payload={}",
+            payload.name.trim(),
+            sender,
+            payload.payload.trim()
+        );
+        Some(Self::item_for_timite(
+            Some(payload.sender_id),
+            my_timite_id,
+            content,
+        ))
     }
 
     fn render_call_outcome(
         outcome: &EventCallAbilityOutcome,
         my_timite_id: u64,
-    ) -> Option<LlmInputItem> {
+    ) -> Option<LlmItem> {
         let payload = outcome.call_ability_outcome.as_ref()?;
         let mut parts = Vec::new();
         if let Some(data) = payload
@@ -150,10 +153,7 @@ impl Memory {
             line.push(' ');
             line.push_str(&parts.join(" "));
         }
-        Some(LlmInputItem {
-            role: Self::role_for_timite(None, my_timite_id),
-            content: line,
-        })
+        Some(Self::item_for_timite(None, my_timite_id, line))
     }
 
     fn format_emitted_at(emitted_at: Option<&prost_types::Timestamp>) -> Option<String> {
@@ -175,10 +175,10 @@ impl Memory {
         format!("[{}]", username)
     }
 
-    fn role_for_timite(timite_id: Option<u64>, my_timite_id: u64) -> LlmRole {
+    fn item_for_timite(timite_id: Option<u64>, my_timite_id: u64, content: String) -> LlmItem {
         match timite_id {
-            Some(id) if id == my_timite_id => LlmRole::Assistant,
-            _ => LlmRole::User,
+            Some(id) if id == my_timite_id => LlmItem::Assistant(content),
+            _ => LlmItem::User(content),
         }
     }
 }

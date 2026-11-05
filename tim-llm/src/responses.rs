@@ -13,11 +13,10 @@ use serde::Serialize;
 use tracing::debug;
 use tracing::trace;
 
-use crate::llm::silence_tool;
 use crate::llm::LlmConf;
 use crate::llm::LlmError;
+use crate::llm::LlmItem;
 use crate::llm::LlmReq;
-use crate::llm::LlmRole;
 use crate::llm::LlmStream;
 use crate::llm::LlmStreamEvent;
 use crate::llm::LlmTool;
@@ -79,10 +78,8 @@ impl ResponsesClient {
         }
 
         let mut input = Vec::with_capacity(req.inputs.len() + 1);
-        input.push(system_message(req.sysp.trim().to_string()));
-        for item in req.inputs {
-            input.push(input_message(item.role, item.content.clone()));
-        }
+        input.push(InputItem::Message(system_message(req.sysp.trim())));
+        input.extend(req.inputs.iter().flat_map(input_items));
 
         Ok(ResponsesReq {
             model: self.model.clone(),
@@ -90,7 +87,7 @@ impl ResponsesClient {
             temperature: self.temperature,
             stream: true,
             store: false,
-            tools: vec![tool_definition(silence_tool())],
+            tools: req.tools.iter().map(tool_definition).collect(),
         })
     }
 
@@ -128,7 +125,7 @@ impl ResponsesClient {
 #[derive(Serialize)]
 pub(crate) struct ResponsesReq {
     model: String,
-    input: Vec<InputMessage>,
+    input: Vec<InputItem>,
     temperature: f32,
     stream: bool,
     store: bool,
@@ -137,7 +134,7 @@ pub(crate) struct ResponsesReq {
 
 impl Debug for ResponsesReq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let last3: Vec<&InputMessage> = self.input.iter().rev().take(VEC_DBG_LEN).collect();
+        let last3: Vec<&InputItem> = self.input.iter().rev().take(VEC_DBG_LEN).collect();
         f.debug_struct("ResponsesReq")
             .field("m", &self.model)
             .field("t", &self.temperature)
@@ -146,10 +143,27 @@ impl Debug for ResponsesReq {
     }
 }
 
+/// One entry of `input`; model turns go back as the raw items they came as.
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+enum InputItem {
+    Message(InputMessage),
+    Raw(serde_json::Value),
+    FunctionCallOutput(FunctionCallOutput),
+}
+
 #[derive(Serialize)]
 struct InputMessage {
     role: &'static str,
     content: Vec<InputContent>,
+}
+
+#[derive(Serialize, Debug)]
+struct FunctionCallOutput {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    call_id: String,
+    output: String,
 }
 
 impl Debug for InputMessage {
@@ -191,43 +205,42 @@ struct SseEvent {
     item: Option<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum ResponseItem {
-    FunctionCall {
-        name: String,
-        arguments: String,
-    },
-    #[serde(other)]
-    Other,
-}
-
-fn system_message(text: String) -> InputMessage {
+fn system_message(text: &str) -> InputMessage {
     InputMessage {
         role: "system",
-        content: vec![InputContent::InputText { text }],
+        content: vec![InputContent::InputText {
+            text: text.to_string(),
+        }],
     }
 }
 
-fn input_message(role: LlmRole, text: String) -> InputMessage {
-    match role {
-        LlmRole::User => InputMessage {
+fn input_items(item: &LlmItem) -> Vec<InputItem> {
+    match item {
+        LlmItem::User(text) => vec![InputItem::Message(InputMessage {
             role: "user",
-            content: vec![InputContent::InputText { text }],
-        },
-        LlmRole::Assistant => InputMessage {
+            content: vec![InputContent::InputText { text: text.clone() }],
+        })],
+        LlmItem::Assistant(text) => vec![InputItem::Message(InputMessage {
             role: "assistant",
-            content: vec![InputContent::OutputText { text }],
-        },
+            content: vec![InputContent::OutputText { text: text.clone() }],
+        })],
+        LlmItem::Turn(items) => items.iter().cloned().map(InputItem::Raw).collect(),
+        LlmItem::ToolOutput { call_id, output } => {
+            vec![InputItem::FunctionCallOutput(FunctionCallOutput {
+                kind: "function_call_output",
+                call_id: call_id.clone(),
+                output: output.clone(),
+            })]
+        }
     }
 }
 
-fn tool_definition(tool: LlmTool) -> ToolDefinition {
+fn tool_definition(tool: &LlmTool) -> ToolDefinition {
     ToolDefinition {
         kind: "function",
         name: tool.name,
         description: tool.description,
-        parameters: tool.parameters,
+        parameters: tool.parameters.clone(),
     }
 }
 
@@ -244,17 +257,11 @@ fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent,
             .map(LlmStreamEvent::ContentDelta)
             .map(|ev| vec![Ok(ev)])
             .unwrap_or_default(),
-        "response.output_item.done" => {
-            let Some(item) = parsed.item else {
-                return Vec::new();
-            };
-            match serde_json::from_value::<ResponseItem>(item) {
-                Ok(ResponseItem::FunctionCall { name, arguments }) => {
-                    vec![Ok(LlmStreamEvent::ToolCall { name, arguments })]
-                }
-                _ => Vec::new(),
-            }
-        }
+        "response.output_item.done" => parsed
+            .item
+            .map(LlmStreamEvent::Item)
+            .map(|ev| vec![Ok(ev)])
+            .unwrap_or_default(),
         "response.completed" => vec![Ok(LlmStreamEvent::Completed)],
         _ => Vec::new(),
     }

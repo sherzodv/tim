@@ -20,9 +20,10 @@ use tim_client::api::EventNewMessage;
 use tim_client::api::SpaceEvent;
 use tim_client::client::TimClient;
 use tim_llm::llm::build_llm;
+use tim_llm::llm::silence_tool;
 use tim_llm::llm::Llm;
 use tim_llm::llm::LlmConf;
-use tim_llm::llm::LlmInputItem;
+use tim_llm::llm::LlmItem;
 use tim_llm::llm::LlmReq;
 use tim_llm::llm::LlmRes;
 
@@ -88,7 +89,7 @@ impl Agent {
 
     async fn ask_llm(&mut self) -> Result<(), AgentError> {
         self.client.send_activity("thinking", "").await?;
-        let history: Vec<LlmInputItem> = self.memory.context().await?;
+        let history: Vec<LlmItem> = self.memory.context().await?;
         let username = self.client.get_me().username;
         let ctx = AgentPromptContext {
             username: username.clone(),
@@ -96,9 +97,11 @@ impl Agent {
         };
         let sysp =
             render(&self.conf.sysp, &ctx).map_err(|err| AgentError::Agent(err.to_string()))?;
+        let tools = [silence_tool()];
         let req = LlmReq {
             sysp: &sysp,
             inputs: &history,
+            tools: &tools,
         };
         trace!(
             "{} sending LLM request with {} messages",

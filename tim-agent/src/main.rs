@@ -113,6 +113,7 @@ fn spawn_llm_agent(
             endpoint: conf.llm_endpoint,
             model: conf.model,
             temperature: conf.temperature,
+            reasoning: None,
         },
         live_interval: conf.live_interval_secs.map(Duration::from_secs),
     };

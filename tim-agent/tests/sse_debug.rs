@@ -1,11 +1,11 @@
 use std::env;
 
 use futures::StreamExt;
+use tim_llm::llm::silence_tool;
 use tim_llm::llm::Llm;
 use tim_llm::llm::LlmConf;
-use tim_llm::llm::LlmInputItem;
+use tim_llm::llm::LlmItem;
 use tim_llm::llm::LlmReq;
-use tim_llm::llm::LlmRole;
 use tim_llm::llm::LlmStreamEvent;
 use tim_llm::openai::OpenAi;
 use tim_llm::openai::OPENAI_DEFAULT_ENDPOINT;
@@ -38,15 +38,15 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
         endpoint: Some(endpoint.clone()),
         model: model.clone(),
         temperature: 0.2,
+        reasoning: None,
     })?;
 
-    let history = vec![LlmInputItem {
-        role: LlmRole::User,
-        content: prompt,
-    }];
+    let history = vec![LlmItem::User(prompt)];
+    let tools = [silence_tool()];
     let req = LlmReq {
         sysp: "You are a test harness. If tools are provided, call them.",
         inputs: &history,
+        tools: &tools,
     };
 
     let mut stream = openai.chat_stream(&req).await?;
@@ -55,9 +55,7 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(item) = stream.next().await {
         match item? {
             LlmStreamEvent::ContentDelta(delta) => println!("delta: {delta}"),
-            LlmStreamEvent::ToolCall { name, arguments } => {
-                println!("tool_call name={name} args={arguments}")
-            }
+            LlmStreamEvent::Item(item) => println!("item: {item}"),
             LlmStreamEvent::Completed => {
                 println!("completed");
                 break;
