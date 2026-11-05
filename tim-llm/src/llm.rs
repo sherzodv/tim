@@ -67,18 +67,19 @@ impl Debug for LlmConf {
 }
 
 /// A function the model may call, described independently of any provider.
+/// Names are limited to letters, digits, `_` and `-` by the providers.
 #[derive(Debug)]
 pub struct LlmTool {
-    pub name: &'static str,
-    pub description: &'static str,
+    pub name: String,
+    pub description: String,
     pub parameters: serde_json::Value,
 }
 
 /// Lets the model stay silent and say why.
 pub fn silence_tool() -> LlmTool {
     LlmTool {
-        name: SILENCE_TOOL_NAME,
-        description: "Use when you choose to not respond.",
+        name: SILENCE_TOOL_NAME.to_string(),
+        description: "Use when you choose to not respond.".to_string(),
         parameters: json!({
             "type": "object",
             "properties": {

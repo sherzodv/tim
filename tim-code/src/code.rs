@@ -1,8 +1,4 @@
-use std::path::PathBuf;
-use std::time::Duration;
-
 use async_trait::async_trait;
-use serde::Deserialize;
 use tim_client::agent::Agent;
 use tim_client::agent::AgentBuilder;
 use tim_client::agent::AgentError;
@@ -14,6 +10,7 @@ use tim_client::api::CallAbilityOutcome;
 use tim_client::api::Message;
 use tim_client::api::SpaceEvent;
 use tim_client::client::TimClient;
+use tim_llm::llm::LlmConf;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -21,155 +18,93 @@ use tracing::warn;
 use crate::activity::Reporter;
 use crate::claude::ClaudeCode;
 use crate::claude::ClaudeError;
-use crate::fs::Files;
-use crate::fs::FsError;
-use crate::git::Git;
 use crate::git::GitError;
-use crate::shell::Shell;
-use crate::shell::ShellError;
+use crate::llm::LlmCode;
+use crate::llm::LlmCodeError;
+use crate::tools;
+use crate::tools::ToolError;
+use crate::tools::Tools;
 
-const SH_RUN: &str = "sh.run";
 const CODE_TASK: &str = "code.task";
-const FS_READ: &str = "fs.read";
-const FS_WRITE: &str = "fs.write";
-const FS_REPLACE: &str = "fs.replace";
-const FS_LIST: &str = "fs.list";
-const FS_SEARCH: &str = "fs.search";
-const GIT_STATUS: &str = "git.status";
-const GIT_DIFF: &str = "git.diff";
-const GIT_LOG: &str = "git.log";
-const GIT_COMMIT: &str = "git.commit";
-
-const DEFAULT_LOG_COUNT: usize = 10;
 
 #[derive(Clone)]
 pub struct CodeConf {
-    pub workdir: PathBuf,
-    pub timeout: Duration,
-    pub max_output_chars: usize,
-    pub claude_allowed_tools: Vec<String>,
+    pub tools: Tools,
+    pub engine: EngineConf,
 }
 
-/// Everything an ability call can reach; cloned into the task that serves the call.
+/// What runs `code.task` and chat tasks.
 #[derive(Clone)]
-struct Tools {
-    shell: Shell,
-    claude: ClaudeCode,
-    files: Files,
-    git: Git,
+pub enum EngineConf {
+    Claude {
+        allowed_tools: Vec<String>,
+    },
+    Llm {
+        provider: String,
+        conf: LlmConf,
+        max_steps: usize,
+    },
+}
+
+#[derive(Clone)]
+enum Engine {
+    Claude(ClaudeCode),
+    Llm(LlmCode),
 }
 
 pub struct CodeAgent {
     client: TimClient,
     tools: Tools,
+    engine: Engine,
 }
 
 #[derive(Debug, thiserror::Error)]
 enum CallError {
-    #[error("unknown ability: {0}")]
-    UnknownAbility(String),
-
-    #[error("invalid payload: {0}")]
-    Payload(#[from] serde_json::Error),
-
     #[error(transparent)]
-    Shell(#[from] ShellError),
+    Tool(#[from] ToolError),
 
     #[error(transparent)]
     Claude(#[from] ClaudeError),
 
     #[error(transparent)]
-    Fs(#[from] FsError),
+    Llm(#[from] LlmCodeError),
 
     #[error(transparent)]
     Git(#[from] GitError),
 }
 
-#[derive(Deserialize)]
-struct ShRunReq {
-    cmd: String,
-}
+impl Engine {
+    fn new(conf: &EngineConf, tools: &Tools) -> Result<Self, AgentError> {
+        match conf {
+            EngineConf::Claude { allowed_tools } => Ok(Self::Claude(ClaudeCode::new(
+                tools.shell.clone(),
+                allowed_tools.clone(),
+            ))),
+            EngineConf::Llm {
+                provider,
+                conf,
+                max_steps,
+            } => LlmCode::new(provider, conf, tools.clone(), *max_steps)
+                .map(Self::Llm)
+                .map_err(|err| AgentError::Agent(err.to_string())),
+        }
+    }
 
-#[derive(Deserialize)]
-struct CodeTaskReq {
-    description: String,
-}
-
-#[derive(Deserialize)]
-struct FsReadReq {
-    path: String,
-    from: Option<usize>,
-    to: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct FsWriteReq {
-    path: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct FsReplaceReq {
-    path: String,
-    old: String,
-    new: String,
-}
-
-#[derive(Deserialize)]
-struct FsListReq {
-    #[serde(default)]
-    path: String,
-}
-
-#[derive(Deserialize)]
-struct FsSearchReq {
-    pattern: String,
-    #[serde(default)]
-    path: String,
-}
-
-#[derive(Deserialize)]
-struct GitDiffReq {
-    path: Option<String>,
-    #[serde(default)]
-    staged: bool,
-}
-
-#[derive(Deserialize)]
-struct GitLogReq {
-    #[serde(default = "default_log_count")]
-    count: usize,
-}
-
-#[derive(Deserialize)]
-struct GitCommitReq {
-    message: String,
-    #[serde(default)]
-    paths: Vec<String>,
-}
-
-fn default_log_count() -> usize {
-    DEFAULT_LOG_COUNT
-}
-
-impl Tools {
-    fn new(conf: &CodeConf) -> Self {
-        let shell = Shell::new(conf.workdir.clone(), conf.timeout, conf.max_output_chars);
-        Self {
-            claude: ClaudeCode::new(shell.clone(), conf.claude_allowed_tools.clone()),
-            files: Files::new(shell.clone(), conf.max_output_chars),
-            git: Git::new(shell.clone(), conf.max_output_chars),
-            shell,
+    async fn task(&self, description: &str, reporter: &Reporter) -> Result<String, CallError> {
+        match self {
+            Self::Claude(claude) => Ok(claude.task(description, reporter).await?),
+            Self::Llm(llm) => Ok(llm.task(description, reporter).await?),
         }
     }
 }
 
 impl CodeAgent {
-    pub fn new(conf: &CodeConf, client: TimClient) -> Self {
-        Self {
+    pub fn new(conf: &CodeConf, client: TimClient) -> Result<Self, AgentError> {
+        Ok(Self {
             client,
-            tools: Tools::new(conf),
-        }
+            tools: conf.tools.clone(),
+            engine: Engine::new(&conf.engine, &conf.tools)?,
+        })
     }
 
     /// Runs a message that mentions this timite as a task and replies with the report.
@@ -187,10 +122,11 @@ impl CodeAgent {
             return;
         }
         let tools = self.tools.clone();
+        let engine = self.engine.clone();
         let mut client = self.client.clone();
         tokio::spawn(async move {
             let reporter = Reporter::start(client.clone(), CODE_TASK.to_string());
-            let result = tools.claude.task(&task, &reporter).await;
+            let result = report(&tools, &engine, &task, &reporter).await;
             drop(reporter);
             let reply = match result {
                 Ok(report) => report,
@@ -217,12 +153,13 @@ impl CodeAgent {
             return;
         };
         let tools = self.tools.clone();
+        let engine = self.engine.clone();
         let mut client = self.client.clone();
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
             let reporter = Reporter::start(client.clone(), ability.clone());
-            let result = dispatch(&tools, &reporter, &ability, &payload).await;
+            let result = dispatch(&tools, &engine, &reporter, &ability, &payload).await;
             drop(reporter);
             let outcome = to_outcome(call_id, result);
             if let Err(err) = client.send_call_ability_outcome(&outcome).await {
@@ -234,54 +171,32 @@ impl CodeAgent {
 
 async fn dispatch(
     tools: &Tools,
+    engine: &Engine,
     reporter: &Reporter,
     ability: &str,
     payload: &str,
 ) -> Result<String, CallError> {
-    match ability {
-        SH_RUN => {
-            let req: ShRunReq = serde_json::from_str(payload)?;
-            Ok(tools.shell.run(&req.cmd).await?)
-        }
-        CODE_TASK => {
-            let req: CodeTaskReq = serde_json::from_str(payload)?;
-            Ok(tools.claude.task(&req.description, reporter).await?)
-        }
-        FS_READ => {
-            let req: FsReadReq = serde_json::from_str(payload)?;
-            Ok(tools.files.read(&req.path, req.from, req.to)?)
-        }
-        FS_WRITE => {
-            let req: FsWriteReq = serde_json::from_str(payload)?;
-            Ok(tools.files.write(&req.path, &req.content)?)
-        }
-        FS_REPLACE => {
-            let req: FsReplaceReq = serde_json::from_str(payload)?;
-            Ok(tools.files.replace(&req.path, &req.old, &req.new)?)
-        }
-        FS_LIST => {
-            let req: FsListReq = serde_json::from_str(payload)?;
-            Ok(tools.files.list(&req.path)?)
-        }
-        FS_SEARCH => {
-            let req: FsSearchReq = serde_json::from_str(payload)?;
-            Ok(tools.files.search(&req.pattern, &req.path).await?)
-        }
-        GIT_STATUS => Ok(tools.git.status().await?),
-        GIT_DIFF => {
-            let req: GitDiffReq = serde_json::from_str(payload)?;
-            Ok(tools.git.diff(req.path.as_deref(), req.staged).await?)
-        }
-        GIT_LOG => {
-            let req: GitLogReq = serde_json::from_str(payload)?;
-            Ok(tools.git.log(req.count).await?)
-        }
-        GIT_COMMIT => {
-            let req: GitCommitReq = serde_json::from_str(payload)?;
-            Ok(tools.git.commit(&req.message, &req.paths).await?)
-        }
-        _ => Err(CallError::UnknownAbility(ability.to_string())),
+    if ability != CODE_TASK {
+        return Ok(tools::call(tools, ability, payload).await?);
     }
+    let description = serde_json::from_str::<serde_json::Value>(payload)
+        .map_err(ToolError::Arguments)?["description"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    report(tools, engine, &description, reporter).await
+}
+
+/// The engine's summary of the task followed by the resulting git status.
+async fn report(
+    tools: &Tools,
+    engine: &Engine,
+    description: &str,
+    reporter: &Reporter,
+) -> Result<String, CallError> {
+    let summary = engine.task(description, reporter).await?;
+    let git_status = tools.git.status().await?;
+    Ok(format!("summary:\n{summary}\n\ngit status:\n{git_status}"))
 }
 
 /// The message without its `@username` tokens, trimmed.
@@ -319,97 +234,18 @@ fn to_outcome(call_ability_id: u64, result: Result<String, CallError>) -> CallAb
 }
 
 fn abilities() -> Vec<Ability> {
-    vec![
-        ability(
-            SH_RUN,
-            "Runs a shell command in the workspace directory, returns exit code and output tail. \
-             Payload: JSON object.",
-            &[("cmd", "shell command")],
-        ),
-        ability(
-            CODE_TASK,
-            "Delegates a coding task to Claude Code in the workspace: it reads, edits, builds \
-             and tests as needed. Returns its summary and the git status. Payload: JSON object.",
-            &[("description", "what to do, concrete and self-contained")],
-        ),
-        ability(
-            FS_READ,
-            "Reads a workspace file as numbered lines. Payload: JSON object.",
-            &[
-                ("path", "relative path"),
-                ("from", "first line, 1-based, optional"),
-                ("to", "last line, inclusive, optional"),
-            ],
-        ),
-        ability(
-            FS_WRITE,
-            "Creates or overwrites a workspace file. Payload: JSON object.",
-            &[("path", "relative path"), ("content", "full file content")],
-        ),
-        ability(
-            FS_REPLACE,
-            "Replaces one exact occurrence of old text in a workspace file; old must be unique. \
-             Payload: JSON object.",
-            &[
-                ("path", "relative path"),
-                ("old", "exact text to find"),
-                ("new", "replacement text"),
-            ],
-        ),
-        ability(
-            FS_LIST,
-            "Lists one directory of the workspace, directories end with a slash. \
-             Payload: JSON object.",
-            &[("path", "relative path, optional, workspace root by default")],
-        ),
-        ability(
-            FS_SEARCH,
-            "Searches workspace files by regex, returns path:line:text. Payload: JSON object.",
-            &[
-                ("pattern", "regex"),
-                ("path", "relative path to search in, optional"),
-            ],
-        ),
-        ability(GIT_STATUS, "Shows the branch and changed files.", &[]),
-        ability(
-            GIT_DIFF,
-            "Shows the diff of the workspace. Payload: JSON object.",
-            &[
-                ("path", "relative path, optional"),
-                ("staged", "true for the staged diff, optional"),
-            ],
-        ),
-        ability(
-            GIT_LOG,
-            "Shows recent commits, one per line. Payload: JSON object.",
-            &[("count", "number of commits, optional, 10 by default")],
-        ),
-        ability(
-            GIT_COMMIT,
-            "Stages the given paths, or all changes, and commits them. Payload: JSON object.",
-            &[
-                ("message", "commit message"),
-                (
-                    "paths",
-                    "relative paths to stage, optional, everything by default",
-                ),
-            ],
-        ),
-    ]
-}
-
-fn ability(name: &str, description: &str, params: &[(&str, &str)]) -> Ability {
-    Ability {
-        name: name.to_string(),
-        description: description.to_string(),
-        params: params
-            .iter()
-            .map(|(name, description)| AbilityParameter {
-                name: name.to_string(),
-                description: description.to_string(),
-            })
-            .collect(),
-    }
+    let mut abilities = tools::abilities();
+    abilities.push(Ability {
+        name: CODE_TASK.to_string(),
+        description: "Runs a coding task in the workspace: reads, edits, builds and tests as \
+                      needed. Returns a summary and the git status. Payload: JSON object."
+            .to_string(),
+        params: vec![AbilityParameter {
+            name: "description".to_string(),
+            description: "what to do, concrete and self-contained".to_string(),
+        }],
+    });
+    abilities
 }
 
 #[async_trait]
@@ -446,6 +282,6 @@ impl AgentBuilder for CodeConf {
     type A = CodeAgent;
 
     fn build(&self, client: TimClient) -> Result<Self::A, AgentError> {
-        Ok(CodeAgent::new(self, client))
+        CodeAgent::new(self, client)
     }
 }

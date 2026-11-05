@@ -192,8 +192,8 @@ enum InputContent {
 struct ToolDefinition {
     #[serde(rename = "type")]
     kind: &'static str,
-    name: &'static str,
-    description: &'static str,
+    name: String,
+    description: String,
     parameters: serde_json::Value,
 }
 
@@ -238,8 +238,8 @@ fn input_items(item: &LlmItem) -> Vec<InputItem> {
 fn tool_definition(tool: &LlmTool) -> ToolDefinition {
     ToolDefinition {
         kind: "function",
-        name: tool.name,
-        description: tool.description,
+        name: tool.name.clone(),
+        description: tool.description.clone(),
         parameters: tool.parameters.clone(),
     }
 }

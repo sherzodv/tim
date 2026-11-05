@@ -126,8 +126,7 @@ impl ClaudeCode {
         }
     }
 
-    /// Runs the task as the next turn, reporting each step, and returns Claude's summary
-    /// with the resulting git status.
+    /// Runs the task as the next turn, reporting each step, and returns Claude's summary.
     pub async fn task(
         &self,
         description: &str,
@@ -178,14 +177,7 @@ impl ClaudeCode {
         if result.is_error {
             return Err(ClaudeError::Task(result.result));
         }
-
-        let git_status = self.shell.output("git", &["status", "--short"]).await?;
-        let git_status = String::from_utf8_lossy(&git_status.stdout);
-        Ok(format!(
-            "summary:\n{}\n\ngit status:\n{}",
-            result.result.trim(),
-            git_status.trim()
-        ))
+        Ok(result.result.trim().to_string())
     }
 
     /// Starts a `claude` process, resuming `session_id` when there is one.

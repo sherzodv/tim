@@ -3,5 +3,16 @@ provider = "shell:code"
 endpoint = "http://127.0.0.1:8787"
 timeout_secs = 900
 max_output_chars = 8000
+
+# What runs the tasks: "claude" for Claude Code, "llm" for a model from tim-llm.
+engine = "claude"
 # Shell commands Claude Code may run on its own; file edits are always accepted.
 claude_allowed_tools = ["Bash(cargo:*)", "Bash(git:*)", "Bash(npm:*)"]
+
+[llm]
+provider = "deepseek"
+model = "deepseek-v4-pro"
+api_key = "${TIM_DEEPSEEK_API_KEY}"
+temperature = 0.3
+reasoning = "high"
+max_steps = 40
