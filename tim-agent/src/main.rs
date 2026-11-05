@@ -1,7 +1,5 @@
-mod agent;
 mod crawler;
 mod llm;
-mod tim_client;
 
 use std::fs;
 use std::path::Path;
@@ -27,8 +25,9 @@ use tracing_subscriber::EnvFilter;
 use crate::crawler::CrawlerConf;
 use crate::llm::llm::LlmConf;
 use crate::llm::AgentConf;
-use crate::tim_client::TimClient;
-use crate::tim_client::TimClientConf;
+use tim_client::agent;
+use tim_client::client::TimClient;
+use tim_client::client::TimClientConf;
 
 const CONFIG_PATH: &str = "agents.toml";
 

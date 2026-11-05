@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use reqwest::Client;
 
-use crate::agent::Agent;
-use crate::agent::AgentBuilder;
-use crate::agent::AgentError;
-use crate::tim_client::tim_api::Ability;
-use crate::tim_client::tim_api::CallAbility;
-use crate::tim_client::tim_api::CallAbilityOutcome;
-use crate::tim_client::Event;
-use crate::tim_client::SpaceEvent;
-use crate::tim_client::TimClient;
+use tim_client::agent::Agent;
+use tim_client::agent::AgentBuilder;
+use tim_client::agent::AgentError;
+use tim_client::api::space_event::Data as Event;
+use tim_client::api::Ability;
+use tim_client::api::CallAbility;
+use tim_client::api::CallAbilityOutcome;
+use tim_client::api::SpaceEvent;
+use tim_client::client::TimClient;
 
 #[derive(Clone)]
 pub struct CrawlerConf {
@@ -39,7 +39,7 @@ impl WebCrawlerAgent {
         let http = Client::builder()
             .user_agent(conf.user_agent.clone())
             .build()
-            .map_err(|err| AgentError::Crawler(format!("failed to init http client: {err}")))?;
+            .map_err(|err| AgentError::Agent(format!("failed to init http client: {err}")))?;
 
         Ok(Self {
             client,
@@ -138,7 +138,7 @@ impl WebCrawlerAgent {
         }
         let call_id = call
             .call_ability_id
-            .ok_or_else(|| AgentError::Crawler("call missing identifier".into()))?;
+            .ok_or_else(|| AgentError::Agent("call missing identifier".into()))?;
         let payload = call.payload.trim().to_string();
         if payload.is_empty() {
             self.respond_outcome(call_id, Err("payload must be a URL".into()))

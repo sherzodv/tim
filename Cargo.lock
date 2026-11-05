@@ -2386,20 +2386,36 @@ dependencies = [
  "serde_json",
  "shellexpand",
  "thiserror 2.0.17",
+ "tim-client",
  "tim-lib",
  "tinytemplate",
  "tokio",
  "tokio-stream",
  "toml_edit",
  "tonic",
- "tonic-prost",
- "tonic-prost-build",
  "tonic-web",
  "tower",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "tim-client"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "prost",
+ "prost-types",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
 ]
 
 [[package]]
@@ -2411,7 +2427,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.17",
- "tim-agent",
+ "tim-client",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2462,20 +2478,15 @@ dependencies = [
 name = "tim-term"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "crossterm",
  "dotenvy",
- "futures",
- "prost",
- "prost-types",
  "ratatui",
  "textwrap",
  "thiserror 2.0.17",
+ "tim-client",
  "tokio",
- "tokio-stream",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
  "tracing",
  "tracing-subscriber",
  "tui-textarea",

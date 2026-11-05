@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use ratatui::style::Style;
 use tui_textarea::TextArea;
 
-use crate::client::{CallAbility, CallAbilityOutcome, EventData, Message, SpaceEvent, Timite};
+use tim_client::api::space_event::Data as EventData;
+use tim_client::api::{CallAbility, CallAbilityOutcome, Message, SpaceEvent, Timite};
 
 #[derive(Debug, Clone)]
 pub enum TimelineItem {

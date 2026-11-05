@@ -1,29 +1,28 @@
 mod app;
-mod client;
 mod error;
 mod event;
 mod ui;
 
 use std::io;
-use std::time::Duration;
 
+use async_trait::async_trait;
 use crossterm::{
     event::{DisableBracketedPaste, EnableBracketedPaste, KeyCode, KeyEvent, KeyModifiers},
     execute,
     style::Print,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
+use tim_client::agent::{Agent, AgentError, AgentRunner};
+use tim_client::api::SpaceEvent;
+use tim_client::client::{TimClient, TimClientConf};
 use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::app::App;
-use crate::client::{ClientConfig, TimClient};
 use crate::error::Result;
 use crate::event::{AppEvent, EventHandler};
 
-const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 /// Mouse stays with the terminal so text can be selected; the wheel arrives as arrow keys.
 const ENABLE_ALTERNATE_SCROLL: &str = "\x1b[?1007h";
 const DISABLE_ALTERNATE_SCROLL: &str = "\x1b[?1007l";
@@ -40,14 +39,15 @@ async fn main() -> Result<()> {
     let endpoint = std::env::var("TIM_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:8787".into());
     let nick = std::env::var("TIM_NICK").unwrap_or_else(|_| whoami::username());
 
-    let config = ClientConfig {
+    let config = TimClientConf {
         endpoint,
         nick: nick.clone(),
+        provider: "tim-term".to_string(),
         timite_id: None,
     };
 
     tracing::info!("Connecting to Tim server...");
-    let mut client = TimClient::connect(config).await?;
+    let mut client = TimClient::new(config).await?;
     let timite_id = client.timite_id();
 
     enable_raw_mode()?;
@@ -81,11 +81,15 @@ async fn main() -> Result<()> {
     }
 
     let mut events = EventHandler::new();
-    tokio::spawn(forward_space_events(
-        client.clone(),
-        cursor,
-        events.sender(),
-    ));
+    let forwarder = SpaceForwarder {
+        tx: events.sender(),
+    };
+    let mut runner = AgentRunner::new(&client).await;
+    tokio::spawn(async move {
+        if let Err(error) = runner.start(forwarder, cursor).await {
+            tracing::error!(%error, "space subscription ended");
+        }
+    });
 
     let result = run_app(&mut terminal, &mut app, &mut events, &mut client).await;
 
@@ -101,33 +105,24 @@ async fn main() -> Result<()> {
     result
 }
 
-/// Keeps a space subscription alive, resuming after the last forwarded event on reconnect.
-async fn forward_space_events(
-    mut client: TimClient,
-    mut cursor: Option<u64>,
-    event_tx: mpsc::UnboundedSender<AppEvent>,
-) {
-    loop {
-        match client.subscribe_to_space(cursor).await {
-            Ok(mut stream) => loop {
-                let event = match stream.next().await {
-                    Some(Ok(event)) => event,
-                    Some(Err(status)) => {
-                        tracing::warn!(%status, "space stream failed, reconnecting");
-                        break;
-                    }
-                    None => break,
-                };
-                if let Some(metadata) = &event.metadata {
-                    cursor = Some(metadata.id);
-                }
-                if event_tx.send(AppEvent::Space(event)).is_err() {
-                    return;
-                }
-            },
-            Err(error) => tracing::warn!(%error, "space subscription failed, reconnecting"),
-        }
-        tokio::time::sleep(RECONNECT_DELAY).await;
+/// Hands space events to the UI loop; the runner keeps the subscription alive.
+struct SpaceForwarder {
+    tx: mpsc::UnboundedSender<AppEvent>,
+}
+
+#[async_trait]
+impl Agent for SpaceForwarder {
+    async fn on_space_update(
+        &mut self,
+        update: &SpaceEvent,
+    ) -> std::result::Result<(), AgentError> {
+        self.tx
+            .send(AppEvent::Space(update.clone()))
+            .map_err(|_| AgentError::Agent("ui closed".into()))
+    }
+
+    fn receive_own_messages(&self) -> bool {
+        true
     }
 }
 

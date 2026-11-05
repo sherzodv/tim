@@ -1,36 +1,30 @@
 use std::fmt::Debug;
 use std::str::FromStr;
 
-pub mod tim_api {
-    tonic::include_proto!("tim.api.g1");
-}
-
+use crate::api::tim_grpc_api_client::TimGrpcApiClient;
+use crate::api::Ability;
+use crate::api::CallAbilityOutcome;
+use crate::api::ClientInfo;
+use crate::api::DeclareAbilitiesReq;
+use crate::api::GetTimelineReq;
+use crate::api::GetTimelineRes;
+use crate::api::ListAbilitiesReq;
+use crate::api::SendCallAbilityOutcomeReq;
+use crate::api::SendMessageReq;
+use crate::api::SpaceEvent;
+use crate::api::SubscribeToSpaceReq;
+use crate::api::TimiteAbilities;
+use crate::api::TrustedConnectReq;
+use crate::api::TrustedRegisterReq;
 use futures::stream;
-pub use tim_api::space_event::Data as Event;
-use tim_api::tim_grpc_api_client::TimGrpcApiClient;
-use tim_api::Ability;
-use tim_api::CallAbilityOutcome;
-use tim_api::ClientInfo;
-use tim_api::DeclareAbilitiesReq;
-pub use tim_api::EventNewMessage;
-use tim_api::GetTimelineReq;
-use tim_api::GetTimelineRes;
-use tim_api::ListAbilitiesReq;
-use tim_api::SendCallAbilityOutcomeReq;
-use tim_api::SendMessageReq;
-pub use tim_api::SpaceEvent;
-use tim_api::SubscribeToSpaceReq;
-use tim_api::TimiteAbilities;
-use tim_api::TrustedConnectReq;
-use tim_api::TrustedRegisterReq;
 use tokio_stream::Stream;
 use tonic::metadata::errors::InvalidMetadataValue;
 use tonic::metadata::Ascii;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Endpoint;
 
-use crate::tim_client::tim_api::ErrorCode;
-use crate::tim_client::tim_api::Timite;
+use crate::api::ErrorCode;
+use crate::api::Timite;
 
 pub const SESSION_METADATA_KEY: &str = "tim-session-key";
 
@@ -205,9 +199,10 @@ impl TimClient {
     pub async fn subscribe_to_space(
         &mut self,
         after_id: Option<u64>,
+        receive_own_messages: bool,
     ) -> Result<tonic::Streaming<SpaceEvent>, TimClientError> {
         let sub_req = SubscribeToSpaceReq {
-            receive_own_messages: false,
+            receive_own_messages,
             after_id,
         };
         let mut sub_req = tonic::Request::new(sub_req);

@@ -15,16 +15,16 @@ use super::llm::LlmConf;
 use super::llm::LlmReq;
 use super::llm::LlmRes;
 use super::memory::Memory;
-use crate::agent::Agent as AgentTrait;
-use crate::agent::AgentBuilder;
-use crate::agent::AgentError;
 use crate::llm::llm::LlmInputItem;
 use crate::llm::memory::MemoryError;
 use crate::llm::prompt::render;
-use crate::tim_client::Event;
-use crate::tim_client::EventNewMessage;
-use crate::tim_client::SpaceEvent;
-use crate::tim_client::TimClient;
+use tim_client::agent::Agent as AgentTrait;
+use tim_client::agent::AgentBuilder;
+use tim_client::agent::AgentError;
+use tim_client::api::space_event::Data as Event;
+use tim_client::api::EventNewMessage;
+use tim_client::api::SpaceEvent;
+use tim_client::client::TimClient;
 
 #[derive(Clone)]
 pub struct AgentConf {
@@ -69,14 +69,14 @@ struct AgentPromptContext {
 
 impl From<MemoryError> for AgentError {
     fn from(value: MemoryError) -> Self {
-        AgentError::Memory(value.to_string())
+        AgentError::Agent(value.to_string())
     }
 }
 
 impl Agent {
     pub fn new(conf: &AgentConf, client: TimClient) -> Result<Self, AgentError> {
-        let llm =
-            build_llm(&conf.provider, &conf.llm).map_err(|err| AgentError::Llm(err.to_string()))?;
+        let llm = build_llm(&conf.provider, &conf.llm)
+            .map_err(|err| AgentError::Agent(err.to_string()))?;
         let memory = Memory::new(client.clone());
         Ok(Self {
             client,
@@ -93,7 +93,8 @@ impl Agent {
             nick: nick.clone(),
             now: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         };
-        let sysp = render(&self.conf.sysp, &ctx)?;
+        let sysp =
+            render(&self.conf.sysp, &ctx).map_err(|err| AgentError::Agent(err.to_string()))?;
         let req = LlmReq {
             sysp: &sysp,
             inputs: &history,
@@ -107,7 +108,7 @@ impl Agent {
             .llm
             .chat(&req)
             .await
-            .map_err(|err| AgentError::Llm(err.to_string()))?;
+            .map_err(|err| AgentError::Agent(err.to_string()))?;
         match answer {
             LlmRes::NoResponse(reason) => {
                 debug!("{} chose silence. Reason: {}", nick, reason);
@@ -127,7 +128,8 @@ impl Agent {
 
     async fn render_space_abilities(&mut self) -> Result<Option<String>, AgentError> {
         let abilities = self.client.list_abilities().await?;
-        ability::render_space_abilities(&abilities).map_err(AgentError::from)
+        ability::render_space_abilities(&abilities)
+            .map_err(|err| AgentError::Agent(err.to_string()))
     }
 }
 

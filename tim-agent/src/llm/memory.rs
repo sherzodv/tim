@@ -8,13 +8,13 @@ use tokio_stream::StreamExt;
 
 use crate::llm::llm::LlmInputItem;
 use crate::llm::llm::LlmRole;
-use crate::tim_client::tim_api::EventCallAbility;
-use crate::tim_client::tim_api::EventCallAbilityOutcome;
-use crate::tim_client::tim_api::EventNewMessage;
-use crate::tim_client::tim_api::Timite;
-use crate::tim_client::Event;
-use crate::tim_client::TimClient;
-use crate::tim_client::TimClientError;
+use tim_client::api::space_event::Data as Event;
+use tim_client::api::EventCallAbility;
+use tim_client::api::EventCallAbilityOutcome;
+use tim_client::api::EventNewMessage;
+use tim_client::api::Timite;
+use tim_client::client::TimClient;
+use tim_client::client::TimClientError;
 
 const TIMELINE_PAGE_SIZE: u32 = 128;
 
@@ -61,7 +61,7 @@ impl Memory {
     }
 
     fn render_event(
-        event: &crate::tim_client::SpaceEvent,
+        event: &tim_client::api::SpaceEvent,
         names: &HashMap<u64, String>,
         my_timite_id: u64,
     ) -> Option<LlmInputItem> {

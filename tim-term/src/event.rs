@@ -1,8 +1,8 @@
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind};
 use tokio::sync::mpsc;
 
-use crate::client::SpaceEvent;
 use crate::error::Result;
+use tim_client::api::SpaceEvent;
 
 #[derive(Debug)]
 pub enum AppEvent {

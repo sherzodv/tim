@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tinytemplate::error::Error as TemplateError;
 use tokio::time::interval_at;
 use tokio::time::sleep;
 use tokio::time::Instant;
@@ -11,33 +10,25 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
-use crate::tim_client::SpaceEvent;
-use crate::tim_client::TimClient;
-use crate::tim_client::TimClientConf;
-use crate::tim_client::TimClientError;
+use crate::api::SpaceEvent;
+use crate::client::TimClient;
+use crate::client::TimClientConf;
+use crate::client::TimClientError;
 
 const MIN_LIVE_INTERVAL: Duration = Duration::from_secs(5);
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
-    #[error("llm error: {0}")]
-    Llm(String),
-
     #[error("tim gprc error: {0}")]
     TimGrpc(#[from] tonic::Status),
 
     #[error("tim client error: {0}")]
-    TimeClientError(#[from] TimClientError),
+    TimClient(#[from] TimClientError),
 
-    #[error("crawler error: {0}")]
-    Crawler(String),
-
-    #[error("template error: {0}")]
-    Template(#[from] TemplateError),
-
-    #[error("memory error: {0}")]
-    Memory(String),
+    /// Raised by the agent itself; ends the agent, unlike transport errors.
+    #[error("agent error: {0}")]
+    Agent(String),
 }
 
 #[async_trait]
@@ -57,6 +48,10 @@ pub trait Agent: Send {
     fn live_interval(&self) -> Option<Duration> {
         None
     }
+
+    fn receive_own_messages(&self) -> bool {
+        false
+    }
 }
 
 pub struct AgentRunner {
@@ -70,7 +65,12 @@ impl AgentRunner {
         }
     }
 
-    pub async fn start<A: Agent>(&mut self, mut agent: A) -> Result<(), AgentError> {
+    /// Runs the agent until it fails; `after_id` resumes the space after an already seen event.
+    pub async fn start<A: Agent>(
+        &mut self,
+        mut agent: A,
+        after_id: Option<u64>,
+    ) -> Result<(), AgentError> {
         info!("starting agent: {:?}", self.client);
         agent.on_start().await?;
         let mut live_timer = agent.live_interval().map(|period| {
@@ -80,7 +80,7 @@ impl AgentRunner {
             timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
             timer
         });
-        let mut cursor = None;
+        let mut cursor = after_id;
 
         loop {
             match self
@@ -91,7 +91,7 @@ impl AgentRunner {
                 Err(AgentError::TimGrpc(status)) => {
                     warn!(%status, "space stream failed, reconnecting")
                 }
-                Err(AgentError::TimeClientError(error)) => {
+                Err(AgentError::TimClient(error)) => {
                     warn!(%error, "space subscription failed, reconnecting")
                 }
                 Err(error) => return Err(error),
@@ -107,7 +107,10 @@ impl AgentRunner {
         mut live_timer: Option<&mut Interval>,
         cursor: &mut Option<u64>,
     ) -> Result<(), AgentError> {
-        let mut stream = self.client.subscribe_to_space(*cursor).await?;
+        let mut stream = self
+            .client
+            .subscribe_to_space(*cursor, agent.receive_own_messages())
+            .await?;
         loop {
             let maybe_update = match live_timer.as_mut() {
                 Some(timer) => tokio::select! {
@@ -140,5 +143,5 @@ pub async fn spawn<B: AgentBuilder>(conf: TimClientConf, builder: B) -> Result<(
     let client = TimClient::new(conf).await?;
     let mut runner = AgentRunner::new(&client).await;
     let agent = builder.build(client)?;
-    runner.start(agent).await
+    runner.start(agent, None).await
 }
