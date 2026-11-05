@@ -1,15 +1,15 @@
 use std::env;
 
 use futures::StreamExt;
-use tim_agent::llm::llm::Llm;
-use tim_agent::llm::llm::LlmConf;
-use tim_agent::llm::llm::LlmInputItem;
-use tim_agent::llm::llm::LlmReq;
-use tim_agent::llm::llm::LlmRole;
-use tim_agent::llm::llm::LlmStreamEvent;
-use tim_agent::llm::openai::OpenAi;
-use tim_agent::llm::openai::OPENAI_DEFAULT_ENDPOINT;
-use tim_agent::llm::openai::OPENAI_DEFAULT_MODEL;
+use tim_llm::llm::Llm;
+use tim_llm::llm::LlmConf;
+use tim_llm::llm::LlmInputItem;
+use tim_llm::llm::LlmReq;
+use tim_llm::llm::LlmRole;
+use tim_llm::llm::LlmStreamEvent;
+use tim_llm::openai::OpenAi;
+use tim_llm::openai::OPENAI_DEFAULT_ENDPOINT;
+use tim_llm::openai::OPENAI_DEFAULT_MODEL;
 use tracing_subscriber::EnvFilter;
 
 // Manual streaming test. Run with: cargo test --test sse_debug -- --ignored

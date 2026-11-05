@@ -3,13 +3,13 @@
 use async_trait::async_trait;
 use serde::Serialize;
 
-use super::llm::Llm;
-use super::llm::LlmConf;
-use super::llm::LlmError;
-use super::llm::LlmReq;
-use super::llm::LlmStream;
-use super::responses::ResponsesClient;
-use super::responses::ResponsesReq;
+use crate::llm::Llm;
+use crate::llm::LlmConf;
+use crate::llm::LlmError;
+use crate::llm::LlmReq;
+use crate::llm::LlmStream;
+use crate::responses::ResponsesClient;
+use crate::responses::ResponsesReq;
 
 pub const DEEPSEEK_DEFAULT_ENDPOINT: &str = "https://api.deepseek.com/v1/responses";
 pub const DEEPSEEK_DEFAULT_MODEL: &str = "deepseek-v4-pro";

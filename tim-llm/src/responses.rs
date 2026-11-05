@@ -13,20 +13,20 @@ use serde::Serialize;
 use tracing::debug;
 use tracing::trace;
 
-use super::llm::silence_tool;
-use super::llm::LlmConf;
-use super::llm::LlmError;
-use super::llm::LlmReq;
-use super::llm::LlmRole;
-use super::llm::LlmStream;
-use super::llm::LlmStreamEvent;
-use super::llm::LlmTool;
+use crate::llm::silence_tool;
+use crate::llm::LlmConf;
+use crate::llm::LlmError;
+use crate::llm::LlmReq;
+use crate::llm::LlmRole;
+use crate::llm::LlmStream;
+use crate::llm::LlmStreamEvent;
+use crate::llm::LlmTool;
 
 const STR_DBG_LEN: usize = 40;
 const VEC_DBG_LEN: usize = 3;
 
 #[derive(Clone)]
-pub(super) struct ResponsesClient {
+pub(crate) struct ResponsesClient {
     http: Client,
     api_key: String,
     endpoint: String,
@@ -45,7 +45,7 @@ impl Debug for ResponsesClient {
 }
 
 impl ResponsesClient {
-    pub(super) fn new(
+    pub(crate) fn new(
         conf: &LlmConf,
         default_endpoint: &str,
         default_model: &str,
@@ -73,7 +73,7 @@ impl ResponsesClient {
     }
 
     /// The base request every provider sends; providers extend it with their own fields.
-    pub(super) fn request(&self, req: &LlmReq<'_>) -> Result<ResponsesReq, LlmError> {
+    pub(crate) fn request(&self, req: &LlmReq<'_>) -> Result<ResponsesReq, LlmError> {
         if req.inputs.is_empty() && req.sysp.trim().is_empty() {
             return Err(LlmError::EmptyPrompt);
         }
@@ -94,7 +94,7 @@ impl ResponsesClient {
         })
     }
 
-    pub(super) async fn stream<P: Serialize + Debug>(
+    pub(crate) async fn stream<P: Serialize + Debug>(
         &self,
         payload: &P,
     ) -> Result<LlmStream, LlmError> {
@@ -126,7 +126,7 @@ impl ResponsesClient {
 }
 
 #[derive(Serialize)]
-pub(super) struct ResponsesReq {
+pub(crate) struct ResponsesReq {
     model: String,
     input: Vec<InputMessage>,
     temperature: f32,

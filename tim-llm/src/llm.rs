@@ -12,8 +12,8 @@ use tracing::debug;
 use tracing::trace;
 use tracing::warn;
 
-use super::deepseek::DeepSeek;
-use super::openai::OpenAi;
+use crate::deepseek::DeepSeek;
+use crate::openai::OpenAi;
 
 pub const SILENCE_TOOL_NAME: &str = "TIM-LLM-SILENCE";
 

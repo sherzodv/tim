@@ -2,12 +2,12 @@
 
 use async_trait::async_trait;
 
-use super::llm::Llm;
-use super::llm::LlmConf;
-use super::llm::LlmError;
-use super::llm::LlmReq;
-use super::llm::LlmStream;
-use super::responses::ResponsesClient;
+use crate::llm::Llm;
+use crate::llm::LlmConf;
+use crate::llm::LlmError;
+use crate::llm::LlmReq;
+use crate::llm::LlmStream;
+use crate::responses::ResponsesClient;
 
 pub const OPENAI_DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1/responses";
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4.1";

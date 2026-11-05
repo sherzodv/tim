@@ -30,7 +30,7 @@ thiserror = { version = "2.0.17" }
 tinytemplate = "1.2"
 tim-lib = { path = "../tim-lib" }
 tim-client = { path = "../tim-client" }
-eventsource-stream = "0.2"
+tim-llm = { path = "../tim-llm" }
 config = "0.14"
 dotenvy = "0.15"
 shellexpand = "3"

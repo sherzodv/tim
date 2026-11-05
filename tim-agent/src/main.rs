@@ -20,10 +20,10 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::crawler::CrawlerConf;
-use crate::llm::llm::LlmConf;
 use crate::llm::AgentConf;
 use tim_client::agent;
 use tim_client::client::TimClientConf;
+use tim_llm::llm::LlmConf;
 
 const CONFIG_PATH: &str = "agents.toml";
 

@@ -6,8 +6,6 @@ use chrono::Utc;
 use thiserror::Error;
 use tokio_stream::StreamExt;
 
-use crate::llm::llm::LlmInputItem;
-use crate::llm::llm::LlmRole;
 use tim_client::api::space_event::Data as Event;
 use tim_client::api::EventCallAbility;
 use tim_client::api::EventCallAbilityOutcome;
@@ -15,6 +13,8 @@ use tim_client::api::EventNewMessage;
 use tim_client::api::Timite;
 use tim_client::client::TimClient;
 use tim_client::client::TimClientError;
+use tim_llm::llm::LlmInputItem;
+use tim_llm::llm::LlmRole;
 
 const TIMELINE_PAGE_SIZE: u32 = 128;
 

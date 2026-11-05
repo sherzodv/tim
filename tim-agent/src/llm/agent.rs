@@ -9,13 +9,7 @@ use tracing::debug;
 use tracing::trace;
 
 use super::ability;
-use super::llm::build_llm;
-use super::llm::Llm;
-use super::llm::LlmConf;
-use super::llm::LlmReq;
-use super::llm::LlmRes;
 use super::memory::Memory;
-use crate::llm::llm::LlmInputItem;
 use crate::llm::memory::MemoryError;
 use crate::llm::prompt::render;
 use tim_client::agent::Agent as AgentTrait;
@@ -25,6 +19,12 @@ use tim_client::api::space_event::Data as Event;
 use tim_client::api::EventNewMessage;
 use tim_client::api::SpaceEvent;
 use tim_client::client::TimClient;
+use tim_llm::llm::build_llm;
+use tim_llm::llm::Llm;
+use tim_llm::llm::LlmConf;
+use tim_llm::llm::LlmInputItem;
+use tim_llm::llm::LlmReq;
+use tim_llm::llm::LlmRes;
 
 #[derive(Clone)]
 pub struct AgentConf {
