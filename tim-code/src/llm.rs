@@ -91,24 +91,27 @@ impl LlmCode {
             }
             for call in turn.tool_calls {
                 reporter.step(step_label(&call));
-                let output = self.call(&call).await;
+                let ability = tools::ability_name(&call.name);
+                let result = tools::call(&self.tools, &ability, &call.arguments)
+                    .await
+                    .map_err(|error| error.to_string());
+                reporter.tool_call(ability, call.arguments.clone(), result.clone());
                 items.push(LlmItem::ToolOutput {
                     call_id: call.call_id,
-                    output,
+                    output: tool_output(result),
                 });
             }
         }
         Err(LlmCodeError::StepLimit(self.max_steps))
     }
+}
 
-    /// Tool failures go back to the model as text: it decides what to do next.
-    async fn call(&self, call: &LlmToolCall) -> String {
-        let ability = tools::ability_name(&call.name);
-        match tools::call(&self.tools, &ability, &call.arguments).await {
-            Ok(output) if output.trim().is_empty() => NO_OUTPUT.to_string(),
-            Ok(output) => output,
-            Err(error) => format!("error: {error}"),
-        }
+/// Tool failures go back to the model as text: it decides what to do next.
+fn tool_output(result: Result<String, String>) -> String {
+    match result {
+        Ok(output) if output.trim().is_empty() => NO_OUTPUT.to_string(),
+        Ok(output) => output,
+        Err(error) => format!("error: {error}"),
     }
 }
 

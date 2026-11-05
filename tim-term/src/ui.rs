@@ -11,6 +11,8 @@ use textwrap::core::display_width;
 use crate::app::{App, TimelineItem};
 
 const MAX_INPUT_HEIGHT: u16 = 8;
+/// How much of a tool call's arguments and outcome the timeline shows.
+const TOOL_CALL_CHARS: usize = 48;
 const MIN_BODY_WIDTH: usize = 16;
 const PROMPT: &str = "› ";
 
@@ -154,7 +156,35 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
             format_time(*timestamp),
             format!("{username} finished: {task}"),
         )],
+        TimelineItem::TaskToolCall {
+            username,
+            tool,
+            arguments,
+            outcome,
+            success,
+            timestamp,
+        } => {
+            let status = if *success { "" } else { "error: " };
+            vec![system_line(
+                format_time(*timestamp),
+                format!(
+                    "{username} {tool} {} → {status}{}",
+                    brief(arguments, TOOL_CALL_CHARS),
+                    brief(outcome, TOOL_CALL_CHARS)
+                ),
+            )]
+        }
     }
+}
+
+/// The first line of the text, cut to `max` characters.
+fn brief(text: &str, max: usize) -> String {
+    let line = text.lines().next().unwrap_or("").trim();
+    let mut brief: String = line.chars().take(max).collect();
+    if line.chars().count() > max {
+        brief.push('…');
+    }
+    brief
 }
 
 fn system_line(time: String, text: String) -> Line<'static> {

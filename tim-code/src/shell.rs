@@ -45,6 +45,10 @@ impl Shell {
         self.timeout
     }
 
+    pub fn max_output_chars(&self) -> usize {
+        self.max_output_chars
+    }
+
     pub async fn run(&self, cmd: &str) -> Result<String, ShellError> {
         let output = self.output("sh", &["-c", cmd]).await?;
         Ok(self.render_output(&output))

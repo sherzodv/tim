@@ -22,6 +22,7 @@ use crate::api::EventNewMessage;
 use crate::api::EventTaskFinished;
 use crate::api::EventTaskStarted;
 use crate::api::EventTaskStep;
+use crate::api::EventTaskToolCall;
 use crate::api::EventTimiteConnected;
 use crate::api::EventTimiteDisconnected;
 use crate::api::EventTypingStarted;
@@ -32,6 +33,7 @@ use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
 use crate::api::TaskStarted;
 use crate::api::TaskStep;
+use crate::api::TaskToolCall;
 use crate::api::Timite;
 use crate::api::TypingStarted;
 use crate::api::TypingStopped;
@@ -136,6 +138,12 @@ fn event_task_step(task_step: TaskStep) -> EventData {
     })
 }
 
+fn event_task_tool_call(task_tool_call: TaskToolCall) -> EventData {
+    EventData::EventTaskToolCall(EventTaskToolCall {
+        task_tool_call: Some(task_tool_call),
+    })
+}
+
 fn event_task_finished(task_finished: TaskFinished) -> EventData {
     EventData::EventTaskFinished(EventTaskFinished {
         task_finished: Some(task_finished),
@@ -172,6 +180,7 @@ fn event_sender_id(event: &SpaceEvent) -> Option<u64> {
         EventData::EventTypingStopped(data) => data.typing_stopped.as_ref().map(|t| t.timite_id),
         EventData::EventTaskStarted(data) => data.task_started.as_ref().map(|t| t.timite_id),
         EventData::EventTaskStep(data) => data.task_step.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskToolCall(data) => data.task_tool_call.as_ref().map(|t| t.timite_id),
         EventData::EventTaskFinished(data) => data.task_finished.as_ref().map(|t| t.timite_id),
         _ => None,
     }
@@ -233,6 +242,10 @@ impl TimSpace {
 
     pub fn publish_task_step(&self, task_step: TaskStep) -> Result<(), TimSpaceError> {
         self.append(&mut self.lock_state(), event_task_step(task_step))
+    }
+
+    pub fn publish_task_tool_call(&self, tool_call: TaskToolCall) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_task_tool_call(tool_call))
     }
 
     pub fn publish_task_finished(&self, task_finished: TaskFinished) -> Result<(), TimSpaceError> {

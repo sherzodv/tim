@@ -26,6 +26,8 @@ use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStartedRes;
 use crate::api::SendTaskStepReq;
 use crate::api::SendTaskStepRes;
+use crate::api::SendTaskToolCallReq;
+use crate::api::SendTaskToolCallRes;
 use crate::api::SendTypingStartedReq;
 use crate::api::SendTypingStartedRes;
 use crate::api::SendTypingStoppedReq;
@@ -35,6 +37,7 @@ use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
 use crate::api::TaskStep;
+use crate::api::TaskToolCall;
 use crate::api::Timite;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
@@ -330,6 +333,27 @@ impl TimApi {
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
+    pub fn send_task_tool_call(
+        &self,
+        req: &SendTaskToolCallReq,
+        session: &Session,
+    ) -> Result<SendTaskToolCallRes, TimApiError> {
+        let tool_call = req
+            .tool_call
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("tool call required".into()))?;
+        self.t_space.publish_task_tool_call(TaskToolCall {
+            timite_id: session.timite_id,
+            ..tool_call.clone()
+        })?;
+        Ok(SendTaskToolCallRes {})
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub fn send_task_finished(
         &self,
         req: &SendTaskFinishedReq,
@@ -394,6 +418,9 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
             }
             SpaceEventData::EventTaskStep(payload) => {
                 ids.extend(payload.task_step.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskToolCall(payload) => {
+                ids.extend(payload.task_tool_call.as_ref().map(|t| t.timite_id));
             }
             SpaceEventData::EventTaskFinished(payload) => {
                 ids.extend(payload.task_finished.as_ref().map(|t| t.timite_id));

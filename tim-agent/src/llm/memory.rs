@@ -84,6 +84,7 @@ impl Memory {
             Some(Event::EventTypingStopped(_)) => None,
             Some(Event::EventTaskStarted(_)) => None,
             Some(Event::EventTaskStep(_)) => None,
+            Some(Event::EventTaskToolCall(_)) => None,
             Some(Event::EventTaskFinished(_)) => None,
             None => None,
         }

@@ -16,7 +16,7 @@ use config::File;
 use config::FileFormat;
 use dotenvy::dotenv;
 use serde::Deserialize;
-use shellexpand::env as expand_env;
+use shellexpand::env_with_context_no_errors as expand_env;
 use tim_client::agent;
 use tim_client::client::TimClientConf;
 use tim_llm::llm::LlmConf;
@@ -65,7 +65,8 @@ fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let raw = std::fs::read_to_string(CONFIG_PATH)?;
-    let expanded = expand_env(&raw)?.into_owned();
+    // A missing variable becomes empty: the engine that needs it reports it, the other runs.
+    let expanded = expand_env(&raw, |name| Some(std::env::var(name).unwrap_or_default()));
 
     let config = Config::builder()
         .add_source(File::from_str(&expanded, FileFormat::Toml))

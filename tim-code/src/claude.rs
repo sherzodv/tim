@@ -4,6 +4,7 @@
 //! follow-up does not pay for startup and context loading again. After an idle period it
 //! is closed; the next task starts a new process that resumes the same session.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,6 +28,7 @@ use crate::progress::Reporter;
 use crate::shell::Shell;
 use crate::shell::ShellError;
 use crate::text::head;
+use crate::text::tail;
 
 const STEP_CHARS: usize = 80;
 /// How long an idle `claude` process is kept before it is closed.
@@ -54,6 +56,10 @@ enum StreamEvent {
     Assistant {
         message: AssistantMessage,
     },
+    /// Tool results come back to Claude as a user turn.
+    User {
+        message: UserMessage,
+    },
     Result(TaskResult),
     #[serde(other)]
     Other,
@@ -72,12 +78,39 @@ enum ContentBlock {
         text: String,
     },
     ToolUse {
+        id: String,
         name: String,
         #[serde(default)]
         input: serde_json::Value,
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Deserialize)]
+struct UserMessage {
+    #[serde(default)]
+    content: Vec<ResultBlock>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ResultBlock {
+    ToolResult {
+        tool_use_id: String,
+        #[serde(default)]
+        content: serde_json::Value,
+        #[serde(default)]
+        is_error: bool,
+    },
+    #[serde(other)]
+    Other,
+}
+
+/// A tool use waiting for its result.
+struct PendingTool {
+    name: String,
+    input: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -211,12 +244,14 @@ impl ClaudeCode {
         })
     }
 
-    /// Reads the turn's events, turning tool uses and narration into task steps.
+    /// Reads the turn's events: narration and tool uses become steps, tool results
+    /// become recorded tool calls.
     async fn follow(
         &self,
         events: &mut Lines<BufReader<ChildStdout>>,
         reporter: &Reporter,
     ) -> Result<TaskResult, ClaudeError> {
+        let mut pending: HashMap<String, PendingTool> = HashMap::new();
         while let Some(line) = events.next_line().await.map_err(ShellError::from)? {
             if line.trim().is_empty() {
                 continue;
@@ -224,9 +259,12 @@ impl ClaudeCode {
             match serde_json::from_str::<StreamEvent>(&line)? {
                 StreamEvent::Assistant { message } => {
                     for block in message.content {
-                        if let Some(step) = self.describe(block) {
-                            reporter.step(step);
-                        }
+                        self.follow_block(block, reporter, &mut pending);
+                    }
+                }
+                StreamEvent::User { message } => {
+                    for block in message.content {
+                        self.follow_result(block, reporter, &mut pending);
                     }
                 }
                 StreamEvent::Result(result) => return Ok(result),
@@ -236,16 +274,50 @@ impl ClaudeCode {
         Err(ClaudeError::NoResult)
     }
 
-    fn describe(&self, block: ContentBlock) -> Option<String> {
-        let step = match block {
-            ContentBlock::Text { text } => text.lines().next()?.trim().to_string(),
-            ContentBlock::ToolUse { name, input } => match tool_detail(&name, &input) {
-                Some(detail) => format!("{name} {}", self.relative(&detail)),
-                None => name,
-            },
-            ContentBlock::Other => return None,
+    fn follow_block(
+        &self,
+        block: ContentBlock,
+        reporter: &Reporter,
+        pending: &mut HashMap<String, PendingTool>,
+    ) {
+        match block {
+            ContentBlock::Text { text } => {
+                if let Some(line) = text.lines().next() {
+                    reporter.step(head(line.trim(), STEP_CHARS));
+                }
+            }
+            ContentBlock::ToolUse { id, name, input } => {
+                let step = match tool_detail(&name, &input) {
+                    Some(detail) => format!("{name} {}", self.relative(&detail)),
+                    None => name.clone(),
+                };
+                reporter.step(head(&step, STEP_CHARS));
+                pending.insert(id, PendingTool { name, input });
+            }
+            ContentBlock::Other => {}
+        }
+    }
+
+    fn follow_result(
+        &self,
+        block: ResultBlock,
+        reporter: &Reporter,
+        pending: &mut HashMap<String, PendingTool>,
+    ) {
+        let ResultBlock::ToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } = block
+        else {
+            return;
         };
-        Some(head(&step, STEP_CHARS))
+        let Some(tool) = pending.remove(&tool_use_id) else {
+            return;
+        };
+        let output = tail(&result_text(&content), self.shell.max_output_chars());
+        let result = if is_error { Err(output) } else { Ok(output) };
+        reporter.tool_call(tool.name, tool.input.to_string(), result);
     }
 
     fn relative(&self, path: &str) -> String {
@@ -268,6 +340,19 @@ async fn close_when_idle(session: Arc<Mutex<Session>>) {
             info!("closing idle claude process");
             session.live = None;
         }
+    }
+}
+
+/// Tool results are a string or a list of text blocks.
+fn result_text(content: &serde_json::Value) -> String {
+    match content {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => other.to_string(),
     }
 }
 

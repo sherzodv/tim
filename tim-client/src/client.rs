@@ -14,10 +14,12 @@ use crate::api::SendMessageReq;
 use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStepReq;
+use crate::api::SendTaskToolCallReq;
 use crate::api::SendTypingStartedReq;
 use crate::api::SendTypingStoppedReq;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::TaskToolCall;
 use crate::api::TimiteAbilities;
 use crate::api::TrustedConnectReq;
 use futures::stream;
@@ -163,6 +165,20 @@ impl TimClient {
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_task_step(req).await?;
+        Ok(())
+    }
+
+    /// Records a finished tool call of the task; `timite_id` is set by the server.
+    pub async fn send_task_tool_call(
+        &mut self,
+        tool_call: TaskToolCall,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskToolCallReq {
+            tool_call: Some(tool_call),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_task_tool_call(req).await?;
         Ok(())
     }
 

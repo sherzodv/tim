@@ -130,7 +130,7 @@ impl CodeAgent {
         tokio::spawn(async move {
             let reporter = Reporter::start(client.clone(), head(&task, TASK_CHARS));
             let result = report(&tools, &engine, &task, &reporter).await;
-            drop(reporter);
+            reporter.finish().await;
             let reply = match result {
                 Ok(report) => report,
                 Err(err) => format!("task failed: {err}"),
@@ -163,7 +163,7 @@ impl CodeAgent {
         tokio::spawn(async move {
             let reporter = Reporter::start(client.clone(), ability.clone());
             let result = dispatch(&tools, &engine, &reporter, &ability, &payload).await;
-            drop(reporter);
+            reporter.finish().await;
             let outcome = to_outcome(call_id, result);
             if let Err(err) = client.send_call_ability_outcome(&outcome).await {
                 error!(call_id, %err, "failed to send call ability outcome");

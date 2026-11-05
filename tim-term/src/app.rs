@@ -8,7 +8,7 @@ use tui_textarea::TextArea;
 use tim_client::api::space_event::Data as EventData;
 use tim_client::api::{
     CallAbility, CallAbilityOutcome, Message, SpaceEvent, TaskFinished, TaskStarted, TaskStep,
-    Timite,
+    TaskToolCall, Timite,
 };
 
 #[derive(Debug, Clone)]
@@ -44,6 +44,15 @@ pub enum TimelineItem {
     TaskFinished {
         username: String,
         task: String,
+        timestamp: u64,
+    },
+    TaskToolCall {
+        username: String,
+        tool: String,
+        arguments: String,
+        /// The output, or the error when `success` is false.
+        outcome: String,
+        success: bool,
         timestamp: u64,
     },
 }
@@ -213,6 +222,11 @@ impl App {
                     self.task_finished(task, timestamp);
                 }
             }
+            EventData::EventTaskToolCall(e) => {
+                if let Some(call) = e.task_tool_call {
+                    self.task_tool_call(call, timestamp);
+                }
+            }
         }
     }
 
@@ -301,6 +315,21 @@ impl App {
         self.timeline.push(TimelineItem::TaskFinished {
             username: self.username(finished.timite_id),
             task,
+            timestamp,
+        });
+    }
+
+    fn task_tool_call(&mut self, call: TaskToolCall, timestamp: u64) {
+        let (outcome, success) = match call.error {
+            Some(error) => (error, false),
+            None => (call.output, true),
+        };
+        self.timeline.push(TimelineItem::TaskToolCall {
+            username: self.username(call.timite_id),
+            tool: call.tool,
+            arguments: call.arguments,
+            outcome,
+            success,
             timestamp,
         });
     }

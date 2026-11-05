@@ -4,6 +4,7 @@ import type {
 	TaskFinished,
 	TaskStarted,
 	TaskStep,
+	TaskToolCall,
 	Timite
 } from '../../gen/tim/api/g1/api_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
@@ -13,6 +14,8 @@ import type { TimStorage } from './storage';
 import type { WorklogItem } from './worklog';
 
 const HISTORY_PAGE_SIZE = 50;
+/** How much of a tool call's arguments and outcome the worklog shows. */
+const TOOL_CALL_CHARS = 48;
 
 /** A task another timite reported and has not finished yet. */
 type LiveTask = { timiteId: bigint; task: string; step?: string };
@@ -216,9 +219,23 @@ export class TimSpace implements TimSpaceHandler {
 				const task = this.tasks.get(finished.taskId)?.task ?? `task-${finished.taskId}`;
 				return this.buildTaskItem(update, { timiteId: finished.timiteId, task }, 'finished');
 			}
+			case 'eventTaskToolCall':
+				return this.buildToolCallItem(update, payload.value.taskToolCall);
 			default:
 				return null;
 		}
+	}
+
+	private buildToolCallItem(update: SpaceEvent, call?: TaskToolCall): WorklogItem | null {
+		if (!call) return null;
+		const outcome = call.error !== undefined ? `error: ${brief(call.error)}` : brief(call.output);
+		return {
+			kind: 'sysmsg',
+			id: update.metadata?.id ?? this.nextLocalId(),
+			author: 'system',
+			content: `${this.formatAuthor(call.timiteId)} ${call.tool} ${brief(call.arguments)} → ${outcome}`,
+			time: this.formatTime(update.metadata?.emittedAt)
+		};
 	}
 
 	private buildTaskItem(
@@ -324,6 +341,12 @@ export const createTimSpace = (client: TimClient, connector: TimConnect, storage
 	new TimSpace(client, connector, storage);
 
 export type { TimStorage } from './storage';
+
+/** The first line of the text, cut to a few dozen characters. */
+function brief(text: string): string {
+	const line = (text.split('\n')[0] ?? '').trim();
+	return line.length > TOOL_CALL_CHARS ? `${line.slice(0, TOOL_CALL_CHARS)}…` : line;
+}
 
 function maxEventId(events: SpaceEvent[]): bigint | undefined {
 	let max: bigint | undefined;
