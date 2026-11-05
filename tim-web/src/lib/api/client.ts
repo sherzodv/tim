@@ -8,8 +8,8 @@ import {
 	TrustedConnectReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
-	SendActivityReqSchema,
-	ActivitySchema,
+	SendTypingStartedReqSchema,
+	SendTypingStoppedReqSchema,
 	SubscribeToSpaceReqSchema,
 	GetTimelineReqSchema,
 	TimiteSchema,
@@ -93,13 +93,16 @@ export class TimClient {
 		});
 	}
 
-	/** Shares transient state such as "typing"; delivered live, never stored. */
-	async sendActivity(kind: string, payload = ''): Promise<void> {
+	async sendTypingStarted(): Promise<void> {
 		const sessionKey = await this.ensureSession();
-		const request = create(SendActivityReqSchema, {
-			activity: create(ActivitySchema, { kind, payload })
+		await this.client.sendTypingStarted(create(SendTypingStartedReqSchema, {}), {
+			headers: buildSessionHeaders(sessionKey)
 		});
-		await this.client.sendActivity(request, {
+	}
+
+	async sendTypingStopped(): Promise<void> {
+		const sessionKey = await this.ensureSession();
+		await this.client.sendTypingStopped(create(SendTypingStoppedReqSchema, {}), {
 			headers: buildSessionHeaders(sessionKey)
 		});
 	}

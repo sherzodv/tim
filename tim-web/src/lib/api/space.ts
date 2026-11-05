@@ -1,5 +1,11 @@
 import { writable, type Readable } from 'svelte/store';
-import type { Activity, SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
+import type {
+	SpaceEvent,
+	TaskFinished,
+	TaskStarted,
+	TaskStep,
+	Timite
+} from '../../gen/tim/api/g1/api_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import type { TimClient } from './client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from './connect';
@@ -7,12 +13,9 @@ import type { TimStorage } from './storage';
 import type { WorklogItem } from './worklog';
 
 const HISTORY_PAGE_SIZE = 50;
-/** How long a received activity such as "typing" stays visible. */
-const ACTIVITY_TTL_MS = 5000;
-/** Minimal pause between own "typing" activities. */
-const TYPING_INTERVAL_MS = 3000;
 
-type LiveActivity = { label: string; until: number };
+/** A task another timite reported and has not finished yet. */
+type LiveTask = { timiteId: bigint; task: string; step?: string };
 
 export class TimSpace implements TimSpaceHandler {
 	private localId = 0n;
@@ -20,11 +23,14 @@ export class TimSpace implements TimSpaceHandler {
 	private timites = new Map<bigint, string>();
 	private readonly connectedTimite = writable<string | null>(null);
 	readonly timite: Readable<string | null> = this.connectedTimite;
-	private readonly liveActivities = new Map<bigint, LiveActivity>();
-	private readonly activityLabels = writable<string[]>([]);
-	/** Activities of other timites still in effect, as "username kind: payload". */
-	readonly activities: Readable<string[]> = this.activityLabels;
-	private lastTyping = 0;
+	private readonly typing = new Set<bigint>();
+	/** Running tasks by task id, in start order. */
+	private readonly tasks = new Map<bigint, LiveTask>();
+	private readonly statusLabels = writable<string[]>([]);
+	/** What other timites are doing right now, as "username typing" or "username working: step". */
+	readonly status: Readable<string[]> = this.statusLabels;
+	/** Whether the space was told that this timite is typing. */
+	private typingSent = false;
 
 	constructor(
 		private readonly client: TimClient,
@@ -67,49 +73,93 @@ export class TimSpace implements TimSpaceHandler {
 	}
 
 	async send(content: string) {
+		await this.setTyping(false);
 		await this.client.sendMessage(content);
-		this.lastTyping = 0;
 	}
 
-	/** Tells the space the user is composing, at most once per interval. */
-	notifyTyping() {
-		const now = Date.now();
-		if (now - this.lastTyping < TYPING_INTERVAL_MS) return;
-		this.lastTyping = now;
-		this.client.sendActivity('typing').catch((error) => {
-			console.warn('TimSpace: typing activity failed', error);
-		});
+	/** Tells the space when this timite starts or stops typing. */
+	async setTyping(typing: boolean) {
+		if (typing === this.typingSent) return;
+		this.typingSent = typing;
+		try {
+			if (typing) await this.client.sendTypingStarted();
+			else await this.client.sendTypingStopped();
+		} catch (error) {
+			console.warn('TimSpace: typing report failed', error);
+		}
 	}
 
 	onSpaceUpdate(update: SpaceEvent) {
-		if (update.data.case === 'eventActivity') {
-			const activity = update.data.value.activity;
-			if (activity) this.activityReceived(activity);
-			return;
-		}
+		this.trackStatus(update);
 		const item = this.asMessageItem(update);
 		if (!item) return;
 		this.append(item);
 	}
 
-	private activityReceived(activity: Activity) {
-		if (activity.timiteId === this.client.getTimite()?.id) return;
-		const who = this.formatAuthor(activity.timiteId);
-		const label = activity.payload
-			? `${who} ${activity.kind}: ${activity.payload}`
-			: `${who} ${activity.kind}`;
-		this.liveActivities.set(activity.timiteId, { label, until: Date.now() + ACTIVITY_TTL_MS });
-		this.refreshActivities();
-		setTimeout(() => this.refreshActivities(), ACTIVITY_TTL_MS + 50);
+	/** Keeps the typing set and the running tasks in step with the event stream. */
+	private trackStatus(update: SpaceEvent) {
+		const payload = update.data;
+		const me = this.client.getTimite()?.id;
+		switch (payload.case) {
+			case 'eventTypingStarted': {
+				const id = payload.value.typingStarted?.timiteId;
+				if (id !== undefined && id !== me) this.typing.add(id);
+				break;
+			}
+			case 'eventTypingStopped': {
+				const id = payload.value.typingStopped?.timiteId;
+				if (id !== undefined) this.typing.delete(id);
+				break;
+			}
+			case 'eventNewMessage': {
+				const id = payload.value.message?.senderId;
+				if (id !== undefined) this.typing.delete(id);
+				break;
+			}
+			case 'eventTaskStarted':
+				this.taskStarted(payload.value.taskStarted);
+				break;
+			case 'eventTaskStep':
+				this.taskStep(payload.value.taskStep);
+				break;
+			case 'eventTaskFinished':
+				this.taskFinished(payload.value.taskFinished);
+				break;
+			case 'eventTimiteDisconnected': {
+				const id = payload.value.timite?.id;
+				if (id === undefined) break;
+				this.typing.delete(id);
+				for (const [taskId, task] of this.tasks) {
+					if (task.timiteId === id) this.tasks.delete(taskId);
+				}
+				break;
+			}
+			default:
+				return;
+		}
+		this.refreshStatus();
 	}
 
-	private refreshActivities() {
-		const now = Date.now();
-		for (const [id, activity] of this.liveActivities) {
-			if (activity.until <= now) this.liveActivities.delete(id);
-		}
-		const labels = [...this.liveActivities.values()].map((activity) => activity.label).sort();
-		this.activityLabels.set(labels);
+	private taskStarted(started?: TaskStarted) {
+		if (!started) return;
+		this.tasks.set(started.taskId, { timiteId: started.timiteId, task: started.task });
+	}
+
+	private taskStep(step?: TaskStep) {
+		const task = step && this.tasks.get(step.taskId);
+		if (task) task.step = step.step;
+	}
+
+	private taskFinished(finished?: TaskFinished) {
+		if (finished) this.tasks.delete(finished.taskId);
+	}
+
+	private refreshStatus() {
+		const typing = [...this.typing].map((id) => `${this.formatAuthor(id)} typing`).sort();
+		const working = [...this.tasks.values()].map(
+			(task) => `${this.formatAuthor(task.timiteId)} working: ${task.step ?? task.task}`
+		);
+		this.statusLabels.set([...typing, ...working]);
 	}
 
 	onPhaseChange(phase: ChannelPhase) {
@@ -158,9 +208,32 @@ export class TimSpace implements TimSpaceHandler {
 				return this.buildPresenceItem(update, payload.value?.timite, 'connected');
 			case 'eventTimiteDisconnected':
 				return this.buildPresenceItem(update, payload.value?.timite, 'disconnected');
+			case 'eventTaskStarted':
+				return this.buildTaskItem(update, payload.value.taskStarted, 'started');
+			case 'eventTaskFinished': {
+				const finished = payload.value.taskFinished;
+				if (!finished) return null;
+				const task = this.tasks.get(finished.taskId)?.task ?? `task-${finished.taskId}`;
+				return this.buildTaskItem(update, { timiteId: finished.timiteId, task }, 'finished');
+			}
 			default:
 				return null;
 		}
+	}
+
+	private buildTaskItem(
+		update: SpaceEvent,
+		task: { timiteId: bigint; task: string } | undefined,
+		action: 'started' | 'finished'
+	): WorklogItem | null {
+		if (!task) return null;
+		return {
+			kind: 'sysmsg',
+			id: update.metadata?.id ?? this.nextLocalId(),
+			author: 'system',
+			content: `${this.formatAuthor(task.timiteId)} ${action}: ${task.task}`,
+			time: this.formatTime(update.metadata?.emittedAt)
+		};
 	}
 
 	private captureTimites(timites: Timite[]) {

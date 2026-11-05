@@ -5,7 +5,7 @@
 
 	let { space }: { space: TimSpace } = $props();
 	const timite = space.timite;
-	const activities = space.activities;
+	const status = space.status;
 
 	let inputValue = $state('');
 	let inputEl: HTMLTextAreaElement;
@@ -22,7 +22,7 @@
 
 	function handleInput() {
 		autoResize();
-		if (inputValue.trim()) space.notifyTyping();
+		void space.setTyping(inputValue.trim().length > 0);
 	}
 
 	$effect(() => {
@@ -83,8 +83,8 @@
 
 <section class="command-line tim-theme" aria-label="Command line">
 	<div class="status-line" aria-label="Command status">
-		{#if $activities.length}
-			<span class="status-text">{$activities.join(' · ')}</span>
+		{#if $status.length}
+			<span class="status-text">{$status.join(' · ')}</span>
 		{/if}
 	</div>
 	<div class="command-surface" aria-label="Command input area">
