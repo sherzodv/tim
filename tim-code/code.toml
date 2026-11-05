@@ -5,7 +5,7 @@ timeout_secs = 900
 max_output_chars = 8000
 
 # What runs the tasks: "claude" for Claude Code, "llm" for a model from tim-llm.
-engine = "claude"
+engine = "llm"
 # Shell commands Claude Code may run on its own; file edits are always accepted.
 claude_allowed_tools = ["Bash(cargo:*)", "Bash(git:*)", "Bash(npm:*)"]
 
