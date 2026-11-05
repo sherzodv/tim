@@ -17,6 +17,7 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
+use crate::activity::Reporter;
 use crate::claude::ClaudeCode;
 use crate::claude::ClaudeError;
 use crate::fs::Files;
@@ -189,7 +190,9 @@ impl CodeAgent {
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
-            let result = dispatch(&tools, &ability, &payload).await;
+            let reporter = Reporter::start(client.clone(), ability.clone());
+            let result = dispatch(&tools, &reporter, &ability, &payload).await;
+            drop(reporter);
             let outcome = to_outcome(call_id, result);
             if let Err(err) = client.send_call_ability_outcome(&outcome).await {
                 error!(call_id, %err, "failed to send call ability outcome");
@@ -198,7 +201,12 @@ impl CodeAgent {
     }
 }
 
-async fn dispatch(tools: &Tools, ability: &str, payload: &str) -> Result<String, CallError> {
+async fn dispatch(
+    tools: &Tools,
+    reporter: &Reporter,
+    ability: &str,
+    payload: &str,
+) -> Result<String, CallError> {
     match ability {
         SH_RUN => {
             let req: ShRunReq = serde_json::from_str(payload)?;
@@ -206,7 +214,7 @@ async fn dispatch(tools: &Tools, ability: &str, payload: &str) -> Result<String,
         }
         CODE_TASK => {
             let req: CodeTaskReq = serde_json::from_str(payload)?;
-            Ok(tools.claude.task(&req.description).await?)
+            Ok(tools.claude.task(&req.description, reporter).await?)
         }
         FS_READ => {
             let req: FsReadReq = serde_json::from_str(payload)?;

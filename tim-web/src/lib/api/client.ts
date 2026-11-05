@@ -9,6 +9,8 @@ import {
 	TrustedConnectReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
+	SendActivityReqSchema,
+	ActivitySchema,
 	SubscribeToSpaceReqSchema,
 	GetTimelineReqSchema,
 	TimiteSchema,
@@ -155,6 +157,17 @@ export class TimClient {
 		const sessionKey = await this.ensureSession();
 		const request = buildSendMessageRequest(trimmed);
 		await this.client.sendMessage(request, {
+			headers: buildSessionHeaders(sessionKey)
+		});
+	}
+
+	/** Shares transient state such as "typing"; delivered live, never stored. */
+	async sendActivity(kind: string, payload = ''): Promise<void> {
+		const sessionKey = await this.ensureSession();
+		const request = create(SendActivityReqSchema, {
+			activity: create(ActivitySchema, { kind, payload })
+		});
+		await this.client.sendActivity(request, {
 			headers: buildSessionHeaders(sessionKey)
 		});
 	}

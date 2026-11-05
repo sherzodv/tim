@@ -44,6 +44,7 @@ pub enum TimelineItem {
 struct LiveActivity {
     nick: String,
     kind: String,
+    payload: String,
     until: Instant,
 }
 
@@ -128,7 +129,10 @@ impl App {
             .activities
             .values()
             .filter(|activity| activity.until > now)
-            .map(|activity| format!("{} {}", activity.nick, activity.kind))
+            .map(|activity| match activity.payload.is_empty() {
+                true => format!("{} {}", activity.nick, activity.kind),
+                false => format!("{} {}: {}", activity.nick, activity.kind, activity.payload),
+            })
             .collect();
         active.sort_unstable();
         active
@@ -250,6 +254,7 @@ impl App {
             LiveActivity {
                 nick,
                 kind: activity.kind,
+                payload: activity.payload,
                 until: Instant::now() + ACTIVITY_TTL,
             },
         );

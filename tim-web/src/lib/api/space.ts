@@ -1,5 +1,5 @@
 import { writable, type Readable } from 'svelte/store';
-import type { SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
+import type { Activity, SpaceEvent, Timite } from '../../gen/tim/api/g1/api_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
 import type { TimClient } from './client';
 import type { ChannelPhase, TimConnect, TimSpaceHandler } from './connect';
@@ -7,6 +7,12 @@ import type { TimStorage } from './storage';
 import type { WorklogItem } from './worklog';
 
 const HISTORY_PAGE_SIZE = 50;
+/** How long a received activity such as "typing" stays visible. */
+const ACTIVITY_TTL_MS = 5000;
+/** Minimal pause between own "typing" activities. */
+const TYPING_INTERVAL_MS = 3000;
+
+type LiveActivity = { label: string; until: number };
 
 export class TimSpace implements TimSpaceHandler {
 	private localId = 0n;
@@ -14,6 +20,11 @@ export class TimSpace implements TimSpaceHandler {
 	private timites = new Map<bigint, string>();
 	private readonly connectedTimite = writable<string | null>(null);
 	readonly timite: Readable<string | null> = this.connectedTimite;
+	private readonly liveActivities = new Map<bigint, LiveActivity>();
+	private readonly activityLabels = writable<string[]>([]);
+	/** Activities of other timites still in effect, as "nick kind: payload". */
+	readonly activities: Readable<string[]> = this.activityLabels;
+	private lastTyping = 0;
 
 	constructor(
 		private readonly client: TimClient,
@@ -57,12 +68,48 @@ export class TimSpace implements TimSpaceHandler {
 
 	async send(content: string) {
 		await this.client.sendMessage(content);
+		this.lastTyping = 0;
+	}
+
+	/** Tells the space the user is composing, at most once per interval. */
+	notifyTyping() {
+		const now = Date.now();
+		if (now - this.lastTyping < TYPING_INTERVAL_MS) return;
+		this.lastTyping = now;
+		this.client.sendActivity('typing').catch((error) => {
+			console.warn('TimSpace: typing activity failed', error);
+		});
 	}
 
 	onSpaceUpdate(update: SpaceEvent) {
+		if (update.data.case === 'eventActivity') {
+			const activity = update.data.value.activity;
+			if (activity) this.activityReceived(activity);
+			return;
+		}
 		const item = this.asMessageItem(update);
 		if (!item) return;
 		this.append(item);
+	}
+
+	private activityReceived(activity: Activity) {
+		if (activity.timiteId === this.client.getTimite()?.id) return;
+		const who = this.formatAuthor(activity.timiteId);
+		const label = activity.payload
+			? `${who} ${activity.kind}: ${activity.payload}`
+			: `${who} ${activity.kind}`;
+		this.liveActivities.set(activity.timiteId, { label, until: Date.now() + ACTIVITY_TTL_MS });
+		this.refreshActivities();
+		setTimeout(() => this.refreshActivities(), ACTIVITY_TTL_MS + 50);
+	}
+
+	private refreshActivities() {
+		const now = Date.now();
+		for (const [id, activity] of this.liveActivities) {
+			if (activity.until <= now) this.liveActivities.delete(id);
+		}
+		const labels = [...this.liveActivities.values()].map((activity) => activity.label).sort();
+		this.activityLabels.set(labels);
 	}
 
 	onPhaseChange(phase: ChannelPhase) {

@@ -1,9 +1,11 @@
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::process::Output;
 use std::process::Stdio;
 use std::time::Duration;
 
+use tokio::process::Child;
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -39,6 +41,10 @@ impl Shell {
         &self.workdir
     }
 
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
     pub async fn run(&self, cmd: &str) -> Result<String, ShellError> {
         let output = self.output("sh", &["-c", cmd]).await?;
         Ok(self.render_output(&output))
@@ -58,21 +64,32 @@ impl Shell {
             .map_err(Into::into)
     }
 
+    /// Starts a program in the workspace directory with its stdout piped; the caller
+    /// owns the timeout and the child is killed when dropped.
+    pub async fn spawn(&self, program: &str, args: &[&str]) -> Result<Child, ShellError> {
+        Ok(Command::new(program)
+            .args(args)
+            .current_dir(&self.workdir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?)
+    }
+
     fn render_output(&self, output: &Output) -> String {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         format!(
             "exit_code: {}\nstdout:\n{}\nstderr:\n{}",
-            exit_code(output),
+            exit_code(output.status),
             tail(stdout.trim_end(), self.max_output_chars),
             tail(stderr.trim_end(), self.max_output_chars),
         )
     }
 }
 
-pub fn exit_code(output: &Output) -> String {
-    output
-        .status
+pub fn exit_code(status: ExitStatus) -> String {
+    status
         .code()
         .map_or_else(|| "signal".to_string(), |code| code.to_string())
 }

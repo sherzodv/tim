@@ -5,6 +5,7 @@
 
 	let { space }: { space: TimSpace } = $props();
 	const timite = space.timite;
+	const activities = space.activities;
 
 	let inputValue = $state('');
 	let inputEl: HTMLTextAreaElement;
@@ -17,6 +18,11 @@
 		if (!inputEl) return;
 		inputEl.style.height = '0';
 		inputEl.style.height = inputEl.scrollHeight + 'px';
+	}
+
+	function handleInput() {
+		autoResize();
+		if (inputValue.trim()) space.notifyTyping();
 	}
 
 	$effect(() => {
@@ -76,14 +82,18 @@
 </script>
 
 <section class="command-line tim-theme" aria-label="Command line">
-	<div class="status-line" aria-label="Command status"></div>
+	<div class="status-line" aria-label="Command status">
+		{#if $activities.length}
+			<span class="status-text">{$activities.join(' · ')}</span>
+		{/if}
+	</div>
 	<div class="command-surface" aria-label="Command input area">
 		<CommandLinePrompt timite={$timite} />
 		<textarea
 			bind:this={inputEl}
 			bind:value={inputValue}
 			onkeydown={handleKeyDown}
-			oninput={autoResize}
+			oninput={handleInput}
 			placeholder="Type a message"
 			class="command-input"
 			rows="1"
@@ -108,6 +118,19 @@
 	.status-line {
 		min-height: 2.5rem;
 		border-bottom: 1px solid var(--tim-divider);
+		display: flex;
+		align-items: center;
+		padding: 0 1rem;
+	}
+
+	.status-text {
+		color: var(--tim-surface-text);
+		opacity: 0.6;
+		font-style: italic;
+		font-size: 1rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.command-surface {
