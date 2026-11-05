@@ -81,6 +81,7 @@ impl Memory {
             }
             Some(Event::EventTimiteConnected(_)) => None,
             Some(Event::EventTimiteDisconnected(_)) => None,
+            Some(Event::EventActivity(_)) => None,
             None => None,
         }
     }

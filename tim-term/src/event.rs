@@ -8,7 +8,7 @@ use tim_client::api::SpaceEvent;
 pub enum AppEvent {
     Key(KeyEvent),
     Paste(String),
-    Resize,
+    Redraw,
     Space(SpaceEvent),
 }
 
@@ -29,7 +29,7 @@ impl EventHandler {
             let app_event = match event {
                 CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => AppEvent::Key(key),
                 CrosstermEvent::Paste(text) => AppEvent::Paste(text),
-                CrosstermEvent::Resize(_, _) => AppEvent::Resize,
+                CrosstermEvent::Resize(_, _) => AppEvent::Redraw,
                 _ => continue,
             };
             if input_tx.send(app_event).is_err() {

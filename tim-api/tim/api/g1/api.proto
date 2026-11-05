@@ -56,6 +56,13 @@ message CallAbilityOutcome {
   optional string error = 3;
 }
 
+// Transient state of a timite, such as typing or thinking: delivered live, never stored.
+message Activity {
+  uint64 timite_id = 1;  // set by the server
+  string kind = 2;       // free-form, agreed between clients, e.g. "typing", "thinking"
+  string payload = 3;    // optional details
+}
+
 message DeclareAbilitiesReq {
   repeated Ability abilities = 1;
 }
@@ -73,7 +80,7 @@ message ListAbilitiesRes {
 
 message SpaceEvent {
   message Metadata {
-    uint64 id = 1;
+    uint64 id = 1;  // 0 for events that are delivered live only and never stored
     google.protobuf.Timestamp emitted_at = 2;
   }
   Metadata metadata = 1;
@@ -83,6 +90,7 @@ message SpaceEvent {
     EventCallAbilityOutcome event_call_ability_outcome = 4;
     EventTimiteConnected event_timite_connected = 5;
     EventTimiteDisconnected event_timite_disconnected = 6;
+    EventActivity event_activity = 7;
   }
 }
 
@@ -105,6 +113,10 @@ message EventTimiteConnected {
 
 message EventTimiteDisconnected {
   Timite timite = 1;
+}
+
+message EventActivity {
+  Activity activity = 1;
 }
 
 // --[ RPC req/res ]--
@@ -166,6 +178,13 @@ message SendCallAbilityOutcomeReq {
 message SendCallAbilityOutcomeRes {
 }
 
+message SendActivityReq {
+  Activity activity = 1;
+}
+
+message SendActivityRes {
+}
+
 message GetTimelineReq {
   uint64 offset = 1;
   uint32 size = 2;
@@ -185,6 +204,7 @@ service TimGrpcApi {
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);
   rpc SendCallAbility(SendCallAbilityReq) returns (SendCallAbilityRes);
   rpc SendCallAbilityOutcome(SendCallAbilityOutcomeReq) returns (SendCallAbilityOutcomeRes);
+  rpc SendActivity(SendActivityReq) returns (SendActivityRes);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
 
   rpc ListAbilities(ListAbilitiesReq) returns (ListAbilitiesRes);

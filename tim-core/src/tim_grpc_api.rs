@@ -14,6 +14,8 @@ use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
 use crate::api::ListAbilitiesRes;
+use crate::api::SendActivityReq;
+use crate::api::SendActivityRes;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendCallAbilityOutcomeRes;
 use crate::api::SendCallAbilityReq;
@@ -148,6 +150,18 @@ impl TimGrpcApi for TimGrpcApiService {
             .api
             .send_call_ability_outcome(&req.into_inner(), &session)
             .await
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_activity(
+        &self,
+        req: Request<SendActivityReq>,
+    ) -> Result<Response<SendActivityRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_activity(&req.into_inner(), &session)
             .map(Response::new);
         res.map_err(|e| Status::internal(e.to_string()))
     }

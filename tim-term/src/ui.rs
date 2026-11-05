@@ -43,7 +43,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
     online.sort_unstable();
 
-    let header = Line::from(vec![
+    let mut header = vec![
         Span::styled(" tim", Style::new().fg(Color::Cyan).bold()),
         Span::styled(" · ", Style::new().dim()),
         Span::styled(format!("@{}", app.my_nick), Style::new().fg(Color::Green)),
@@ -51,8 +51,15 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             format!(" · online: {}", online.join(", ")),
             Style::new().dim(),
         ),
-    ]);
-    frame.render_widget(Paragraph::new(header), area);
+    ];
+    let activities = app.active_activities();
+    if !activities.is_empty() {
+        header.push(Span::styled(
+            format!(" · {}", activities.join(", ")),
+            Style::new().fg(Color::Yellow).italic(),
+        ));
+    }
+    frame.render_widget(Paragraph::new(Line::from(header)), area);
 }
 
 /// Pre-wrapped lines let the scroll offset count from the bottom in visual lines.

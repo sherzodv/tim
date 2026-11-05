@@ -14,8 +14,10 @@ use tracing::error;
 
 use crate::api::space_event::Data as EventData;
 use crate::api::space_event::Metadata as EventMetadata;
+use crate::api::Activity;
 use crate::api::CallAbility;
 use crate::api::CallAbilityOutcome;
+use crate::api::EventActivity;
 use crate::api::EventCallAbility;
 use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
@@ -34,6 +36,8 @@ const LIVE_CAPACITY: usize = 1024;
 const SUBSCRIBER_BUFFER: usize = 16;
 /// Events read from storage per page while a subscription catches up.
 const REPLAY_PAGE: u32 = 100;
+/// Id of events that are delivered live only and never stored.
+const EPHEMERAL_ID: u64 = 0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimSpaceError {
@@ -102,6 +106,12 @@ fn event_timite_disconnected(timite: &Timite) -> EventData {
     })
 }
 
+fn event_activity(activity: &Activity) -> EventData {
+    EventData::EventActivity(EventActivity {
+        activity: Some(activity.clone()),
+    })
+}
+
 fn now_timestamp_ms() -> Timestamp {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -128,6 +138,7 @@ fn event_sender_id(event: &SpaceEvent) -> Option<u64> {
     match event.data.as_ref()? {
         EventData::EventNewMessage(data) => data.message.as_ref().map(|msg| msg.sender_id),
         EventData::EventCallAbilityOutcome(data) => Some(data.sender_id),
+        EventData::EventActivity(data) => data.activity.as_ref().map(|activity| activity.timite_id),
         _ => None,
     }
 }
@@ -165,6 +176,10 @@ impl TimSpace {
         )
     }
 
+    pub fn emit_activity(&self, activity: &Activity) {
+        self.emit(&mut self.lock_state(), event_activity(activity));
+    }
+
     pub fn subscribe(
         self: &Arc<Self>,
         req: &SubscribeToSpaceReq,
@@ -196,6 +211,15 @@ impl TimSpace {
         // Fails only without live subscriptions; the event is already in storage.
         let _ = self.live.send(event);
         Ok(())
+    }
+
+    /// Hands an ephemeral event to live subscriptions, ordered with appends by the same lock.
+    fn emit(&self, _state: &mut SpaceState, data: EventData) {
+        let event = SpaceEvent {
+            metadata: event_metadata(EPHEMERAL_ID),
+            data: Some(data),
+        };
+        let _ = self.live.send(event);
     }
 
     fn attach(
@@ -287,10 +311,12 @@ impl Subscription {
     /// Returns `false` once the client stopped reading.
     async fn forward(&mut self, event: SpaceEvent) -> bool {
         let id = event_id(&event);
-        if id <= self.cursor {
-            return true;
+        if id != EPHEMERAL_ID {
+            if id <= self.cursor {
+                return true;
+            }
+            self.cursor = id;
         }
-        self.cursor = id;
         if self.is_own(&event) {
             return true;
         }

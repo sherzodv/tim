@@ -1,10 +1,17 @@
 use std::collections::HashMap;
+use std::time::Duration;
+use std::time::Instant;
 
 use ratatui::style::Style;
 use tui_textarea::TextArea;
 
 use tim_client::api::space_event::Data as EventData;
-use tim_client::api::{CallAbility, CallAbilityOutcome, Message, SpaceEvent, Timite};
+use tim_client::api::{Activity, CallAbility, CallAbilityOutcome, Message, SpaceEvent, Timite};
+
+/// How long a activity such as "typing" stays visible after it was received.
+pub const ACTIVITY_TTL: Duration = Duration::from_secs(5);
+/// Minimal pause between own "typing" activities.
+const TYPING_INTERVAL: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub enum TimelineItem {
@@ -33,6 +40,13 @@ pub enum TimelineItem {
     },
 }
 
+/// A transient state another timite reported, shown until `until`.
+struct LiveActivity {
+    nick: String,
+    kind: String,
+    until: Instant,
+}
+
 pub struct App {
     pub running: bool,
     pub input: TextArea<'static>,
@@ -43,6 +57,9 @@ pub struct App {
     pub timeline_height: usize,
     pub online_timites: HashMap<u64, Timite>,
     pub timite_nick_cache: HashMap<u64, String>,
+    activities: HashMap<u64, LiveActivity>,
+    last_typing: Option<Instant>,
+    pub my_timite_id: u64,
     pub my_nick: String,
 }
 
@@ -65,6 +82,9 @@ impl App {
             timeline_height: 0,
             online_timites: HashMap::new(),
             timite_nick_cache,
+            activities: HashMap::new(),
+            last_typing: None,
+            my_timite_id,
             my_nick,
         }
     }
@@ -81,7 +101,37 @@ impl App {
     pub fn take_input(&mut self) -> String {
         let content = self.input.lines().join("\n");
         self.input = new_input();
+        self.last_typing = None;
         content
+    }
+
+    /// True when a "typing" activity should go out now.
+    pub fn typing_due(&mut self) -> bool {
+        if self.input.lines().iter().all(|line| line.is_empty()) {
+            return false;
+        }
+        let now = Instant::now();
+        if self
+            .last_typing
+            .is_some_and(|last| now.duration_since(last) < TYPING_INTERVAL)
+        {
+            return false;
+        }
+        self.last_typing = Some(now);
+        true
+    }
+
+    /// Activities still in effect, as "nick kind", sorted.
+    pub fn active_activities(&self) -> Vec<String> {
+        let now = Instant::now();
+        let mut active: Vec<String> = self
+            .activities
+            .values()
+            .filter(|activity| activity.until > now)
+            .map(|activity| format!("{} {}", activity.nick, activity.kind))
+            .collect();
+        active.sort_unstable();
+        active
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
@@ -125,6 +175,11 @@ impl App {
                 EventData::EventCallAbilityOutcome(cao) => {
                     if let Some(outcome) = cao.call_ability_outcome {
                         self.ability_outcome(outcome, timestamp);
+                    }
+                }
+                EventData::EventActivity(es) => {
+                    if let Some(activity) = es.activity {
+                        self.activity_received(activity);
                     }
                 }
             }
@@ -179,6 +234,25 @@ impl App {
             success: outcome.error.is_none(),
             timestamp,
         });
+    }
+
+    fn activity_received(&mut self, activity: Activity) {
+        if activity.timite_id == self.my_timite_id {
+            return;
+        }
+        let nick = self
+            .timite_nick_cache
+            .get(&activity.timite_id)
+            .cloned()
+            .unwrap_or_else(|| format!("user-{}", activity.timite_id));
+        self.activities.insert(
+            activity.timite_id,
+            LiveActivity {
+                nick,
+                kind: activity.kind,
+                until: Instant::now() + ACTIVITY_TTL,
+            },
+        );
     }
 
     pub fn add_timite_to_cache(&mut self, timite: &Timite) {

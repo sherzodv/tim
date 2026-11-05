@@ -9,12 +9,15 @@ use tracing::instrument;
 use tracing::Span;
 
 use crate::api::space_event::Data as SpaceEventData;
+use crate::api::Activity;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
 use crate::api::ErrorCode;
 use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesRes;
+use crate::api::SendActivityReq;
+use crate::api::SendActivityRes;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendCallAbilityOutcomeRes;
 use crate::api::SendCallAbilityReq;
@@ -278,6 +281,27 @@ impl TimApi {
             .publish_call_outcome(outcome, session.timite_id)?;
         Ok(SendCallAbilityOutcomeRes {})
     }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_activity(
+        &self,
+        req: &SendActivityReq,
+        session: &Session,
+    ) -> Result<SendActivityRes, TimApiError> {
+        let activity = req
+            .activity
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("activity required".into()))?;
+        self.t_space.emit_activity(&Activity {
+            timite_id: session.timite_id,
+            ..activity.clone()
+        });
+        Ok(SendActivityRes {})
+    }
 }
 
 fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
@@ -311,6 +335,7 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
                     ids.insert(timite.id);
                 }
             }
+            SpaceEventData::EventActivity(_) => {}
         }
     }
     ids

@@ -3,12 +3,14 @@ use std::str::FromStr;
 
 use crate::api::tim_grpc_api_client::TimGrpcApiClient;
 use crate::api::Ability;
+use crate::api::Activity;
 use crate::api::CallAbilityOutcome;
 use crate::api::ClientInfo;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
+use crate::api::SendActivityReq;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendMessageReq;
 use crate::api::SpaceEvent;
@@ -157,6 +159,21 @@ impl TimClient {
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_message(req).await?;
+        Ok(())
+    }
+
+    /// Shares transient state such as "typing" or "thinking"; delivered live, never stored.
+    pub async fn send_activity(&mut self, kind: &str, payload: &str) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendActivityReq {
+            activity: Some(Activity {
+                timite_id: 0,
+                kind: kind.to_string(),
+                payload: payload.to_string(),
+            }),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_activity(req).await?;
         Ok(())
     }
 
