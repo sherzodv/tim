@@ -25,6 +25,7 @@
    - Prefer data flow over deeply nested branches.
 
 5. **Review-driven iteration**
+   - Always start a feature on its own branch; `main` only receives merges.
    - Propose patch → review → refine → merge.
    - Suggest simplifications and edge cases proactively.
 
