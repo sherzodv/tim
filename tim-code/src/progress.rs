@@ -1,5 +1,6 @@
-//! Reports one running task to the space: its start, every step and tool call, its finish.
+//! Reports one running task to the space: its start, model events, tools and finish.
 
+use tim_client::api::TaskModelEvent;
 use tim_client::api::TaskToolCall;
 use tim_client::client::TimClient;
 use tokio::sync::mpsc;
@@ -9,6 +10,7 @@ use tracing::warn;
 enum Report {
     Step(String),
     ToolCall(TaskToolCall),
+    ModelEvent(TaskModelEvent),
 }
 
 /// Keeps the space informed about one running task; `finish` reports its end.
@@ -34,6 +36,11 @@ impl Reporter {
                     Report::ToolCall(call) => {
                         client
                             .send_task_tool_call(TaskToolCall { task_id, ..call })
+                            .await
+                    }
+                    Report::ModelEvent(event) => {
+                        client
+                            .send_task_model_event(TaskModelEvent { task_id, ..event })
                             .await
                     }
                 };
@@ -75,6 +82,16 @@ impl Reporter {
             arguments,
             output,
             error,
+        }));
+    }
+
+    /// Records one JSON event from the coding engine in its original order.
+    pub fn model_event(&self, engine: &str, payload: String) {
+        let _ = self.reports.send(Report::ModelEvent(TaskModelEvent {
+            timite_id: 0,
+            task_id: 0,
+            engine: engine.to_string(),
+            payload,
         }));
     }
 }

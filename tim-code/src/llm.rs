@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde_json::json;
 use tim_llm::llm::build_llm;
 use tim_llm::llm::Llm;
 use tim_llm::llm::LlmConf;
@@ -83,6 +84,10 @@ impl LlmCode {
                 tools: &definitions,
             };
             let turn = self.llm.turn(&req).await?;
+            reporter.model_event(
+                "llm",
+                json!({"type": "turn", "text": &turn.text, "items": &turn.items}).to_string(),
+            );
             items.push(LlmItem::Turn(turn.items));
 
             if turn.tool_calls.is_empty() {

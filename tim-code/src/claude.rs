@@ -256,6 +256,7 @@ impl ClaudeCode {
             if line.trim().is_empty() {
                 continue;
             }
+            reporter.model_event("claude", line.clone());
             match serde_json::from_str::<StreamEvent>(&line)? {
                 StreamEvent::Assistant { message } => {
                     for block in message.content {

@@ -20,6 +20,7 @@ use crate::api::EventCallAbility;
 use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
 use crate::api::EventTaskFinished;
+use crate::api::EventTaskModelEvent;
 use crate::api::EventTaskStarted;
 use crate::api::EventTaskStep;
 use crate::api::EventTaskToolCall;
@@ -31,6 +32,7 @@ use crate::api::Message;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
+use crate::api::TaskModelEvent;
 use crate::api::TaskStarted;
 use crate::api::TaskStep;
 use crate::api::TaskToolCall;
@@ -144,6 +146,12 @@ fn event_task_tool_call(task_tool_call: TaskToolCall) -> EventData {
     })
 }
 
+fn event_task_model_event(model_event: TaskModelEvent) -> EventData {
+    EventData::EventTaskModelEvent(EventTaskModelEvent {
+        task_model_event: Some(model_event),
+    })
+}
+
 fn event_task_finished(task_finished: TaskFinished) -> EventData {
     EventData::EventTaskFinished(EventTaskFinished {
         task_finished: Some(task_finished),
@@ -181,6 +189,7 @@ fn event_sender_id(event: &SpaceEvent) -> Option<u64> {
         EventData::EventTaskStarted(data) => data.task_started.as_ref().map(|t| t.timite_id),
         EventData::EventTaskStep(data) => data.task_step.as_ref().map(|t| t.timite_id),
         EventData::EventTaskToolCall(data) => data.task_tool_call.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskModelEvent(data) => data.task_model_event.as_ref().map(|t| t.timite_id),
         EventData::EventTaskFinished(data) => data.task_finished.as_ref().map(|t| t.timite_id),
         _ => None,
     }
@@ -246,6 +255,13 @@ impl TimSpace {
 
     pub fn publish_task_tool_call(&self, tool_call: TaskToolCall) -> Result<(), TimSpaceError> {
         self.append(&mut self.lock_state(), event_task_tool_call(tool_call))
+    }
+
+    pub fn publish_task_model_event(
+        &self,
+        model_event: TaskModelEvent,
+    ) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_task_model_event(model_event))
     }
 
     pub fn publish_task_finished(&self, task_finished: TaskFinished) -> Result<(), TimSpaceError> {

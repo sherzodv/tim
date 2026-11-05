@@ -22,6 +22,8 @@ use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskFinishedRes;
+use crate::api::SendTaskModelEventReq;
+use crate::api::SendTaskModelEventRes;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStartedRes;
 use crate::api::SendTaskStepReq;
@@ -36,6 +38,7 @@ use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
+use crate::api::TaskModelEvent;
 use crate::api::TaskStep;
 use crate::api::TaskToolCall;
 use crate::api::Timite;
@@ -354,6 +357,27 @@ impl TimApi {
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
+    pub fn send_task_model_event(
+        &self,
+        req: &SendTaskModelEventReq,
+        session: &Session,
+    ) -> Result<SendTaskModelEventRes, TimApiError> {
+        let model_event = req
+            .model_event
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("model event required".into()))?;
+        self.t_space.publish_task_model_event(TaskModelEvent {
+            timite_id: session.timite_id,
+            ..model_event.clone()
+        })?;
+        Ok(SendTaskModelEventRes {})
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub fn send_task_finished(
         &self,
         req: &SendTaskFinishedReq,
@@ -421,6 +445,9 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
             }
             SpaceEventData::EventTaskToolCall(payload) => {
                 ids.extend(payload.task_tool_call.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskModelEvent(payload) => {
+                ids.extend(payload.task_model_event.as_ref().map(|t| t.timite_id));
             }
             SpaceEventData::EventTaskFinished(payload) => {
                 ids.extend(payload.task_finished.as_ref().map(|t| t.timite_id));

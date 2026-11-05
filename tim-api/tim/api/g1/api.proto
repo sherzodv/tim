@@ -97,6 +97,14 @@ message TaskToolCall {
   optional string error = 6;
 }
 
+// One raw event from the coding engine, preserved for session replay.
+message TaskModelEvent {
+  uint64 timite_id = 1;  // set by the server
+  uint64 task_id = 2;
+  string engine = 3;     // e.g. claude or llm
+  string payload = 4;    // raw engine event or an assembled model turn, as JSON
+}
+
 message TaskFinished {
   uint64 timite_id = 1;  // set by the server
   uint64 task_id = 2;
@@ -135,6 +143,7 @@ message SpaceEvent {
     EventTaskStep event_task_step = 10;
     EventTaskFinished event_task_finished = 11;
     EventTaskToolCall event_task_tool_call = 12;
+    EventTaskModelEvent event_task_model_event = 13;
   }
 }
 
@@ -181,6 +190,10 @@ message EventTaskFinished {
 
 message EventTaskToolCall {
   TaskToolCall task_tool_call = 1;
+}
+
+message EventTaskModelEvent {
+  TaskModelEvent task_model_event = 1;
 }
 
 // --[ RPC req/res ]--
@@ -270,6 +283,13 @@ message SendTaskToolCallReq {
 message SendTaskToolCallRes {
 }
 
+message SendTaskModelEventReq {
+  TaskModelEvent model_event = 1;
+}
+
+message SendTaskModelEventRes {
+}
+
 message SendTaskFinishedReq {
   uint64 task_id = 1;
 }
@@ -300,6 +320,7 @@ service TimGrpcApi {
   rpc SendTaskStarted(SendTaskStartedReq) returns (SendTaskStartedRes);
   rpc SendTaskStep(SendTaskStepReq) returns (SendTaskStepRes);
   rpc SendTaskToolCall(SendTaskToolCallReq) returns (SendTaskToolCallRes);
+  rpc SendTaskModelEvent(SendTaskModelEventReq) returns (SendTaskModelEventRes);
   rpc SendTaskFinished(SendTaskFinishedReq) returns (SendTaskFinishedRes);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
 
