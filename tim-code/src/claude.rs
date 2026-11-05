@@ -23,7 +23,7 @@ use tokio::time::sleep;
 use tokio::time::timeout;
 use tracing::info;
 
-use crate::activity::Reporter;
+use crate::progress::Reporter;
 use crate::shell::Shell;
 use crate::shell::ShellError;
 use crate::text::head;
@@ -211,7 +211,7 @@ impl ClaudeCode {
         })
     }
 
-    /// Reads the turn's events, turning tool uses and narration into activity steps.
+    /// Reads the turn's events, turning tool uses and narration into task steps.
     async fn follow(
         &self,
         events: &mut Lines<BufReader<ChildStdout>>,

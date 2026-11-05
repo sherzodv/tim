@@ -55,10 +55,10 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Style::new().dim(),
         ),
     ];
-    let activities = app.active_activities();
-    if !activities.is_empty() {
+    let status = app.status();
+    if !status.is_empty() {
         header.push(Span::styled(
-            format!(" · {}", activities.join(", ")),
+            format!(" · {}", status.join(", ")),
             Style::new().fg(Color::Yellow).italic(),
         ));
     }
@@ -138,6 +138,22 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
                 format!("{ability_name} {status}"),
             )]
         }
+        TimelineItem::TaskStarted {
+            username,
+            task,
+            timestamp,
+        } => vec![system_line(
+            format_time(*timestamp),
+            format!("{username} started: {task}"),
+        )],
+        TimelineItem::TaskFinished {
+            username,
+            task,
+            timestamp,
+        } => vec![system_line(
+            format_time(*timestamp),
+            format!("{username} finished: {task}"),
+        )],
     }
 }
 

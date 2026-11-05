@@ -14,13 +14,12 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tim_client::agent::{Agent, AgentError, AgentRunner};
-use tim_client::api::space_event::Data as EventData;
 use tim_client::api::SpaceEvent;
 use tim_client::client::{TimClient, TimClientConf};
 use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::app::{App, ACTIVITY_TTL};
+use crate::app::App;
 use crate::error::Result;
 use crate::event::{AppEvent, EventHandler};
 
@@ -141,12 +140,7 @@ async fn run_app(
             AppEvent::Key(key) => handle_key(app, client, key).await?,
             AppEvent::Paste(text) => app.paste(&text),
             AppEvent::Redraw => {}
-            AppEvent::Space(event) => {
-                if matches!(event.data, Some(EventData::EventActivity(_))) {
-                    schedule_redraw(events.sender(), ACTIVITY_TTL);
-                }
-                app.handle_space_event(event);
-            }
+            AppEvent::Space(event) => app.handle_space_event(event),
         }
     }
 
@@ -162,6 +156,7 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         KeyCode::Enter if shift => app.input.insert_newline(),
         KeyCode::Enter => {
             let content = app.take_input();
+            report_typing(app, client).await?;
             if !content.trim().is_empty() {
                 client.send_message(&content).await?;
             }
@@ -172,23 +167,18 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         KeyCode::Down if app.input.lines().len() == 1 => app.scroll_down(1),
         _ => {
             app.input.input(key);
-            if app.typing_due() {
-                let mut client = client.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = client.send_activity("typing", "").await {
-                        tracing::warn!(%error, "typing activity failed");
-                    }
-                });
-            }
+            report_typing(app, client).await?;
         }
     }
     Ok(())
 }
 
-/// Wakes the UI once a activity has expired so the header drops it.
-fn schedule_redraw(tx: mpsc::UnboundedSender<AppEvent>, after: std::time::Duration) {
-    tokio::spawn(async move {
-        tokio::time::sleep(after).await;
-        let _ = tx.send(AppEvent::Redraw);
-    });
+/// Tells the space when this timite starts or stops typing.
+async fn report_typing(app: &mut App, client: &mut TimClient) -> Result<()> {
+    match app.typing_transition() {
+        Some(true) => client.send_typing_started().await?,
+        Some(false) => client.send_typing_stopped().await?,
+        None => {}
+    }
+    Ok(())
 }

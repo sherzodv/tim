@@ -80,7 +80,11 @@ impl Memory {
             }
             Some(Event::EventTimiteConnected(_)) => None,
             Some(Event::EventTimiteDisconnected(_)) => None,
-            Some(Event::EventActivity(_)) => None,
+            Some(Event::EventTypingStarted(_)) => None,
+            Some(Event::EventTypingStopped(_)) => None,
+            Some(Event::EventTaskStarted(_)) => None,
+            Some(Event::EventTaskStep(_)) => None,
+            Some(Event::EventTaskFinished(_)) => None,
             None => None,
         }
     }

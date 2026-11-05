@@ -15,17 +15,20 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
-use crate::activity::Reporter;
 use crate::claude::ClaudeCode;
 use crate::claude::ClaudeError;
 use crate::git::GitError;
 use crate::llm::LlmCode;
 use crate::llm::LlmCodeError;
+use crate::progress::Reporter;
+use crate::text::head;
 use crate::tools;
 use crate::tools::ToolError;
 use crate::tools::Tools;
 
 const CODE_TASK: &str = "code.task";
+/// How much of a chat request names the task it starts.
+const TASK_CHARS: usize = 80;
 
 #[derive(Clone)]
 pub struct CodeConf {
@@ -125,7 +128,7 @@ impl CodeAgent {
         let engine = self.engine.clone();
         let mut client = self.client.clone();
         tokio::spawn(async move {
-            let reporter = Reporter::start(client.clone(), CODE_TASK.to_string());
+            let reporter = Reporter::start(client.clone(), head(&task, TASK_CHARS));
             let result = report(&tools, &engine, &task, &reporter).await;
             drop(reporter);
             let reply = match result {

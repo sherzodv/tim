@@ -1,17 +1,15 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::time::Duration;
-use std::time::Instant;
+use std::collections::HashSet;
 
 use ratatui::style::Style;
 use tui_textarea::TextArea;
 
 use tim_client::api::space_event::Data as EventData;
-use tim_client::api::{Activity, CallAbility, CallAbilityOutcome, Message, SpaceEvent, Timite};
-
-/// How long a activity such as "typing" stays visible after it was received.
-pub const ACTIVITY_TTL: Duration = Duration::from_secs(5);
-/// Minimal pause between own "typing" activities.
-const TYPING_INTERVAL: Duration = Duration::from_secs(3);
+use tim_client::api::{
+    CallAbility, CallAbilityOutcome, Message, SpaceEvent, TaskFinished, TaskStarted, TaskStep,
+    Timite,
+};
 
 #[derive(Debug, Clone)]
 pub enum TimelineItem {
@@ -38,14 +36,24 @@ pub enum TimelineItem {
         success: bool,
         timestamp: u64,
     },
+    TaskStarted {
+        username: String,
+        task: String,
+        timestamp: u64,
+    },
+    TaskFinished {
+        username: String,
+        task: String,
+        timestamp: u64,
+    },
 }
 
-/// A transient state another timite reported, shown until `until`.
-struct LiveActivity {
+/// A task another timite reported and has not finished yet.
+struct LiveTask {
+    timite_id: u64,
     username: String,
-    kind: String,
-    payload: String,
-    until: Instant,
+    task: String,
+    step: Option<String>,
 }
 
 pub struct App {
@@ -58,8 +66,11 @@ pub struct App {
     pub timeline_height: usize,
     pub online_timites: HashMap<u64, Timite>,
     pub usernames: HashMap<u64, String>,
-    activities: HashMap<u64, LiveActivity>,
-    last_typing: Option<Instant>,
+    typing: HashSet<u64>,
+    /// Running tasks by task id, in start order.
+    tasks: BTreeMap<u64, LiveTask>,
+    /// Whether the space was told that this timite is typing.
+    typing_sent: bool,
     pub my_timite_id: u64,
     pub my_username: String,
 }
@@ -83,8 +94,9 @@ impl App {
             timeline_height: 0,
             online_timites: HashMap::new(),
             usernames,
-            activities: HashMap::new(),
-            last_typing: None,
+            typing: HashSet::new(),
+            tasks: BTreeMap::new(),
+            typing_sent: false,
             my_timite_id,
             my_username,
         }
@@ -102,43 +114,33 @@ impl App {
     pub fn take_input(&mut self) -> String {
         let content = self.input.lines().join("\n");
         self.input = new_input();
-        self.last_typing = None;
         content
     }
 
-    /// True when a "typing" activity should go out now.
-    pub fn typing_due(&mut self) -> bool {
-        if self.input.lines().iter().all(|line| line.is_empty()) {
-            return false;
+    /// Whether own typing changed with the input: `Some(true)` started, `Some(false)` stopped.
+    pub fn typing_transition(&mut self) -> Option<bool> {
+        let typing = self.input.lines().iter().any(|line| !line.is_empty());
+        if typing == self.typing_sent {
+            return None;
         }
-        let now = Instant::now();
-        if self
-            .last_typing
-            .is_some_and(|last| now.duration_since(last) < TYPING_INTERVAL)
-        {
-            return false;
-        }
-        self.last_typing = Some(now);
-        true
+        self.typing_sent = typing;
+        Some(typing)
     }
 
-    /// Activities still in effect, as "username kind", sorted.
-    pub fn active_activities(&self) -> Vec<String> {
-        let now = Instant::now();
-        let mut active: Vec<String> = self
-            .activities
-            .values()
-            .filter(|activity| activity.until > now)
-            .map(|activity| match activity.payload.is_empty() {
-                true => format!("{} {}", activity.username, activity.kind),
-                false => format!(
-                    "{} {}: {}",
-                    activity.username, activity.kind, activity.payload
-                ),
-            })
+    /// What other timites are doing right now, typing first, then tasks in start order.
+    pub fn status(&self) -> Vec<String> {
+        let mut status: Vec<String> = self
+            .typing
+            .iter()
+            .filter(|id| **id != self.my_timite_id)
+            .map(|id| format!("{} typing", self.username(*id)))
             .collect();
-        active.sort_unstable();
-        active
+        status.sort_unstable();
+        status.extend(self.tasks.values().map(|task| {
+            let detail = task.step.as_deref().unwrap_or(&task.task);
+            format!("{} working: {detail}", task.username)
+        }));
+        status
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
@@ -157,50 +159,74 @@ impl App {
             .map(|t| t.seconds as u64 * 1000 + t.nanos as u64 / 1_000_000)
             .unwrap_or(0);
 
-        if let Some(data) = event.data {
-            match data {
-                EventData::EventNewMessage(msg) => {
-                    if let Some(message) = msg.message {
-                        self.add_message(message, timestamp);
-                    }
+        let Some(data) = event.data else {
+            return;
+        };
+        match data {
+            EventData::EventNewMessage(e) => {
+                if let Some(message) = e.message {
+                    self.add_message(message, timestamp);
                 }
-                EventData::EventTimiteConnected(tc) => {
-                    if let Some(timite) = tc.timite {
-                        self.timite_connected(timite, timestamp);
-                    }
+            }
+            EventData::EventTimiteConnected(e) => {
+                if let Some(timite) = e.timite {
+                    self.timite_connected(timite, timestamp);
                 }
-                EventData::EventTimiteDisconnected(td) => {
-                    if let Some(timite) = td.timite {
-                        self.timite_disconnected(timite, timestamp);
-                    }
+            }
+            EventData::EventTimiteDisconnected(e) => {
+                if let Some(timite) = e.timite {
+                    self.timite_disconnected(timite, timestamp);
                 }
-                EventData::EventCallAbility(ca) => {
-                    if let Some(call) = ca.call_ability {
-                        self.ability_called(call, timestamp);
-                    }
+            }
+            EventData::EventCallAbility(e) => {
+                if let Some(call) = e.call_ability {
+                    self.ability_called(call, timestamp);
                 }
-                EventData::EventCallAbilityOutcome(cao) => {
-                    if let Some(outcome) = cao.call_ability_outcome {
-                        self.ability_outcome(outcome, timestamp);
-                    }
+            }
+            EventData::EventCallAbilityOutcome(e) => {
+                if let Some(outcome) = e.call_ability_outcome {
+                    self.ability_outcome(outcome, timestamp);
                 }
-                EventData::EventActivity(es) => {
-                    if let Some(activity) = es.activity {
-                        self.activity_received(activity);
-                    }
+            }
+            EventData::EventTypingStarted(e) => {
+                if let Some(typing) = e.typing_started {
+                    self.typing.insert(typing.timite_id);
+                }
+            }
+            EventData::EventTypingStopped(e) => {
+                if let Some(typing) = e.typing_stopped {
+                    self.typing.remove(&typing.timite_id);
+                }
+            }
+            EventData::EventTaskStarted(e) => {
+                if let Some(task) = e.task_started {
+                    self.task_started(task, timestamp);
+                }
+            }
+            EventData::EventTaskStep(e) => {
+                if let Some(step) = e.task_step {
+                    self.task_step(step);
+                }
+            }
+            EventData::EventTaskFinished(e) => {
+                if let Some(task) = e.task_finished {
+                    self.task_finished(task, timestamp);
                 }
             }
         }
     }
 
-    fn add_message(&mut self, message: Message, timestamp: u64) {
-        let sender = self
-            .usernames
-            .get(&message.sender_id)
+    fn username(&self, timite_id: u64) -> String {
+        self.usernames
+            .get(&timite_id)
             .cloned()
-            .unwrap_or_else(|| format!("user-{}", message.sender_id));
+            .unwrap_or_else(|| format!("user-{timite_id}"))
+    }
+
+    fn add_message(&mut self, message: Message, timestamp: u64) {
+        self.typing.remove(&message.sender_id);
         self.timeline.push(TimelineItem::Message {
-            sender,
+            sender: self.username(message.sender_id),
             content: message.content,
             timestamp,
         });
@@ -218,6 +244,8 @@ impl App {
 
     fn timite_disconnected(&mut self, timite: Timite, timestamp: u64) {
         self.online_timites.remove(&timite.id);
+        self.typing.remove(&timite.id);
+        self.tasks.retain(|_, task| task.timite_id != timite.id);
         self.timeline.push(TimelineItem::TimiteDisconnected {
             username: timite.username,
             timestamp,
@@ -225,13 +253,8 @@ impl App {
     }
 
     fn ability_called(&mut self, call: CallAbility, timestamp: u64) {
-        let caller = self
-            .usernames
-            .get(&call.sender_id)
-            .cloned()
-            .unwrap_or_else(|| format!("user-{}", call.sender_id));
         self.timeline.push(TimelineItem::AbilityCall {
-            caller,
+            caller: self.username(call.sender_id),
             ability_name: call.name,
             timestamp,
         });
@@ -245,24 +268,41 @@ impl App {
         });
     }
 
-    fn activity_received(&mut self, activity: Activity) {
-        if activity.timite_id == self.my_timite_id {
-            return;
-        }
-        let username = self
-            .usernames
-            .get(&activity.timite_id)
-            .cloned()
-            .unwrap_or_else(|| format!("user-{}", activity.timite_id));
-        self.activities.insert(
-            activity.timite_id,
-            LiveActivity {
+    fn task_started(&mut self, task: TaskStarted, timestamp: u64) {
+        let username = self.username(task.timite_id);
+        self.timeline.push(TimelineItem::TaskStarted {
+            username: username.clone(),
+            task: task.task.clone(),
+            timestamp,
+        });
+        self.tasks.insert(
+            task.task_id,
+            LiveTask {
+                timite_id: task.timite_id,
                 username,
-                kind: activity.kind,
-                payload: activity.payload,
-                until: Instant::now() + ACTIVITY_TTL,
+                task: task.task,
+                step: None,
             },
         );
+    }
+
+    fn task_step(&mut self, step: TaskStep) {
+        if let Some(task) = self.tasks.get_mut(&step.task_id) {
+            task.step = Some(step.step);
+        }
+    }
+
+    fn task_finished(&mut self, finished: TaskFinished, timestamp: u64) {
+        let task = self
+            .tasks
+            .remove(&finished.task_id)
+            .map(|task| task.task)
+            .unwrap_or_else(|| format!("task-{}", finished.task_id));
+        self.timeline.push(TimelineItem::TaskFinished {
+            username: self.username(finished.timite_id),
+            task,
+            timestamp,
+        });
     }
 
     pub fn add_timite_to_cache(&mut self, timite: &Timite) {

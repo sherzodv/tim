@@ -14,19 +14,27 @@ use tracing::error;
 
 use crate::api::space_event::Data as EventData;
 use crate::api::space_event::Metadata as EventMetadata;
-use crate::api::Activity;
 use crate::api::CallAbility;
 use crate::api::CallAbilityOutcome;
-use crate::api::EventActivity;
 use crate::api::EventCallAbility;
 use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
+use crate::api::EventTaskFinished;
+use crate::api::EventTaskStarted;
+use crate::api::EventTaskStep;
 use crate::api::EventTimiteConnected;
 use crate::api::EventTimiteDisconnected;
+use crate::api::EventTypingStarted;
+use crate::api::EventTypingStopped;
 use crate::api::Message;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::TaskFinished;
+use crate::api::TaskStarted;
+use crate::api::TaskStep;
 use crate::api::Timite;
+use crate::api::TypingStarted;
+use crate::api::TypingStopped;
 use crate::tim_storage::TimStorage;
 use crate::tim_storage::TimStorageError;
 
@@ -36,8 +44,6 @@ const LIVE_CAPACITY: usize = 1024;
 const SUBSCRIBER_BUFFER: usize = 16;
 /// Events read from storage per page while a subscription catches up.
 const REPLAY_PAGE: u32 = 100;
-/// Id of events that are delivered live only and never stored.
-const EPHEMERAL_ID: u64 = 0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TimSpaceError {
@@ -106,9 +112,33 @@ fn event_timite_disconnected(timite: &Timite) -> EventData {
     })
 }
 
-fn event_activity(activity: &Activity) -> EventData {
-    EventData::EventActivity(EventActivity {
-        activity: Some(activity.clone()),
+fn event_typing_started(timite_id: u64) -> EventData {
+    EventData::EventTypingStarted(EventTypingStarted {
+        typing_started: Some(TypingStarted { timite_id }),
+    })
+}
+
+fn event_typing_stopped(timite_id: u64) -> EventData {
+    EventData::EventTypingStopped(EventTypingStopped {
+        typing_stopped: Some(TypingStopped { timite_id }),
+    })
+}
+
+fn event_task_started(task_started: TaskStarted) -> EventData {
+    EventData::EventTaskStarted(EventTaskStarted {
+        task_started: Some(task_started),
+    })
+}
+
+fn event_task_step(task_step: TaskStep) -> EventData {
+    EventData::EventTaskStep(EventTaskStep {
+        task_step: Some(task_step),
+    })
+}
+
+fn event_task_finished(task_finished: TaskFinished) -> EventData {
+    EventData::EventTaskFinished(EventTaskFinished {
+        task_finished: Some(task_finished),
     })
 }
 
@@ -133,12 +163,16 @@ fn event_id(event: &SpaceEvent) -> u64 {
     event.metadata.as_ref().map(|meta| meta.id).unwrap_or(0)
 }
 
-/// Timite whose own activity the event reports; `None` for events every subscriber receives.
+/// Timite whose own doing the event reports; `None` for events every subscriber receives.
 fn event_sender_id(event: &SpaceEvent) -> Option<u64> {
     match event.data.as_ref()? {
         EventData::EventNewMessage(data) => data.message.as_ref().map(|msg| msg.sender_id),
         EventData::EventCallAbilityOutcome(data) => Some(data.sender_id),
-        EventData::EventActivity(data) => data.activity.as_ref().map(|activity| activity.timite_id),
+        EventData::EventTypingStarted(data) => data.typing_started.as_ref().map(|t| t.timite_id),
+        EventData::EventTypingStopped(data) => data.typing_stopped.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskStarted(data) => data.task_started.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskStep(data) => data.task_step.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskFinished(data) => data.task_finished.as_ref().map(|t| t.timite_id),
         _ => None,
     }
 }
@@ -176,8 +210,33 @@ impl TimSpace {
         )
     }
 
-    pub fn emit_activity(&self, activity: &Activity) {
-        self.emit(&mut self.lock_state(), event_activity(activity));
+    pub fn publish_typing_started(&self, timite_id: u64) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_typing_started(timite_id))
+    }
+
+    pub fn publish_typing_stopped(&self, timite_id: u64) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_typing_stopped(timite_id))
+    }
+
+    /// Returns the task id: the id of the event that started it.
+    pub fn publish_task_started(&self, timite_id: u64, task: &str) -> Result<u64, TimSpaceError> {
+        let mut state = self.lock_state();
+        let task_id = state.next_id;
+        let task_started = TaskStarted {
+            timite_id,
+            task_id,
+            task: task.to_string(),
+        };
+        self.append(&mut state, event_task_started(task_started))?;
+        Ok(task_id)
+    }
+
+    pub fn publish_task_step(&self, task_step: TaskStep) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_task_step(task_step))
+    }
+
+    pub fn publish_task_finished(&self, task_finished: TaskFinished) -> Result<(), TimSpaceError> {
+        self.append(&mut self.lock_state(), event_task_finished(task_finished))
     }
 
     pub fn subscribe(
@@ -211,15 +270,6 @@ impl TimSpace {
         // Fails only without live subscriptions; the event is already in storage.
         let _ = self.live.send(event);
         Ok(())
-    }
-
-    /// Hands an ephemeral event to live subscriptions, ordered with appends by the same lock.
-    fn emit(&self, _state: &mut SpaceState, data: EventData) {
-        let event = SpaceEvent {
-            metadata: event_metadata(EPHEMERAL_ID),
-            data: Some(data),
-        };
-        let _ = self.live.send(event);
     }
 
     fn attach(
@@ -311,12 +361,10 @@ impl Subscription {
     /// Returns `false` once the client stopped reading.
     async fn forward(&mut self, event: SpaceEvent) -> bool {
         let id = event_id(&event);
-        if id != EPHEMERAL_ID {
-            if id <= self.cursor {
-                return true;
-            }
-            self.cursor = id;
+        if id <= self.cursor {
+            return true;
         }
+        self.cursor = id;
         if self.is_own(&event) {
             return true;
         }

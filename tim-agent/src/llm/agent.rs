@@ -88,7 +88,6 @@ impl Agent {
     }
 
     async fn ask_llm(&mut self) -> Result<(), AgentError> {
-        self.client.send_activity("thinking", "").await?;
         let history: Vec<LlmItem> = self.memory.context().await?;
         let username = self.client.get_me().username;
         let ctx = AgentPromptContext {

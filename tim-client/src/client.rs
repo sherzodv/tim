@@ -3,16 +3,19 @@ use std::str::FromStr;
 
 use crate::api::tim_grpc_api_client::TimGrpcApiClient;
 use crate::api::Ability;
-use crate::api::Activity;
 use crate::api::CallAbilityOutcome;
 use crate::api::ClientInfo;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
-use crate::api::SendActivityReq;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendMessageReq;
+use crate::api::SendTaskFinishedReq;
+use crate::api::SendTaskStartedReq;
+use crate::api::SendTaskStepReq;
+use crate::api::SendTypingStartedReq;
+use crate::api::SendTypingStoppedReq;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TimiteAbilities;
@@ -125,18 +128,49 @@ impl TimClient {
         Ok(())
     }
 
-    /// Shares transient state such as "typing" or "thinking"; delivered live, never stored.
-    pub async fn send_activity(&mut self, kind: &str, payload: &str) -> Result<(), TimClientError> {
-        let mut req = tonic::Request::new(SendActivityReq {
-            activity: Some(Activity {
-                timite_id: 0,
-                kind: kind.to_string(),
-                payload: payload.to_string(),
-            }),
+    pub async fn send_typing_started(&mut self) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTypingStartedReq {});
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_typing_started(req).await?;
+        Ok(())
+    }
+
+    pub async fn send_typing_stopped(&mut self) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTypingStoppedReq {});
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_typing_stopped(req).await?;
+        Ok(())
+    }
+
+    /// Announces a task and returns its id for the steps and the finish.
+    pub async fn send_task_started(&mut self, task: &str) -> Result<u64, TimClientError> {
+        let mut req = tonic::Request::new(SendTaskStartedReq {
+            task: task.to_string(),
         });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
-        self.client.send_activity(req).await?;
+        let res = self.client.send_task_started(req).await?;
+        Ok(res.into_inner().task_id)
+    }
+
+    pub async fn send_task_step(&mut self, task_id: u64, step: &str) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskStepReq {
+            task_id,
+            step: step.to_string(),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_task_step(req).await?;
+        Ok(())
+    }
+
+    pub async fn send_task_finished(&mut self, task_id: u64) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskFinishedReq { task_id });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_task_finished(req).await?;
         Ok(())
     }
 

@@ -14,14 +14,22 @@ use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
 use crate::api::ListAbilitiesRes;
-use crate::api::SendActivityReq;
-use crate::api::SendActivityRes;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendCallAbilityOutcomeRes;
 use crate::api::SendCallAbilityReq;
 use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
+use crate::api::SendTaskFinishedReq;
+use crate::api::SendTaskFinishedRes;
+use crate::api::SendTaskStartedReq;
+use crate::api::SendTaskStartedRes;
+use crate::api::SendTaskStepReq;
+use crate::api::SendTaskStepRes;
+use crate::api::SendTypingStartedReq;
+use crate::api::SendTypingStartedRes;
+use crate::api::SendTypingStoppedReq;
+use crate::api::SendTypingStoppedRes;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
@@ -140,14 +148,62 @@ impl TimGrpcApi for TimGrpcApiService {
         res.map_err(|e| Status::internal(e.to_string()))
     }
 
-    async fn send_activity(
+    async fn send_typing_started(
         &self,
-        req: Request<SendActivityReq>,
-    ) -> Result<Response<SendActivityRes>, Status> {
+        req: Request<SendTypingStartedReq>,
+    ) -> Result<Response<SendTypingStartedRes>, Status> {
         let session = self.require_session(&req)?;
         let res = self
             .api
-            .send_activity(&req.into_inner(), &session)
+            .send_typing_started(&req.into_inner(), &session)
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_typing_stopped(
+        &self,
+        req: Request<SendTypingStoppedReq>,
+    ) -> Result<Response<SendTypingStoppedRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_typing_stopped(&req.into_inner(), &session)
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_task_started(
+        &self,
+        req: Request<SendTaskStartedReq>,
+    ) -> Result<Response<SendTaskStartedRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_task_started(&req.into_inner(), &session)
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_task_step(
+        &self,
+        req: Request<SendTaskStepReq>,
+    ) -> Result<Response<SendTaskStepRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_task_step(&req.into_inner(), &session)
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_task_finished(
+        &self,
+        req: Request<SendTaskFinishedReq>,
+    ) -> Result<Response<SendTaskFinishedRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_task_finished(&req.into_inner(), &session)
             .map(Response::new);
         res.map_err(|e| Status::internal(e.to_string()))
     }

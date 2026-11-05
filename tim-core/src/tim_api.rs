@@ -8,24 +8,33 @@ use tracing::instrument;
 use tracing::Span;
 
 use crate::api::space_event::Data as SpaceEventData;
-use crate::api::Activity;
 use crate::api::DeclareAbilitiesReq;
 use crate::api::DeclareAbilitiesRes;
 use crate::api::ErrorCode;
 use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesRes;
-use crate::api::SendActivityReq;
-use crate::api::SendActivityRes;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendCallAbilityOutcomeRes;
 use crate::api::SendCallAbilityReq;
 use crate::api::SendCallAbilityRes;
 use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
+use crate::api::SendTaskFinishedReq;
+use crate::api::SendTaskFinishedRes;
+use crate::api::SendTaskStartedReq;
+use crate::api::SendTaskStartedRes;
+use crate::api::SendTaskStepReq;
+use crate::api::SendTaskStepRes;
+use crate::api::SendTypingStartedReq;
+use crate::api::SendTypingStartedRes;
+use crate::api::SendTypingStoppedReq;
+use crate::api::SendTypingStoppedRes;
 use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::TaskFinished;
+use crate::api::TaskStep;
 use crate::api::Timite;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
@@ -255,24 +264,82 @@ impl TimApi {
     }
 
     #[instrument(
+        skip(self, _req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_typing_started(
+        &self,
+        _req: &SendTypingStartedReq,
+        session: &Session,
+    ) -> Result<SendTypingStartedRes, TimApiError> {
+        self.t_space.publish_typing_started(session.timite_id)?;
+        Ok(SendTypingStartedRes {})
+    }
+
+    #[instrument(
+        skip(self, _req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_typing_stopped(
+        &self,
+        _req: &SendTypingStoppedReq,
+        session: &Session,
+    ) -> Result<SendTypingStoppedRes, TimApiError> {
+        self.t_space.publish_typing_stopped(session.timite_id)?;
+        Ok(SendTypingStoppedRes {})
+    }
+
+    #[instrument(
         skip(self, req, session),
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
-    pub fn send_activity(
+    pub fn send_task_started(
         &self,
-        req: &SendActivityReq,
+        req: &SendTaskStartedReq,
         session: &Session,
-    ) -> Result<SendActivityRes, TimApiError> {
-        let activity = req
-            .activity
-            .as_ref()
-            .ok_or_else(|| TimApiError::InvalidArgError("activity required".into()))?;
-        self.t_space.emit_activity(&Activity {
+    ) -> Result<SendTaskStartedRes, TimApiError> {
+        let task_id = self
+            .t_space
+            .publish_task_started(session.timite_id, &req.task)?;
+        Ok(SendTaskStartedRes { task_id })
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_task_step(
+        &self,
+        req: &SendTaskStepReq,
+        session: &Session,
+    ) -> Result<SendTaskStepRes, TimApiError> {
+        self.t_space.publish_task_step(TaskStep {
             timite_id: session.timite_id,
-            ..activity.clone()
-        });
-        Ok(SendActivityRes {})
+            task_id: req.task_id,
+            step: req.step.clone(),
+        })?;
+        Ok(SendTaskStepRes {})
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_task_finished(
+        &self,
+        req: &SendTaskFinishedReq,
+        session: &Session,
+    ) -> Result<SendTaskFinishedRes, TimApiError> {
+        self.t_space.publish_task_finished(TaskFinished {
+            timite_id: session.timite_id,
+            task_id: req.task_id,
+        })?;
+        Ok(SendTaskFinishedRes {})
     }
 }
 
@@ -316,7 +383,21 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
                     ids.insert(timite.id);
                 }
             }
-            SpaceEventData::EventActivity(_) => {}
+            SpaceEventData::EventTypingStarted(payload) => {
+                ids.extend(payload.typing_started.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTypingStopped(payload) => {
+                ids.extend(payload.typing_stopped.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskStarted(payload) => {
+                ids.extend(payload.task_started.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskStep(payload) => {
+                ids.extend(payload.task_step.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskFinished(payload) => {
+                ids.extend(payload.task_finished.as_ref().map(|t| t.timite_id));
+            }
         }
     }
     ids

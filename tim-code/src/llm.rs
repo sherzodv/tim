@@ -16,7 +16,7 @@ use tim_llm::llm::LlmToolCall;
 use tokio::time::timeout;
 use tracing::info;
 
-use crate::activity::Reporter;
+use crate::progress::Reporter;
 use crate::text::head;
 use crate::tools;
 use crate::tools::Tools;

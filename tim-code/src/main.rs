@@ -1,9 +1,9 @@
-mod activity;
 mod claude;
 mod code;
 mod fs;
 mod git;
 mod llm;
+mod progress;
 mod shell;
 mod text;
 mod tools;
