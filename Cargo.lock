@@ -2424,6 +2424,7 @@ dependencies = [
  "async-trait",
  "config",
  "dotenvy",
+ "futures",
  "serde",
  "serde_json",
  "shellexpand",

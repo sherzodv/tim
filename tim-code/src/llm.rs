@@ -6,13 +6,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
+use futures::StreamExt;
 use tim_llm::llm::build_llm;
+use tim_llm::llm::collect;
 use tim_llm::llm::Llm;
 use tim_llm::llm::LlmConf;
 use tim_llm::llm::LlmError;
 use tim_llm::llm::LlmItem;
 use tim_llm::llm::LlmReq;
+use tim_llm::llm::LlmStreamEvent;
 use tim_llm::llm::LlmToolCall;
 use tokio::time::timeout;
 use tracing::info;
@@ -83,11 +85,12 @@ impl LlmCode {
                 inputs: &items,
                 tools: &definitions,
             };
-            let turn = self.llm.turn(&req).await?;
-            reporter.model_event(
-                "llm",
-                json!({"type": "turn", "text": &turn.text, "items": &turn.items}).to_string(),
-            );
+            let mut stream = self.llm.chat_stream(&req).await?.inspect(|event| {
+                if let Ok(LlmStreamEvent::Raw(payload)) = event {
+                    reporter.model_event("llm", payload.clone());
+                }
+            });
+            let turn = collect(&mut stream).await?;
             items.push(LlmItem::Turn(turn.items));
 
             if turn.tool_calls.is_empty() {

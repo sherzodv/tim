@@ -227,6 +227,7 @@ impl App {
                     self.task_tool_call(call, timestamp);
                 }
             }
+            EventData::EventTaskModelEvent(_) => {}
         }
     }
 
