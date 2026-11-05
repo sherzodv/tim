@@ -7,6 +7,8 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::text::tail;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ShellError {
     #[error("failed to run shell: {0}")]
@@ -38,40 +40,39 @@ impl Shell {
     }
 
     pub async fn run(&self, cmd: &str) -> Result<String, ShellError> {
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
+        let output = self.output("sh", &["-c", cmd]).await?;
+        Ok(self.render_output(&output))
+    }
+
+    /// Runs a program in the workspace directory and returns its raw output.
+    pub async fn output(&self, program: &str, args: &[&str]) -> Result<Output, ShellError> {
+        let output = Command::new(program)
+            .args(args)
             .current_dir(&self.workdir)
             .stdin(Stdio::null())
             .kill_on_drop(true)
             .output();
-        let output = timeout(self.timeout, output)
+        timeout(self.timeout, output)
             .await
-            .map_err(|_| ShellError::Timeout(self.timeout))??;
-        Ok(self.render_output(&output))
+            .map_err(|_| ShellError::Timeout(self.timeout))?
+            .map_err(Into::into)
     }
 
     fn render_output(&self, output: &Output) -> String {
-        let exit_code = output
-            .status
-            .code()
-            .map_or_else(|| "signal".to_string(), |code| code.to_string());
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         format!(
-            "exit_code: {exit_code}\nstdout:\n{}\nstderr:\n{}",
+            "exit_code: {}\nstdout:\n{}\nstderr:\n{}",
+            exit_code(output),
             tail(stdout.trim_end(), self.max_output_chars),
             tail(stderr.trim_end(), self.max_output_chars),
         )
     }
 }
 
-/// Keeps the last `max_chars` characters: errors and summaries are usually at the end.
-fn tail(text: &str, max_chars: usize) -> String {
-    let len = text.chars().count();
-    if len <= max_chars {
-        return text.to_string();
-    }
-    let tail: String = text.chars().skip(len - max_chars).collect();
-    format!("…{tail}")
+pub fn exit_code(output: &Output) -> String {
+    output
+        .status
+        .code()
+        .map_or_else(|| "signal".to_string(), |code| code.to_string())
 }

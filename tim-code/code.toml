@@ -3,3 +3,5 @@ provider = "shell:code"
 endpoint = "http://127.0.0.1:8787"
 timeout_secs = 900
 max_output_chars = 8000
+# Shell commands Claude Code may run on its own; file edits are always accepted.
+claude_allowed_tools = ["Bash(cargo:*)", "Bash(git:*)", "Bash(npm:*)"]

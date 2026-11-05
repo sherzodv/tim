@@ -1,5 +1,9 @@
+mod claude;
 mod code;
+mod fs;
+mod git;
 mod shell;
+mod text;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -29,6 +33,7 @@ struct AppConfig {
     workdir: Option<PathBuf>,
     timeout_secs: u64,
     max_output_chars: usize,
+    claude_allowed_tools: Vec<String>,
 }
 
 fn load_config() -> Result<AppConfig, ConfigError> {
@@ -58,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         workdir: config.workdir.map_or_else(std::env::current_dir, Ok)?,
         timeout: Duration::from_secs(config.timeout_secs),
         max_output_chars: config.max_output_chars,
+        claude_allowed_tools: config.claude_allowed_tools,
     };
 
     agent::spawn(tim_conf, code_conf).await?;
