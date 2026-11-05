@@ -9,7 +9,7 @@ use tim_core::api::ClientInfo;
 use tim_core::api::SendMessageReq;
 use tim_core::api::Session;
 use tim_core::api::SubscribeToSpaceReq;
-use tim_core::api::TrustedRegisterReq;
+use tim_core::api::TrustedConnectReq;
 use tim_core::tim_grpc_api::TimGrpcApiService;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
@@ -33,8 +33,8 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
     let service = TimGrpcApiService::new(ctx.api());
 
     let alpha_session = service
-        .trusted_register(Request::new(TrustedRegisterReq {
-            nick: "alpha".into(),
+        .trusted_connect(Request::new(TrustedConnectReq {
+            username: "alpha".into(),
             client_info: Some(client_info()),
         }))
         .await?
@@ -43,8 +43,8 @@ async fn grpc_send_message_notifies_subscribers() -> Result<(), Box<dyn std::err
         .expect("missing alpha session");
 
     let beta_session = service
-        .trusted_register(Request::new(TrustedRegisterReq {
-            nick: "beta".into(),
+        .trusted_connect(Request::new(TrustedConnectReq {
+            username: "beta".into(),
             client_info: Some(client_info()),
         }))
         .await?

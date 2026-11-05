@@ -63,7 +63,7 @@ impl Debug for Agent {
 
 #[derive(Debug, Serialize)]
 struct AgentPromptContext {
-    nick: String,
+    username: String,
     now: String,
 }
 
@@ -89,9 +89,9 @@ impl Agent {
     async fn ask_llm(&mut self) -> Result<(), AgentError> {
         self.client.send_activity("thinking", "").await?;
         let history: Vec<LlmInputItem> = self.memory.context().await?;
-        let nick = self.client.get_me().nick.clone();
+        let username = self.client.get_me().username;
         let ctx = AgentPromptContext {
-            nick: nick.clone(),
+            username: username.clone(),
             now: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         };
         let sysp =
@@ -102,7 +102,7 @@ impl Agent {
         };
         trace!(
             "{} sending LLM request with {} messages",
-            nick,
+            username,
             history.len()
         );
         let answer = self
@@ -112,13 +112,13 @@ impl Agent {
             .map_err(|err| AgentError::Agent(err.to_string()))?;
         match answer {
             LlmRes::NoResponse(reason) => {
-                debug!("{} chose silence. Reason: {}", nick, reason);
+                debug!("{} chose silence. Reason: {}", username, reason);
                 Ok(())
             }
             LlmRes::Reply(message) => {
                 debug!(
                     "{} chose to reply: {}",
-                    nick,
+                    username,
                     message.chars().take(10).collect::<String>()
                 );
                 self.client.send_message(&message).await?;

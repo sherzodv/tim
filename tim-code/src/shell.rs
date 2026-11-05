@@ -64,13 +64,13 @@ impl Shell {
             .map_err(Into::into)
     }
 
-    /// Starts a program in the workspace directory with its stdout piped; the caller
-    /// owns the timeout and the child is killed when dropped.
+    /// Starts a program in the workspace directory with stdin and stdout piped; the
+    /// caller owns the timeout and the child is killed when dropped.
     pub async fn spawn(&self, program: &str, args: &[&str]) -> Result<Child, ShellError> {
         Ok(Command::new(program)
             .args(args)
             .current_dir(&self.workdir)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
             .spawn()?)

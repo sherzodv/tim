@@ -5,7 +5,7 @@ use tim_core::api::space_event;
 use tim_core::api::ClientInfo;
 use tim_core::api::GetTimelineReq;
 use tim_core::api::SendMessageReq;
-use tim_core::api::TrustedRegisterReq;
+use tim_core::api::TrustedConnectReq;
 
 fn client_info() -> ClientInfo {
     ClientInfo {
@@ -19,8 +19,8 @@ async fn tim_api_get_timeline_returns_events() -> Result<(), Box<dyn std::error:
     let api = ctx.api();
 
     let session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "alpha".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "alpha".into(),
             client_info: Some(client_info()),
         })
         .await?

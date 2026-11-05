@@ -21,11 +21,11 @@ pub enum TimelineItem {
         timestamp: u64,
     },
     TimiteConnected {
-        nick: String,
+        username: String,
         timestamp: u64,
     },
     TimiteDisconnected {
-        nick: String,
+        username: String,
         timestamp: u64,
     },
     AbilityCall {
@@ -42,7 +42,7 @@ pub enum TimelineItem {
 
 /// A transient state another timite reported, shown until `until`.
 struct LiveActivity {
-    nick: String,
+    username: String,
     kind: String,
     payload: String,
     until: Instant,
@@ -57,11 +57,11 @@ pub struct App {
     /// Viewport height from the last render, used as the page size.
     pub timeline_height: usize,
     pub online_timites: HashMap<u64, Timite>,
-    pub timite_nick_cache: HashMap<u64, String>,
+    pub usernames: HashMap<u64, String>,
     activities: HashMap<u64, LiveActivity>,
     last_typing: Option<Instant>,
     pub my_timite_id: u64,
-    pub my_nick: String,
+    pub my_username: String,
 }
 
 fn new_input() -> TextArea<'static> {
@@ -72,9 +72,9 @@ fn new_input() -> TextArea<'static> {
 }
 
 impl App {
-    pub fn new(my_timite_id: u64, my_nick: String) -> Self {
-        let mut timite_nick_cache = HashMap::new();
-        timite_nick_cache.insert(my_timite_id, my_nick.clone());
+    pub fn new(my_timite_id: u64, my_username: String) -> Self {
+        let mut usernames = HashMap::new();
+        usernames.insert(my_timite_id, my_username.clone());
         Self {
             running: true,
             input: new_input(),
@@ -82,11 +82,11 @@ impl App {
             scroll_offset: 0,
             timeline_height: 0,
             online_timites: HashMap::new(),
-            timite_nick_cache,
+            usernames,
             activities: HashMap::new(),
             last_typing: None,
             my_timite_id,
-            my_nick,
+            my_username,
         }
     }
 
@@ -122,7 +122,7 @@ impl App {
         true
     }
 
-    /// Activities still in effect, as "nick kind", sorted.
+    /// Activities still in effect, as "username kind", sorted.
     pub fn active_activities(&self) -> Vec<String> {
         let now = Instant::now();
         let mut active: Vec<String> = self
@@ -130,8 +130,11 @@ impl App {
             .values()
             .filter(|activity| activity.until > now)
             .map(|activity| match activity.payload.is_empty() {
-                true => format!("{} {}", activity.nick, activity.kind),
-                false => format!("{} {}: {}", activity.nick, activity.kind, activity.payload),
+                true => format!("{} {}", activity.username, activity.kind),
+                false => format!(
+                    "{} {}: {}",
+                    activity.username, activity.kind, activity.payload
+                ),
             })
             .collect();
         active.sort_unstable();
@@ -192,7 +195,7 @@ impl App {
 
     fn add_message(&mut self, message: Message, timestamp: u64) {
         let sender = self
-            .timite_nick_cache
+            .usernames
             .get(&message.sender_id)
             .cloned()
             .unwrap_or_else(|| format!("user-{}", message.sender_id));
@@ -204,24 +207,26 @@ impl App {
     }
 
     fn timite_connected(&mut self, timite: Timite, timestamp: u64) {
-        let nick = timite.nick.clone();
-        self.timite_nick_cache.insert(timite.id, nick.clone());
+        let username = timite.username.clone();
+        self.usernames.insert(timite.id, username.clone());
         self.online_timites.insert(timite.id, timite);
-        self.timeline
-            .push(TimelineItem::TimiteConnected { nick, timestamp });
+        self.timeline.push(TimelineItem::TimiteConnected {
+            username,
+            timestamp,
+        });
     }
 
     fn timite_disconnected(&mut self, timite: Timite, timestamp: u64) {
         self.online_timites.remove(&timite.id);
         self.timeline.push(TimelineItem::TimiteDisconnected {
-            nick: timite.nick,
+            username: timite.username,
             timestamp,
         });
     }
 
     fn ability_called(&mut self, call: CallAbility, timestamp: u64) {
         let caller = self
-            .timite_nick_cache
+            .usernames
             .get(&call.sender_id)
             .cloned()
             .unwrap_or_else(|| format!("user-{}", call.sender_id));
@@ -244,15 +249,15 @@ impl App {
         if activity.timite_id == self.my_timite_id {
             return;
         }
-        let nick = self
-            .timite_nick_cache
+        let username = self
+            .usernames
             .get(&activity.timite_id)
             .cloned()
             .unwrap_or_else(|| format!("user-{}", activity.timite_id));
         self.activities.insert(
             activity.timite_id,
             LiveActivity {
-                nick,
+                username,
                 kind: activity.kind,
                 payload: activity.payload,
                 until: Instant::now() + ACTIVITY_TTL,
@@ -261,7 +266,6 @@ impl App {
     }
 
     pub fn add_timite_to_cache(&mut self, timite: &Timite) {
-        self.timite_nick_cache
-            .insert(timite.id, timite.nick.clone());
+        self.usernames.insert(timite.id, timite.username.clone());
     }
 }

@@ -22,7 +22,7 @@ export class TimSpace implements TimSpaceHandler {
 	readonly timite: Readable<string | null> = this.connectedTimite;
 	private readonly liveActivities = new Map<bigint, LiveActivity>();
 	private readonly activityLabels = writable<string[]>([]);
-	/** Activities of other timites still in effect, as "nick kind: payload". */
+	/** Activities of other timites still in effect, as "username kind: payload". */
 	readonly activities: Readable<string[]> = this.activityLabels;
 	private lastTyping = 0;
 
@@ -178,13 +178,11 @@ export class TimSpace implements TimSpaceHandler {
 
 	private formatAuthor(senderId?: bigint): string {
 		if (senderId === undefined) return 'unknown';
-		const nick = this.timites.get(senderId);
-		return this.formatTimite(senderId, nick);
+		return this.formatTimite(senderId, this.timites.get(senderId));
 	}
 
-	private formatTimite(id: bigint, nick?: string): string {
-		const preferredNick = (nick ?? '').trim();
-		const label = preferredNick || 'timite';
+	private formatTimite(id: bigint, username?: string): string {
+		const label = (username ?? '').trim() || 'timite';
 		return `${label}#${id}`;
 	}
 
@@ -222,8 +220,8 @@ export class TimSpace implements TimSpaceHandler {
 			return;
 		}
 		this.rememberTimite(timite);
-		const knownNick = this.timites.get(timite.id) ?? timite.nick;
-		this.connectedTimite.set(this.formatTimite(timite.id, knownNick));
+		const known = this.timites.get(timite.id) ?? timite.username;
+		this.connectedTimite.set(this.formatTimite(timite.id, known));
 	}
 
 	private buildPresenceItem(
@@ -237,15 +235,15 @@ export class TimSpace implements TimSpaceHandler {
 			kind: 'sysmsg',
 			id: update.metadata?.id ?? this.nextLocalId(),
 			author: 'system',
-			content: `${this.formatTimite(timite.id, timite.nick)} ${action}.`,
+			content: `${this.formatTimite(timite.id, timite.username)} ${action}.`,
 			time: this.formatTime(update.metadata?.emittedAt)
 		};
 	}
 
 	private rememberTimite(timite: Timite) {
-		const nick = timite.nick.trim();
-		if (!nick) return;
-		this.timites.set(timite.id, nick);
+		const username = timite.username.trim();
+		if (!username) return;
+		this.timites.set(timite.id, username);
 	}
 }
 

@@ -1,6 +1,5 @@
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use crate::api::Ability;
 use crate::api::Timite;
@@ -15,7 +14,7 @@ pub enum TimTimiteError {
 
 pub struct TimTimite {
     t_store: Arc<TimStorage>,
-    id_cnt: Arc<AtomicU64>,
+    next_id: Mutex<u64>,
 }
 
 impl TimTimite {
@@ -23,17 +22,23 @@ impl TimTimite {
         let max_id = t_store.fetch_max_timite_id()?;
         Ok(Self {
             t_store,
-            id_cnt: Arc::new(AtomicU64::new(max_id)),
+            next_id: Mutex::new(max_id + 1),
         })
     }
 
-    pub fn create(&self, nick: &str) -> Result<Timite, TimTimiteError> {
-        let id = self.id_cnt.fetch_add(1, Ordering::Relaxed) + 1;
+    /// The timite known by `username`, created on first use.
+    pub fn connect(&self, username: &str) -> Result<Timite, TimTimiteError> {
+        let mut next_id = self.next_id.lock().expect("timite id lock poisoned");
+        if let Some(timite) = self.t_store.fetch_timite_by_username(username)? {
+            return Ok(timite);
+        }
         let timite = Timite {
-            id,
-            nick: nick.to_string(),
+            id: *next_id,
+            username: username.to_string(),
         };
-        Ok(self.t_store.store_timite(&timite).map(|_| timite)?)
+        self.t_store.store_timite(&timite)?;
+        *next_id += 1;
+        Ok(timite)
     }
 
     pub fn declare_abilities(

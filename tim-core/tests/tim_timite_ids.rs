@@ -14,8 +14,8 @@ fn timite_ids_survive_restart() -> Result<(), Box<dyn std::error::Error>> {
         let storage = Arc::new(TimStorage::new(&db_path)?);
         let timite = TimTimite::new(storage)?;
 
-        let first = timite.create("alpha")?;
-        let second = timite.create("beta")?;
+        let first = timite.connect("alpha")?;
+        let second = timite.connect("beta")?;
 
         assert!(
             second.id > first.id,
@@ -29,14 +29,14 @@ fn timite_ids_survive_restart() -> Result<(), Box<dyn std::error::Error>> {
         let storage = Arc::new(TimStorage::new(&db_path)?);
         let timite = TimTimite::new(storage)?;
 
-        let after_restart = timite.create("gamma")?;
+        let after_restart = timite.connect("gamma")?;
         assert_eq!(
             after_restart.id,
             last_id + 1,
             "IDs should continue from the last persisted value"
         );
 
-        let next = timite.create("delta")?;
+        let next = timite.connect("delta")?;
         assert_eq!(
             next.id,
             after_restart.id + 1,

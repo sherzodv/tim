@@ -103,9 +103,7 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
-        if req.uri().path() == "/tim.api.g1.TimGrpcApi/TrustedConnect"
-            || req.uri().path() == "/tim.api.g1.TimGrpcApi/TrustedRegister"
-        {
+        if req.uri().path() == "/tim.api.g1.TimGrpcApi/TrustedConnect" {
             return Either::Left(self.inner.call(req));
         }
 

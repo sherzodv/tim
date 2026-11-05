@@ -8,7 +8,7 @@
 	import { createTimStorage } from '$lib/api/storage';
 
 	const timClient = createTimClient({
-		nick: 'bob',
+		username: 'bob',
 		platform: 'browser'
 	});
 	const timConnect = createTimConnect(timClient);

@@ -68,11 +68,11 @@ fn ability_owner(envelope: &TimiteAbilities) -> String {
         .timite
         .as_ref()
         .map(|timite| {
-            let nick = timite.nick.trim();
-            if nick.is_empty() {
+            let username = timite.username.trim();
+            if username.is_empty() {
                 format!("timite#{}", timite.id)
             } else {
-                nick.to_string()
+                username.to_string()
             }
         })
         .unwrap_or_else(|| "unknown".to_string())

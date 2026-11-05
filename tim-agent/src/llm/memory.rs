@@ -40,7 +40,7 @@ impl Memory {
         let mut stream = Box::pin(self.client.timeline_stream(TIMELINE_PAGE_SIZE));
         while let Some(page) = stream.next().await {
             let page = page?;
-            Self::collect_nicks(&mut names, &page.timites);
+            Self::collect_usernames(&mut names, &page.timites);
             for event in &page.events {
                 if let Some(message) = Self::render_event(event, &names, self_id) {
                     messages.push(message);
@@ -50,13 +50,13 @@ impl Memory {
         Ok(messages)
     }
 
-    fn collect_nicks(names: &mut HashMap<u64, String>, timites: &[Timite]) {
+    fn collect_usernames(names: &mut HashMap<u64, String>, timites: &[Timite]) {
         for timite in timites {
-            let nick = timite.nick.trim();
-            if nick.is_empty() {
+            let username = timite.username.trim();
+            if username.is_empty() {
                 continue;
             }
-            names.insert(timite.id, nick.to_string());
+            names.insert(timite.id, username.to_string());
         }
     }
 
@@ -98,9 +98,9 @@ impl Memory {
             return None;
         }
         let timestamp = Self::format_emitted_at(emitted_at).unwrap_or_else(|| "-".to_string());
-        let nick = Self::timite_nick(message.sender_id, names);
+        let username = Self::timite_username(message.sender_id, names);
         let role = Self::role_for_timite(Some(message.sender_id), my_timite_id);
-        let content = format!("[{timestamp}:{nick}]: {content}");
+        let content = format!("[{timestamp}:{username}]: {content}");
         Some(LlmInputItem { role, content })
     }
 
@@ -163,16 +163,16 @@ impl Memory {
             .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Secs, true))
     }
 
-    fn timite_nick(timite_id: u64, names: &HashMap<u64, String>) -> String {
+    fn timite_username(timite_id: u64, names: &HashMap<u64, String>) -> String {
         names
             .get(&timite_id)
-            .map(|nick| nick.to_string())
+            .map(|username| username.to_string())
             .unwrap_or_else(|| format!("timite {}", timite_id))
     }
 
     fn format_timite_label(timite_id: u64, names: &HashMap<u64, String>) -> String {
-        let nick = Self::timite_nick(timite_id, names);
-        format!("[{}]", nick)
+        let username = Self::timite_username(timite_id, names);
+        format!("[{}]", username)
     }
 
     fn role_for_timite(timite_id: Option<u64>, my_timite_id: u64) -> LlmRole {

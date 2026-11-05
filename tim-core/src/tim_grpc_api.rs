@@ -27,8 +27,6 @@ use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
-use crate::api::TrustedRegisterReq;
-use crate::api::TrustedRegisterRes;
 use crate::tim_api::TimApi;
 
 #[derive(Clone)]
@@ -40,18 +38,6 @@ pub struct TimGrpcApiService {
 impl TimGrpcApi for TimGrpcApiService {
     type SubscribeToSpaceStream =
         Pin<Box<dyn tokio_stream::Stream<Item = Result<SpaceEvent, Status>> + Send>>;
-
-    async fn trusted_register(
-        &self,
-        req: Request<TrustedRegisterReq>,
-    ) -> Result<Response<TrustedRegisterRes>, Status> {
-        let res = self
-            .api
-            .trusted_register(&req.into_inner())
-            .await
-            .map(|r| Response::new(r));
-        res.map_err(|e| Status::internal(e.to_string()))
-    }
 
     async fn trusted_connect(
         &self,

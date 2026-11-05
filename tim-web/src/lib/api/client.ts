@@ -5,7 +5,6 @@ import { create } from '@bufbuild/protobuf';
 import {
 	ErrorCode,
 	TimGrpcApi,
-	TrustedRegisterReqSchema,
 	TrustedConnectReqSchema,
 	ClientInfoSchema,
 	SendMessageReqSchema,
@@ -15,7 +14,7 @@ import {
 	GetTimelineReqSchema,
 	TimiteSchema,
 	type Timite,
-	type TrustedRegisterReq,
+	type TrustedConnectReq,
 	type SendMessageReq,
 	type SubscribeToSpaceReq,
 	type GetTimelineRes
@@ -25,7 +24,8 @@ const SESSION_HEADER = 'tim-session-key' as const;
 const BASE_URL = import.meta.env.VITE_TIM_CODE_URL ?? 'http://127.0.0.1:8787';
 
 export type TimClientConf = {
-	nick: string;
+	/** Unique handle the timite connects as and is addressed by. */
+	username: string;
 	platform: string;
 };
 
@@ -62,92 +62,24 @@ export class TimClient {
 		}
 	}
 
+	/** Opens a session as the configured username; the server creates the timite on first use. */
 	private async acquireSession(): Promise<string> {
-		// Try to load existing timite from localStorage
-		const storedTimite = this.loadStoredTimite();
-
-		if (storedTimite) {
-			// Use trustedConnect with existing timite
-			const connectReq = create(TrustedConnectReqSchema, {
-				timite: storedTimite,
-				clientInfo: create(ClientInfoSchema, {
-					platform: this.conf.platform
-				})
-			});
-			const response = await this.client.trustedConnect(connectReq);
-			const sessionKey = response.session?.key;
-			if (sessionKey !== undefined) {
-				return sessionKey;
-			}
-			// If server explicitly says timite not found, clear and re-register.
-			if (response.error === ErrorCode.TIMITE_NOT_FOUND) {
-				this.clearStoredTimite();
-				console.warn('Stored timite not found on server, re-registering');
-				return this.registerTimite();
-			}
-			throw new ConnectError('missing session key in trusted connect response', Code.Internal);
-		}
-
-		// Register new timite
-		return this.registerTimite();
-	}
-
-	private loadStoredTimite(): Timite | null {
-		if (typeof window === 'undefined') return null;
-		try {
-			const stored = localStorage.getItem('tim-timite');
-			if (!stored) return null;
-			const data = JSON.parse(stored);
-			const timite = create(TimiteSchema, {
-				id: BigInt(data.id),
-				nick: data.nick
-			});
-			this.timite = timite;
-			return timite;
-		} catch {
-			return null;
-		}
-	}
-
-	private storeTimite(timite: Timite) {
-		if (typeof window === 'undefined') return;
-		try {
-			this.timite = timite;
-			localStorage.setItem(
-				'tim-timite',
-				JSON.stringify({ id: timite.id.toString(), nick: timite.nick })
+		const response = await this.client.trustedConnect(buildConnectRequest(this.conf));
+		if (response.error !== ErrorCode.UNSPECIFIED) {
+			throw new ConnectError(
+				`connection rejected: ${ErrorCode[response.error]}`,
+				Code.InvalidArgument
 			);
-		} catch (error) {
-			console.warn('Failed to store timite in localStorage', error);
 		}
-	}
-
-	private clearStoredTimite() {
-		if (typeof window === 'undefined') return;
-		try {
-			this.timite = null;
-			localStorage.removeItem('tim-timite');
-		} catch (error) {
-			console.warn('Failed to clear timite from localStorage', error);
+		const session = response.session;
+		if (!session) {
+			throw new ConnectError('missing session in trusted connect response', Code.Internal);
 		}
-	}
-
-	private async registerTimite(): Promise<string> {
-		const request = buildTrustedRegisterRequest(this.conf);
-		const response = await this.client.trustedRegister(request);
-		const sessionKey = response.session?.key;
-		const timiteId = response.session?.timiteId;
-		if (sessionKey === undefined) {
-			throw new ConnectError('missing session key in trusted register response', Code.Internal);
-		}
-		if (timiteId !== undefined) {
-			const timite = create(TimiteSchema, {
-				id: timiteId,
-				nick: this.conf.nick
-			});
-			this.storeTimite(timite);
-		}
-		return sessionKey;
+		this.timite = create(TimiteSchema, {
+			id: session.timiteId,
+			username: this.conf.username
+		});
+		return session.key;
 	}
 
 	async sendMessage(content: string): Promise<void> {
@@ -205,12 +137,12 @@ export class TimClient {
 
 export const createTimClient = (conf: TimClientConf) => new TimClient(conf);
 
-function buildTrustedRegisterRequest(identity: TimClientConf): TrustedRegisterReq {
+function buildConnectRequest(conf: TimClientConf): TrustedConnectReq {
 	const clientInfo = create(ClientInfoSchema, {
-		platform: identity.platform
+		platform: conf.platform
 	});
-	return create(TrustedRegisterReqSchema, {
-		nick: identity.nick,
+	return create(TrustedConnectReqSchema, {
+		username: conf.username,
 		clientInfo
 	});
 }

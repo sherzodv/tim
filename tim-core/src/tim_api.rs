@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tracing::debug;
-use tracing::error;
 use tracing::field;
 use tracing::instrument;
 use tracing::Span;
@@ -30,8 +29,6 @@ use crate::api::SubscribeToSpaceReq;
 use crate::api::Timite;
 use crate::api::TrustedConnectReq;
 use crate::api::TrustedConnectRes;
-use crate::api::TrustedRegisterReq;
-use crate::api::TrustedRegisterRes;
 use crate::tim_ability::TimAbility;
 use crate::tim_ability::TimAbilityError;
 use crate::tim_message::TimMessage;
@@ -98,25 +95,6 @@ impl TimApi {
         }
     }
 
-    #[instrument(skip(self, req), level = "debug", fields(service = "api"))]
-    pub async fn trusted_register(
-        &self,
-        req: &TrustedRegisterReq,
-    ) -> Result<TrustedRegisterRes, TimApiError> {
-        let timite = self.t_timite.create(&req.nick)?;
-
-        let info = req
-            .client_info
-            .as_ref()
-            .ok_or_else(|| TimApiError::InvalidArgError("client info required".into()))?;
-
-        let session = self.t_session.create(&timite, info)?;
-
-        Ok(TrustedRegisterRes {
-            session: Some(session),
-        })
-    }
-
     #[instrument(
         skip(self, req),
         level = "debug",
@@ -126,26 +104,20 @@ impl TimApi {
         &self,
         req: &TrustedConnectReq,
     ) -> Result<TrustedConnectRes, TimApiError> {
-        let timite = req
-            .timite
-            .as_ref()
-            .ok_or_else(|| TimApiError::InvalidArgError("timite required".into()))?;
-        Span::current().record("timite_id", timite.id);
-
-        let stored_timite = self.t_timite.get(timite.id)?;
-        if stored_timite.is_none() {
-            error!("timite not found in storage");
+        let username = req.username.trim();
+        if !valid_username(username) {
             return Ok(TrustedConnectRes {
                 session: None,
-                error: ErrorCode::TimiteNotFound.into(),
+                error: ErrorCode::InvalidUsername.into(),
             });
         }
-
         let info = req
             .client_info
             .as_ref()
             .ok_or_else(|| TimApiError::InvalidArgError("client info required".into()))?;
 
+        let timite = self.t_timite.connect(username)?;
+        Span::current().record("timite_id", timite.id);
         let session = self.t_session.create(&timite, info)?;
 
         Ok(TrustedConnectRes {
@@ -205,7 +177,7 @@ impl TimApi {
     ) -> Result<mpsc::Receiver<SpaceEvent>, TimApiError> {
         let timite = self.t_timite.get(session.timite_id)?.unwrap_or(Timite {
             id: session.timite_id,
-            nick: String::new(),
+            username: String::new(),
         });
         Ok(self.t_space.subscribe(req, timite)?)
     }
@@ -302,6 +274,15 @@ impl TimApi {
         });
         Ok(SendActivityRes {})
     }
+}
+
+/// Usernames are lowercase handles safe to type after an `@`.
+fn valid_username(username: &str) -> bool {
+    !username.is_empty()
+        && username.len() <= 32
+        && username
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
 fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {

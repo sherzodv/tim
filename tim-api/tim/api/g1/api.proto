@@ -6,7 +6,8 @@ package tim.api.g1;
 
 message Timite {
   uint64 id = 1;
-  string nick = 2;
+  reserved 2;
+  string username = 3;  // unique handle used to connect and to address: [a-z0-9_-]{1,32}
 }
 
 message ClientInfo {
@@ -20,10 +21,17 @@ message Session {
   ClientInfo client_info = 4;
 }
 
+// A timite named as `@username` in a message; resolved by the server when the message is sent.
+message Mention {
+  uint64 timite_id = 1;
+  string username = 2;
+}
+
 message Message {
   uint64 id = 1;
   uint64 sender_id = 2;
   string content = 3;
+  repeated Mention mentions = 4;
 }
 
 message Ability {
@@ -128,21 +136,14 @@ message Error {
 
 enum ErrorCode {
   ERROR_CODE_UNSPECIFIED = 0;
-  ERROR_CODE_TIMITE_NOT_FOUND = 1;
+  ERROR_CODE_INVALID_USERNAME = 1;
 }
 
-message TrustedRegisterReq {
-  string nick = 1;
-  ClientInfo client_info = 2;
-}
-
-message TrustedRegisterRes {
-  Session session = 1;
-}
-
+// Opens a session as `username`, creating the timite on first use.
 message TrustedConnectReq {
-  Timite timite = 1;
+  reserved 1;
   ClientInfo client_info = 2;
+  string username = 3;
 }
 
 message TrustedConnectRes {
@@ -198,7 +199,6 @@ message GetTimelineRes {
 }
 
 service TimGrpcApi {
-  rpc TrustedRegister(TrustedRegisterReq) returns (TrustedRegisterRes);
   rpc TrustedConnect(TrustedConnectReq) returns (TrustedConnectRes);
 
   rpc SendMessage(SendMessageReq) returns (SendMessageRes);

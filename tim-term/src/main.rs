@@ -38,13 +38,14 @@ async fn main() -> Result<()> {
         .init();
 
     let endpoint = std::env::var("TIM_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:8787".into());
-    let nick = std::env::var("TIM_NICK").unwrap_or_else(|_| whoami::username());
+    let username = std::env::var("TIM_USERNAME")
+        .unwrap_or_else(|_| whoami::username())
+        .to_lowercase();
 
     let config = TimClientConf {
         endpoint,
-        nick: nick.clone(),
+        username: username.clone(),
         provider: "tim-term".to_string(),
-        timite_id: None,
     };
 
     tracing::info!("Connecting to Tim server...");
@@ -62,7 +63,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(timite_id, nick);
+    let mut app = App::new(timite_id, username);
 
     // Load timeline history
     let mut cursor = None;

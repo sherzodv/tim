@@ -12,7 +12,7 @@ use tim_core::api::DeclareAbilitiesReq;
 use tim_core::api::SendCallAbilityOutcomeReq;
 use tim_core::api::SendCallAbilityReq;
 use tim_core::api::SubscribeToSpaceReq;
-use tim_core::api::TrustedRegisterReq;
+use tim_core::api::TrustedConnectReq;
 use tokio::time::timeout;
 
 fn client_info() -> ClientInfo {
@@ -42,8 +42,8 @@ async fn tim_api_flow_abilities_list_declared_skills() -> Result<(), Box<dyn std
     let api = ctx.api();
 
     let session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "alpha".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "alpha".into(),
             client_info: Some(client_info()),
         })
         .await?
@@ -94,8 +94,8 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     let api = ctx.api();
 
     let alpha_session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "alpha".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "alpha".into(),
             client_info: Some(client_info()),
         })
         .await?
@@ -121,8 +121,8 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .await?;
 
     let beta_session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "beta".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "beta".into(),
             client_info: Some(client_info()),
         })
         .await?

@@ -39,14 +39,17 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     let mut online: Vec<&str> = app
         .online_timites
         .values()
-        .map(|timite| timite.nick.as_str())
+        .map(|timite| timite.username.as_str())
         .collect();
     online.sort_unstable();
 
     let mut header = vec![
         Span::styled(" tim", Style::new().fg(Color::Cyan).bold()),
         Span::styled(" · ", Style::new().dim()),
-        Span::styled(format!("@{}", app.my_nick), Style::new().fg(Color::Green)),
+        Span::styled(
+            format!("@{}", app.my_username),
+            Style::new().fg(Color::Green),
+        ),
         Span::styled(
             format!(" · online: {}", online.join(", ")),
             Style::new().dim(),
@@ -98,14 +101,23 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
             content,
             timestamp,
         } => message_lines(format_time(*timestamp), sender, content, width),
-        TimelineItem::TimiteConnected { nick, timestamp } => {
+        TimelineItem::TimiteConnected {
+            username,
+            timestamp,
+        } => {
             vec![system_line(
                 format_time(*timestamp),
-                format!("{nick} joined"),
+                format!("{username} joined"),
             )]
         }
-        TimelineItem::TimiteDisconnected { nick, timestamp } => {
-            vec![system_line(format_time(*timestamp), format!("{nick} left"))]
+        TimelineItem::TimiteDisconnected {
+            username,
+            timestamp,
+        } => {
+            vec![system_line(
+                format_time(*timestamp),
+                format!("{username} left"),
+            )]
         }
         TimelineItem::AbilityCall {
             caller,

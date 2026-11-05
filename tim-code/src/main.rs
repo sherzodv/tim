@@ -27,10 +27,9 @@ const CONFIG_PATH: &str = "code.toml";
 
 #[derive(Deserialize)]
 struct AppConfig {
-    nick: String,
+    username: String,
     provider: String,
     endpoint: String,
-    timite_id: Option<u64>,
     workdir: Option<PathBuf>,
     timeout_secs: u64,
     max_output_chars: usize,
@@ -55,9 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tim_conf = TimClientConf {
         endpoint: config.endpoint,
-        nick: config.nick,
+        username: config.username,
         provider: config.provider,
-        timite_id: config.timite_id,
     };
 
     let code_conf = CodeConf {

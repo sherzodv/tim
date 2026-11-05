@@ -11,6 +11,7 @@ use tim_client::api::Ability;
 use tim_client::api::AbilityParameter;
 use tim_client::api::CallAbility;
 use tim_client::api::CallAbilityOutcome;
+use tim_client::api::Message;
 use tim_client::api::SpaceEvent;
 use tim_client::client::TimClient;
 use tracing::error;
@@ -171,6 +172,36 @@ impl CodeAgent {
         }
     }
 
+    /// Runs a message that mentions this timite as a task and replies with the report.
+    fn handle_message(&self, message: &Message) {
+        let me = self.client.get_me();
+        if !message
+            .mentions
+            .iter()
+            .any(|mention| mention.timite_id == me.id)
+        {
+            return;
+        }
+        let task = without_mention(&message.content, &me.username);
+        if task.is_empty() {
+            return;
+        }
+        let tools = self.tools.clone();
+        let mut client = self.client.clone();
+        tokio::spawn(async move {
+            let reporter = Reporter::start(client.clone(), CODE_TASK.to_string());
+            let result = tools.claude.task(&task, &reporter).await;
+            drop(reporter);
+            let reply = match result {
+                Ok(report) => report,
+                Err(err) => format!("task failed: {err}"),
+            };
+            if let Err(err) = client.send_message(&reply).await {
+                error!(%err, "failed to send task reply");
+            }
+        });
+    }
+
     async fn declare(&mut self) -> Result<(), AgentError> {
         self.client.declare_abilities(abilities()).await?;
         Ok(())
@@ -251,6 +282,25 @@ async fn dispatch(
         }
         _ => Err(CallError::UnknownAbility(ability.to_string())),
     }
+}
+
+/// The message without its `@username` tokens, trimmed.
+fn without_mention(content: &str, username: &str) -> String {
+    let token = format!("@{username}");
+    let mut text = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(at) = rest.find(&token) {
+        let after = &rest[at + token.len()..];
+        let whole_token =
+            !after.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        text.push_str(&rest[..at]);
+        if !whole_token {
+            text.push_str(&token);
+        }
+        rest = after;
+    }
+    text.push_str(rest);
+    text.trim().to_string()
 }
 
 fn to_outcome(call_ability_id: u64, result: Result<String, CallError>) -> CallAbilityOutcome {
@@ -375,10 +425,18 @@ impl Agent for CodeAgent {
     }
 
     async fn on_space_update(&mut self, update: &SpaceEvent) -> Result<(), AgentError> {
-        if let Some(Event::EventCallAbility(event)) = &update.data {
-            if let Some(call) = &event.call_ability {
-                self.handle_call(call);
+        match &update.data {
+            Some(Event::EventCallAbility(event)) => {
+                if let Some(call) = &event.call_ability {
+                    self.handle_call(call);
+                }
             }
+            Some(Event::EventNewMessage(event)) => {
+                if let Some(message) = &event.message {
+                    self.handle_message(message);
+                }
+            }
+            _ => {}
         }
         Ok(())
     }

@@ -8,9 +8,7 @@ use tim_core::api::ClientInfo;
 use tim_core::api::DeclareAbilitiesReq;
 use tim_core::api::SendMessageReq;
 use tim_core::api::SubscribeToSpaceReq;
-use tim_core::api::Timite;
 use tim_core::api::TrustedConnectReq;
-use tim_core::api::TrustedRegisterReq;
 use tokio::time::timeout;
 
 fn client_info() -> ClientInfo {
@@ -25,8 +23,8 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
     let api = ctx.api();
 
     let alpha_session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "alpha".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "alpha".into(),
             client_info: Some(client_info()),
         })
         .await?
@@ -43,10 +41,7 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
 
     let reconnect_session = api
         .trusted_connect(&TrustedConnectReq {
-            timite: Some(Timite {
-                id: alpha_session.timite_id,
-                nick: "alpha".into(),
-            }),
+            username: "alpha".into(),
             client_info: Some(client_info()),
         })
         .await?
@@ -63,8 +58,8 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let beta_session = api
-        .trusted_register(&TrustedRegisterReq {
-            nick: "beta".into(),
+        .trusted_connect(&TrustedConnectReq {
+            username: "beta".into(),
             client_info: Some(client_info()),
         })
         .await?

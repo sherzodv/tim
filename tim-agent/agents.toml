@@ -1,6 +1,6 @@
 [[agents]]
 kind = "llm"
-nick = "jarvis"
+username = "jarvis"
 provider = "deepseek:jarvis"
 endpoint = "http://127.0.0.1:8787"
 prompt = "jarvis.md"
@@ -8,14 +8,12 @@ model = "deepseek-v4-pro"
 temperature = 1.0
 live_interval_secs = 10
 api_key = "${TIM_DEEPSEEK_API_KEY}"
-timite_id = 2
 
 # [[agents]]
 # kind = "crawler"
-# nick = "crawler"
+# username = "crawler"
 # provider = "crawler:web"
 # endpoint = "http://127.0.0.1:8787"
 # ability_name = "web.crawl"
 # max_snippet_chars = 480
 # user_agent = "tim-crawler/0.1"
-# timite_id = 3

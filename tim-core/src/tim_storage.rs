@@ -26,6 +26,10 @@ mod key {
         k
     }
 
+    pub fn timite_username(username: &str) -> Vec<u8> {
+        format!("t:user:{}", username).into_bytes()
+    }
+
     pub fn timite_abilities(id: u64) -> Vec<u8> {
         let mut k = timite_abilities_prefix();
         k.extend(id.to_be_bytes());
@@ -89,7 +93,19 @@ impl TimStorage {
     #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn store_timite(&self, timite: &Timite) -> Result<(), TimStorageError> {
         self.store.store_data(&key::timite(timite.id), timite)?;
+        self.store
+            .store_data(&key::timite_username(&timite.username), timite)?;
         Ok(())
+    }
+
+    #[instrument(skip(self), level = "trace", fields(service = "storage"))]
+    pub fn fetch_timite_by_username(
+        &self,
+        username: &str,
+    ) -> Result<Option<Timite>, TimStorageError> {
+        Ok(self
+            .store
+            .fetch_data::<Timite>(&key::timite_username(username))?)
     }
 
     #[instrument(skip(self, abilities), level = "trace", fields(service = "storage"))]

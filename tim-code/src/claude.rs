@@ -1,29 +1,41 @@
-//! Delegates coding tasks to Claude Code running non-interactively in the workspace.
+//! Delegates coding tasks to Claude Code running in the workspace.
+//!
+//! One `claude` process stays open and takes tasks as turns over stream-json stdin, so a
+//! follow-up does not pay for startup and context loading again. After an idle period it
+//! is closed; the next task starts a new process that resumes the same session.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use serde::Deserialize;
+use serde_json::json;
 use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
+use tokio::io::Lines;
+use tokio::process::Child;
+use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 use tokio::time::timeout;
 use tracing::info;
 
 use crate::activity::Reporter;
-use crate::shell::exit_code;
 use crate::shell::Shell;
 use crate::shell::ShellError;
 use crate::text::head;
 
 const STEP_CHARS: usize = 80;
+/// How long an idle `claude` process is kept before it is closed.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaudeError {
     #[error(transparent)]
     Shell(#[from] ShellError),
-
-    #[error("claude exited with {0}")]
-    Exit(String),
 
     #[error("claude stream is not json: {0}")]
     Stream(#[from] serde_json::Error),
@@ -77,6 +89,22 @@ struct TaskResult {
     #[serde(default)]
     num_turns: u32,
     total_cost_usd: Option<f64>,
+    session_id: Option<String>,
+}
+
+/// A running `claude` process taking turns over stdin.
+struct Live {
+    _child: Child,
+    stdin: ChildStdin,
+    events: Lines<BufReader<ChildStdout>>,
+    last_used: Instant,
+}
+
+/// The Claude Code session of the workspace; tasks run one at a time.
+#[derive(Default)]
+struct Session {
+    live: Option<Live>,
+    id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -84,50 +112,67 @@ pub struct ClaudeCode {
     shell: Shell,
     /// Tools Claude may use without asking; file edits are always accepted.
     allowed_tools: Vec<String>,
+    session: Arc<Mutex<Session>>,
 }
 
 impl ClaudeCode {
     pub fn new(shell: Shell, allowed_tools: Vec<String>) -> Self {
+        let session = Arc::new(Mutex::new(Session::default()));
+        tokio::spawn(close_when_idle(session.clone()));
         Self {
             shell,
             allowed_tools,
+            session,
         }
     }
 
-    /// Runs the task to completion, reporting each step, and returns Claude's summary
+    /// Runs the task as the next turn, reporting each step, and returns Claude's summary
     /// with the resulting git status.
     pub async fn task(
         &self,
         description: &str,
         reporter: &Reporter,
     ) -> Result<String, ClaudeError> {
-        let mut args = vec![
-            "-p",
-            description,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--permission-mode",
-            "acceptEdits",
-        ];
-        if !self.allowed_tools.is_empty() {
-            args.push("--allowedTools");
-            args.extend(self.allowed_tools.iter().map(String::as_str));
+        let mut session = self.session.lock().await;
+        if session.live.is_none() {
+            session.live = Some(self.open(session.id.as_deref()).await?);
         }
+        let live = session.live.as_mut().expect("opened above");
 
-        let mut child = self.shell.spawn("claude", &args).await?;
-        let stdout = child.stdout.take().expect("stdout is piped");
-        let result = timeout(self.shell.timeout(), self.follow(stdout, reporter))
+        let turn = json!({
+            "type": "user",
+            "message": { "role": "user", "content": [{ "type": "text", "text": description }] },
+        });
+        live.stdin
+            .write_all(format!("{turn}\n").as_bytes())
             .await
-            .map_err(|_| ShellError::Timeout(self.shell.timeout()))??;
-        let status = child.wait().await.map_err(ShellError::from)?;
-        if !status.success() {
-            return Err(ClaudeError::Exit(exit_code(status)));
+            .map_err(ShellError::from)?;
+
+        let followed = timeout(
+            self.shell.timeout(),
+            self.follow(&mut live.events, reporter),
+        )
+        .await;
+        let result = match followed {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => {
+                session.live = None;
+                return Err(error);
+            }
+            Err(_) => {
+                session.live = None;
+                return Err(ShellError::Timeout(self.shell.timeout()).into());
+            }
+        };
+        live.last_used = Instant::now();
+        if result.session_id.is_some() {
+            session.id = result.session_id;
         }
 
         info!(
             turns = result.num_turns,
             cost_usd = result.total_cost_usd,
+            session = session.id.as_deref().unwrap_or(""),
             "claude task finished"
         );
         if result.is_error {
@@ -143,15 +188,44 @@ impl ClaudeCode {
         ))
     }
 
-    /// Reads the event stream, turning tool uses and narration into activity steps.
+    /// Starts a `claude` process, resuming `session_id` when there is one.
+    async fn open(&self, session_id: Option<&str>) -> Result<Live, ClaudeError> {
+        let mut args = vec![
+            "-p",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "acceptEdits",
+        ];
+        if let Some(id) = session_id {
+            args.extend(["--resume", id]);
+        }
+        if !self.allowed_tools.is_empty() {
+            args.push("--allowedTools");
+            args.extend(self.allowed_tools.iter().map(String::as_str));
+        }
+        let mut child = self.shell.spawn("claude", &args).await?;
+        let stdin = child.stdin.take().expect("stdin is piped");
+        let stdout = child.stdout.take().expect("stdout is piped");
+        info!(resumed = session_id.is_some(), "claude process started");
+        Ok(Live {
+            _child: child,
+            stdin,
+            events: BufReader::new(stdout).lines(),
+            last_used: Instant::now(),
+        })
+    }
+
+    /// Reads the turn's events, turning tool uses and narration into activity steps.
     async fn follow(
         &self,
-        stdout: ChildStdout,
+        events: &mut Lines<BufReader<ChildStdout>>,
         reporter: &Reporter,
     ) -> Result<TaskResult, ClaudeError> {
-        let mut lines = BufReader::new(stdout).lines();
-        let mut result = None;
-        while let Some(line) = lines.next_line().await.map_err(ShellError::from)? {
+        while let Some(line) = events.next_line().await.map_err(ShellError::from)? {
             if line.trim().is_empty() {
                 continue;
             }
@@ -163,11 +237,11 @@ impl ClaudeCode {
                         }
                     }
                 }
-                StreamEvent::Result(task_result) => result = Some(task_result),
+                StreamEvent::Result(result) => return Ok(result),
                 StreamEvent::Other => {}
             }
         }
-        result.ok_or(ClaudeError::NoResult)
+        Err(ClaudeError::NoResult)
     }
 
     fn describe(&self, block: ContentBlock) -> Option<String> {
@@ -186,6 +260,22 @@ impl ClaudeCode {
         Path::new(path)
             .strip_prefix(self.shell.workdir())
             .map_or_else(|_| path.to_string(), |rel| rel.display().to_string())
+    }
+}
+
+/// Closes the process once no task has used it for `IDLE_TIMEOUT`.
+async fn close_when_idle(session: Arc<Mutex<Session>>) {
+    loop {
+        sleep(IDLE_TIMEOUT / 2).await;
+        let mut session = session.lock().await;
+        let idle = session
+            .live
+            .as_ref()
+            .is_some_and(|live| live.last_used.elapsed() >= IDLE_TIMEOUT);
+        if idle {
+            info!("closing idle claude process");
+            session.live = None;
+        }
     }
 }
 
