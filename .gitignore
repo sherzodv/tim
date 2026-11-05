@@ -30,3 +30,6 @@ logs/
 # Python cache (if tooling scripts added later)
 __pycache__/
 *.pyc
+
+# Claude Code
+.claude/settings.local.json
