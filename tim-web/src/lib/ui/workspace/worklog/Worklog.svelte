@@ -3,7 +3,7 @@
 	import WorklogItemCmp from './item/index.svelte';
 	import WorklogHeader from './WorklogHeader.svelte';
 
-	let { items }: { items: WorklogItem[] } = $props();
+	let { items, branchId }: { items: WorklogItem[]; branchId: bigint } = $props();
 
 	let listEl: HTMLElement;
 	let atBottom = true;
@@ -28,15 +28,30 @@
 
 <section class="worklog-container">
 	<WorklogHeader />
+	<nav aria-label="Timeline branch">
+		<a href="/" data-sveltekit-reload>Main</a>
+		{#if branchId !== 0n}<span> / Branch {branchId.toString()}</span>{/if}
+	</nav>
 	<div class="worklog" bind:this={listEl} aria-live="polite" onscroll={handleScroll}>
 		{#each items as item, i (`${item.kind}-${item.id}-${i}`)}
 			<WorklogItemCmp entry={item} />
+			{#if item.id > 0n}
+				<a class="fork" href={`?branch=${item.id}`} data-sveltekit-reload>Fork here</a>
+			{/if}
 		{/each}
 	</div>
 </section>
 
 <style>
 	@import '$lib/ui/theme.css';
+
+	nav {
+		padding: 0.5rem 1.75rem;
+	}
+	.fork {
+		align-self: flex-end;
+		font-size: 0.75rem;
+	}
 
 	.worklog-container {
 		box-sizing: border-box;

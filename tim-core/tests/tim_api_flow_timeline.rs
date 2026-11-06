@@ -33,6 +33,7 @@ async fn tim_api_get_timeline_returns_events() -> Result<(), Box<dyn std::error:
     for content in [first_content, second_content] {
         api.send_message(
             &SendMessageReq {
+                branch_id: 0,
                 content: content.into(),
             },
             &session,
@@ -42,6 +43,7 @@ async fn tim_api_get_timeline_returns_events() -> Result<(), Box<dyn std::error:
 
     let timeline = api.get_timeline(
         &GetTimelineReq {
+            branch_id: None,
             offset: 0,
             size: 10,
         },
@@ -85,6 +87,7 @@ async fn tim_api_get_timeline_returns_events() -> Result<(), Box<dyn std::error:
 
     let filtered = api.get_timeline(
         &GetTimelineReq {
+            branch_id: None,
             offset: second_id,
             size: 10,
         },

@@ -223,6 +223,12 @@ impl TimStorage {
         Ok(())
     }
 
+    pub fn fetch_space_event(&self, id: u64) -> Result<Option<SpaceEvent>, TimStorageError> {
+        Ok(self
+            .store
+            .fetch_log::<SpaceEvent>(&key::timeline_event(id))?)
+    }
+
     #[instrument(skip(self), level = "trace", fields(service = "storage"))]
     pub fn timeline(&self, offset: u64, size: u32) -> Result<Vec<SpaceEvent>, TimStorageError> {
         if size == 0 {

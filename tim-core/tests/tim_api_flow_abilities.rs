@@ -113,6 +113,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     let mut alpha_events = api
         .subscribe(
             &SubscribeToSpaceReq {
+                branch_id: None,
                 receive_own_messages: false,
                 after_id: None,
             },
@@ -135,6 +136,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
         .send_call_ability(
             &SendCallAbilityReq {
                 call_ability: Some(CallAbility {
+                    branch_id: 0,
                     timite_id: alpha_session.timite_id,
                     sender_id: 0,
                     name: ability_name.into(),
@@ -186,6 +188,7 @@ async fn tim_api_flow_abilities_call_cycle() -> Result<(), Box<dyn std::error::E
     let mut beta_events = api
         .subscribe(
             &SubscribeToSpaceReq {
+                branch_id: None,
                 receive_own_messages: false,
                 after_id: None,
             },

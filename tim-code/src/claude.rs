@@ -1,14 +1,9 @@
 //! Delegates coding tasks to Claude Code running in the workspace.
 //!
-//! One `claude` process stays open and takes tasks as turns over stream-json stdin, so a
-//! follow-up does not pay for startup and context loading again. After an idle period it
-//! is closed; the next task starts a new process that resumes the same session.
+//! Each task restores its branch transcript from the space into a fresh process.
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
 use serde::Deserialize;
 use serde_json::json;
@@ -19,8 +14,6 @@ use tokio::io::Lines;
 use tokio::process::Child;
 use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
-use tokio::sync::Mutex;
-use tokio::time::sleep;
 use tokio::time::timeout;
 use tracing::info;
 
@@ -31,8 +24,6 @@ use crate::text::head;
 use crate::text::tail;
 
 const STEP_CHARS: usize = 80;
-/// How long an idle `claude` process is kept before it is closed.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaudeError {
@@ -130,14 +121,6 @@ struct Live {
     _child: Child,
     stdin: ChildStdin,
     events: Lines<BufReader<ChildStdout>>,
-    last_used: Instant,
-}
-
-/// The Claude Code session of the workspace; tasks run one at a time.
-#[derive(Default)]
-struct Session {
-    live: Option<Live>,
-    id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -145,17 +128,13 @@ pub struct ClaudeCode {
     shell: Shell,
     /// Tools Claude may use without asking; file edits are always accepted.
     allowed_tools: Vec<String>,
-    session: Arc<Mutex<Session>>,
 }
 
 impl ClaudeCode {
     pub fn new(shell: Shell, allowed_tools: Vec<String>) -> Self {
-        let session = Arc::new(Mutex::new(Session::default()));
-        tokio::spawn(close_when_idle(session.clone()));
         Self {
             shell,
             allowed_tools,
-            session,
         }
     }
 
@@ -163,13 +142,15 @@ impl ClaudeCode {
     pub async fn task(
         &self,
         description: &str,
+        history: &str,
         reporter: &Reporter,
     ) -> Result<String, ClaudeError> {
-        let mut session = self.session.lock().await;
-        if session.live.is_none() {
-            session.live = Some(self.open(session.id.as_deref()).await?);
-        }
-        let live = session.live.as_mut().expect("opened above");
+        let description = if history.is_empty() {
+            description.to_string()
+        } else {
+            format!("Previous conversation (context only):\n{history}\n\nCurrent request:\n{description}")
+        };
+        let mut live = self.open().await?;
 
         let turn = json!({
             "type": "user",
@@ -180,31 +161,17 @@ impl ClaudeCode {
             .await
             .map_err(ShellError::from)?;
 
-        let followed = timeout(
+        let result = timeout(
             self.shell.timeout(),
             self.follow(&mut live.events, reporter),
         )
-        .await;
-        let result = match followed {
-            Ok(Ok(result)) => result,
-            Ok(Err(error)) => {
-                session.live = None;
-                return Err(error);
-            }
-            Err(_) => {
-                session.live = None;
-                return Err(ShellError::Timeout(self.shell.timeout()).into());
-            }
-        };
-        live.last_used = Instant::now();
-        if result.session_id.is_some() {
-            session.id = result.session_id;
-        }
+        .await
+        .map_err(|_| ShellError::Timeout(self.shell.timeout()))??;
 
         info!(
             turns = result.num_turns,
             cost_usd = result.total_cost_usd,
-            session = session.id.as_deref().unwrap_or(""),
+            session = result.session_id.as_deref().unwrap_or(""),
             "claude task finished"
         );
         if result.is_error {
@@ -213,8 +180,8 @@ impl ClaudeCode {
         Ok(result.result.trim().to_string())
     }
 
-    /// Starts a `claude` process, resuming `session_id` when there is one.
-    async fn open(&self, session_id: Option<&str>) -> Result<Live, ClaudeError> {
+    /// Starts a fresh `claude` process for the selected branch context.
+    async fn open(&self) -> Result<Live, ClaudeError> {
         let mut args = vec![
             "-p",
             "--input-format",
@@ -225,9 +192,6 @@ impl ClaudeCode {
             "--permission-mode",
             "acceptEdits",
         ];
-        if let Some(id) = session_id {
-            args.extend(["--resume", id]);
-        }
         if !self.allowed_tools.is_empty() {
             args.push("--allowedTools");
             args.extend(self.allowed_tools.iter().map(String::as_str));
@@ -235,12 +199,11 @@ impl ClaudeCode {
         let mut child = self.shell.spawn("claude", &args).await?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
-        info!(resumed = session_id.is_some(), "claude process started");
+        info!("claude process started");
         Ok(Live {
             _child: child,
             stdin,
             events: BufReader::new(stdout).lines(),
-            last_used: Instant::now(),
         })
     }
 
@@ -256,6 +219,7 @@ impl ClaudeCode {
             if line.trim().is_empty() {
                 continue;
             }
+            reporter.model_event("claude", line.clone());
             match serde_json::from_str::<StreamEvent>(&line)? {
                 StreamEvent::Assistant { message } => {
                     for block in message.content {
@@ -317,29 +281,13 @@ impl ClaudeCode {
         };
         let output = tail(&result_text(&content), self.shell.max_output_chars());
         let result = if is_error { Err(output) } else { Ok(output) };
-        reporter.tool_call(tool.name, tool.input.to_string(), result);
+        reporter.tool_call(tool_use_id, tool.name, tool.input.to_string(), result);
     }
 
     fn relative(&self, path: &str) -> String {
         Path::new(path)
             .strip_prefix(self.shell.workdir())
             .map_or_else(|_| path.to_string(), |rel| rel.display().to_string())
-    }
-}
-
-/// Closes the process once no task has used it for `IDLE_TIMEOUT`.
-async fn close_when_idle(session: Arc<Mutex<Session>>) {
-    loop {
-        sleep(IDLE_TIMEOUT / 2).await;
-        let mut session = session.lock().await;
-        let idle = session
-            .live
-            .as_ref()
-            .is_some_and(|live| live.last_used.elapsed() >= IDLE_TIMEOUT);
-        if idle {
-            info!("closing idle claude process");
-            session.live = None;
-        }
     }
 }
 

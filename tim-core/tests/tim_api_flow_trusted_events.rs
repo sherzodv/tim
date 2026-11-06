@@ -69,6 +69,7 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
     let mut beta_events = api
         .subscribe(
             &SubscribeToSpaceReq {
+                branch_id: None,
                 receive_own_messages: false,
                 after_id: None,
             },
@@ -80,6 +81,7 @@ async fn trusted_flow_sends_events() -> Result<(), Box<dyn std::error::Error>> {
     let send_res = api
         .send_message(
             &SendMessageReq {
+                branch_id: 0,
                 content: content.into(),
             },
             &reconnect_session,

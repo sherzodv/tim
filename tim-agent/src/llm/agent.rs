@@ -78,6 +78,7 @@ impl Agent {
     pub fn new(conf: &AgentConf, client: TimClient) -> Result<Self, AgentError> {
         let llm = build_llm(&conf.provider, &conf.llm)
             .map_err(|err| AgentError::Agent(err.to_string()))?;
+        let client = client.in_branch(0);
         let memory = Memory::new(client.clone());
         Ok(Self {
             client,

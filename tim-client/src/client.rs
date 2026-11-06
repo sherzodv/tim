@@ -12,6 +12,7 @@ use crate::api::ListAbilitiesReq;
 use crate::api::SendCallAbilityOutcomeReq;
 use crate::api::SendMessageReq;
 use crate::api::SendTaskFinishedReq;
+use crate::api::SendTaskModelEventReq;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStepReq;
 use crate::api::SendTaskToolCallReq;
@@ -19,6 +20,7 @@ use crate::api::SendTypingStartedReq;
 use crate::api::SendTypingStoppedReq;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
+use crate::api::TaskModelEvent;
 use crate::api::TaskToolCall;
 use crate::api::TimiteAbilities;
 use crate::api::TrustedConnectReq;
@@ -66,6 +68,7 @@ pub struct TimClient {
     token: MetadataValue<Ascii>,
     timite_id: u64,
     username: String,
+    branch_id: Option<u64>,
 }
 
 impl Debug for TimClient {
@@ -106,7 +109,20 @@ impl TimClient {
             token,
             timite_id: session.timite_id,
             username: conf.username,
+            branch_id: None,
         })
+    }
+
+    /// A client scoped to one branch; clones keep independent branch selections.
+    pub fn in_branch(&self, branch_id: u64) -> Self {
+        Self {
+            branch_id: Some(branch_id),
+            ..self.clone()
+        }
+    }
+
+    pub fn branch_id(&self) -> u64 {
+        self.branch_id.unwrap_or(0)
     }
 
     pub fn get_me(&self) -> Timite {
@@ -123,6 +139,7 @@ impl TimClient {
         }
         let mut req = tonic::Request::new(SendMessageReq {
             content: trimmed.to_string(),
+            branch_id: self.branch_id(),
         });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
@@ -131,7 +148,9 @@ impl TimClient {
     }
 
     pub async fn send_typing_started(&mut self) -> Result<(), TimClientError> {
-        let mut req = tonic::Request::new(SendTypingStartedReq {});
+        let mut req = tonic::Request::new(SendTypingStartedReq {
+            branch_id: self.branch_id(),
+        });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_typing_started(req).await?;
@@ -139,7 +158,9 @@ impl TimClient {
     }
 
     pub async fn send_typing_stopped(&mut self) -> Result<(), TimClientError> {
-        let mut req = tonic::Request::new(SendTypingStoppedReq {});
+        let mut req = tonic::Request::new(SendTypingStoppedReq {
+            branch_id: self.branch_id(),
+        });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_typing_stopped(req).await?;
@@ -147,9 +168,15 @@ impl TimClient {
     }
 
     /// Announces a task and returns its id for the steps and the finish.
-    pub async fn send_task_started(&mut self, task: &str) -> Result<u64, TimClientError> {
+    pub async fn send_task_started(
+        &mut self,
+        task: &str,
+        source_event_id: u64,
+    ) -> Result<u64, TimClientError> {
         let mut req = tonic::Request::new(SendTaskStartedReq {
             task: task.to_string(),
+            branch_id: self.branch_id(),
+            source_event_id,
         });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
@@ -179,6 +206,20 @@ impl TimClient {
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_task_tool_call(req).await?;
+        Ok(())
+    }
+
+    /// Records a raw coding engine event; `timite_id` is set by the server.
+    pub async fn send_task_model_event(
+        &mut self,
+        model_event: TaskModelEvent,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskModelEventReq {
+            model_event: Some(model_event),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_task_model_event(req).await?;
         Ok(())
     }
 
@@ -234,6 +275,7 @@ impl TimClient {
         let sub_req = SubscribeToSpaceReq {
             receive_own_messages,
             after_id,
+            branch_id: self.branch_id,
         };
         let mut sub_req = tonic::Request::new(sub_req);
         sub_req
@@ -247,7 +289,11 @@ impl TimClient {
         offset: u64,
         size: u32,
     ) -> Result<GetTimelineRes, TimClientError> {
-        let mut req = tonic::Request::new(GetTimelineReq { offset, size });
+        let mut req = tonic::Request::new(GetTimelineReq {
+            offset,
+            size,
+            branch_id: self.branch_id,
+        });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         let res = self.client.get_timeline(req).await?.into_inner();
@@ -267,7 +313,7 @@ impl TimClient {
         stream::unfold(
             State {
                 client: self,
-                offset: 0,
+                offset: 1,
                 page_size,
                 finished: false,
             },
@@ -286,7 +332,11 @@ impl TimClient {
                             return None;
                         }
                         let len = res.events.len() as u64;
-                        state.offset = state.offset.saturating_add(len);
+                        state.offset = res
+                            .events
+                            .last()
+                            .and_then(|event| event.metadata.as_ref())
+                            .map_or(state.offset, |meta| meta.id + 1);
                         if len < state.page_size as u64 {
                             state.finished = true;
                         }

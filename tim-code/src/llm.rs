@@ -1,17 +1,19 @@
 //! Runs coding tasks with a model from tim-llm calling the native tools in a loop.
 //!
-//! Each task starts from a clean context: cheap, and no session to keep. The model's
-//! turns go back verbatim, so reasoning models keep their thinking across tool calls.
+//! Branch history restores model turns verbatim, including reasoning and tool calls.
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::StreamExt;
 use tim_llm::llm::build_llm;
+use tim_llm::llm::collect;
 use tim_llm::llm::Llm;
 use tim_llm::llm::LlmConf;
 use tim_llm::llm::LlmError;
 use tim_llm::llm::LlmItem;
 use tim_llm::llm::LlmReq;
+use tim_llm::llm::LlmStreamEvent;
 use tim_llm::llm::LlmToolCall;
 use tokio::time::timeout;
 use tracing::info;
@@ -63,17 +65,23 @@ impl LlmCode {
     pub async fn task(
         &self,
         description: &str,
+        history: Vec<LlmItem>,
         reporter: &Reporter,
     ) -> Result<String, LlmCodeError> {
         let limit = self.tools.shell.timeout();
-        timeout(limit, self.run(description, reporter))
+        timeout(limit, self.run(description, history, reporter))
             .await
             .map_err(|_| LlmCodeError::Timeout(limit))?
     }
 
-    async fn run(&self, description: &str, reporter: &Reporter) -> Result<String, LlmCodeError> {
+    async fn run(
+        &self,
+        description: &str,
+        mut items: Vec<LlmItem>,
+        reporter: &Reporter,
+    ) -> Result<String, LlmCodeError> {
         let definitions = tools::definitions();
-        let mut items = vec![LlmItem::User(description.to_string())];
+        items.push(LlmItem::User(description.to_string()));
 
         for step in 1..=self.max_steps {
             reporter.step("thinking".to_string());
@@ -82,7 +90,12 @@ impl LlmCode {
                 inputs: &items,
                 tools: &definitions,
             };
-            let turn = self.llm.turn(&req).await?;
+            let mut stream = self.llm.chat_stream(&req).await?.inspect(|event| {
+                if let Ok(LlmStreamEvent::Raw(payload)) = event {
+                    reporter.model_event("llm", payload.clone());
+                }
+            });
+            let turn = collect(&mut stream).await?;
             items.push(LlmItem::Turn(turn.items));
 
             if turn.tool_calls.is_empty() {
@@ -95,7 +108,12 @@ impl LlmCode {
                 let result = tools::call(&self.tools, &ability, &call.arguments)
                     .await
                     .map_err(|error| error.to_string());
-                reporter.tool_call(ability, call.arguments.clone(), result.clone());
+                reporter.tool_call(
+                    call.call_id.clone(),
+                    ability,
+                    call.arguments.clone(),
+                    result.clone(),
+                );
                 items.push(LlmItem::ToolOutput {
                     call_id: call.call_id,
                     output: tool_output(result),
@@ -107,7 +125,7 @@ impl LlmCode {
 }
 
 /// Tool failures go back to the model as text: it decides what to do next.
-fn tool_output(result: Result<String, String>) -> String {
+pub(crate) fn tool_output(result: Result<String, String>) -> String {
     match result {
         Ok(output) if output.trim().is_empty() => NO_OUTPUT.to_string(),
         Ok(output) => output,

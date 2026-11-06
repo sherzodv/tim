@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import Workspace from '$lib/ui/workspace/Workspace.svelte';
 	import CommandLine from '$lib/ui/command-line/CommandLine.svelte';
 	import { createTimClient } from '$lib/api/client';
@@ -7,9 +8,12 @@
 	import { createTimSpace } from '$lib/api/space';
 	import { createTimStorage } from '$lib/api/storage';
 
+	const branch = page.url.searchParams.get('branch');
+	const branchId = branch && /^\d+$/.test(branch) ? BigInt(branch) : 0n;
 	const timClient = createTimClient({
 		username: 'bob',
-		platform: 'browser'
+		platform: 'browser',
+		branchId
 	});
 	const timConnect = createTimConnect(timClient);
 	const timStorage = createTimStorage();
@@ -62,7 +66,7 @@
 
 <main class="page-shell tim-theme" aria-label="Workspace">
 	<div class="workspace-region">
-		<Workspace space={timSpace} storage={timStorage} />
+		<Workspace {branchId} space={timSpace} storage={timStorage} />
 	</div>
 	<CommandLine space={timSpace} />
 </main>

@@ -22,6 +22,8 @@ use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskFinishedRes;
+use crate::api::SendTaskModelEventReq;
+use crate::api::SendTaskModelEventRes;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStartedRes;
 use crate::api::SendTaskStepReq;
@@ -206,6 +208,18 @@ impl TimGrpcApi for TimGrpcApiService {
         let res = self
             .api
             .send_task_tool_call(&req.into_inner(), &session)
+            .map(Response::new);
+        res.map_err(|e| Status::internal(e.to_string()))
+    }
+
+    async fn send_task_model_event(
+        &self,
+        req: Request<SendTaskModelEventReq>,
+    ) -> Result<Response<SendTaskModelEventRes>, Status> {
+        let session = self.require_session(&req)?;
+        let res = self
+            .api
+            .send_task_model_event(&req.into_inner(), &session)
             .map(Response::new);
         res.map_err(|e| Status::internal(e.to_string()))
     }

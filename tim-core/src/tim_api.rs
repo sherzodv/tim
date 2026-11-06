@@ -22,6 +22,8 @@ use crate::api::SendMessageReq;
 use crate::api::SendMessageRes;
 use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskFinishedRes;
+use crate::api::SendTaskModelEventReq;
+use crate::api::SendTaskModelEventRes;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStartedRes;
 use crate::api::SendTaskStepReq;
@@ -36,6 +38,7 @@ use crate::api::Session;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
+use crate::api::TaskModelEvent;
 use crate::api::TaskStep;
 use crate::api::TaskToolCall;
 use crate::api::Timite;
@@ -204,7 +207,7 @@ impl TimApi {
         req: &GetTimelineReq,
         session: &Session,
     ) -> Result<GetTimelineRes, TimApiError> {
-        let events = self.t_space.timeline(req.offset, req.size)?;
+        let events = self.t_space.timeline(req.offset, req.size, req.branch_id)?;
         let mut timites: Vec<Timite> = Vec::new();
         for timite_id in collect_timite_ids(&events) {
             if let Some(timite) = self.t_timite.get(timite_id)? {
@@ -262,35 +265,37 @@ impl TimApi {
             });
         }
         self.t_space
-            .publish_call_outcome(outcome, session.timite_id)?;
+            .publish_call_outcome(outcome, session.timite_id, call_ability.branch_id)?;
         Ok(SendCallAbilityOutcomeRes {})
     }
 
     #[instrument(
-        skip(self, _req, session),
+        skip(self, req, session),
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
     pub fn send_typing_started(
         &self,
-        _req: &SendTypingStartedReq,
+        req: &SendTypingStartedReq,
         session: &Session,
     ) -> Result<SendTypingStartedRes, TimApiError> {
-        self.t_space.publish_typing_started(session.timite_id)?;
+        self.t_space
+            .publish_typing_started(session.timite_id, req.branch_id)?;
         Ok(SendTypingStartedRes {})
     }
 
     #[instrument(
-        skip(self, _req, session),
+        skip(self, req, session),
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
     pub fn send_typing_stopped(
         &self,
-        _req: &SendTypingStoppedReq,
+        req: &SendTypingStoppedReq,
         session: &Session,
     ) -> Result<SendTypingStoppedRes, TimApiError> {
-        self.t_space.publish_typing_stopped(session.timite_id)?;
+        self.t_space
+            .publish_typing_stopped(session.timite_id, req.branch_id)?;
         Ok(SendTypingStoppedRes {})
     }
 
@@ -304,9 +309,12 @@ impl TimApi {
         req: &SendTaskStartedReq,
         session: &Session,
     ) -> Result<SendTaskStartedRes, TimApiError> {
-        let task_id = self
-            .t_space
-            .publish_task_started(session.timite_id, &req.task)?;
+        let task_id = self.t_space.publish_task_started(
+            session.timite_id,
+            &req.task,
+            req.branch_id,
+            req.source_event_id,
+        )?;
         Ok(SendTaskStartedRes { task_id })
     }
 
@@ -347,6 +355,27 @@ impl TimApi {
             ..tool_call.clone()
         })?;
         Ok(SendTaskToolCallRes {})
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
+    pub fn send_task_model_event(
+        &self,
+        req: &SendTaskModelEventReq,
+        session: &Session,
+    ) -> Result<SendTaskModelEventRes, TimApiError> {
+        let model_event = req
+            .model_event
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("model event required".into()))?;
+        self.t_space.publish_task_model_event(TaskModelEvent {
+            timite_id: session.timite_id,
+            ..model_event.clone()
+        })?;
+        Ok(SendTaskModelEventRes {})
     }
 
     #[instrument(
@@ -421,6 +450,9 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
             }
             SpaceEventData::EventTaskToolCall(payload) => {
                 ids.extend(payload.task_tool_call.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskModelEvent(payload) => {
+                ids.extend(payload.task_model_event.as_ref().map(|t| t.timite_id));
             }
             SpaceEventData::EventTaskFinished(payload) => {
                 ids.extend(payload.task_finished.as_ref().map(|t| t.timite_id));

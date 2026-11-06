@@ -116,6 +116,8 @@ pub enum LlmError {
 
 #[derive(Debug)]
 pub enum LlmStreamEvent {
+    /// The SSE payload exactly as the provider sent it.
+    Raw(String),
     ContentDelta(String),
     /// A finished output item, kept as the provider sent it.
     Item(serde_json::Value),
@@ -174,11 +176,15 @@ pub fn build_llm(provider: &str, conf: &LlmConf) -> Result<Arc<dyn Llm>, LlmErro
     }
 }
 
-async fn collect(stream: &mut LlmStream) -> Result<LlmTurn, LlmError> {
+/// Collects a model turn from a stream, optionally observed by the caller.
+pub async fn collect(
+    stream: &mut (impl Stream<Item = Result<LlmStreamEvent, LlmError>> + Unpin),
+) -> Result<LlmTurn, LlmError> {
     let mut turn = LlmTurn::default();
 
     while let Some(item) = stream.next().await {
         match item? {
+            LlmStreamEvent::Raw(_) => {}
             LlmStreamEvent::ContentDelta(delta) => {
                 trace!("LLM content delta: {:?}", delta);
                 turn.text.push_str(&delta);

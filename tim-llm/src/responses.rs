@@ -246,12 +246,17 @@ fn tool_definition(tool: &LlmTool) -> ToolDefinition {
 
 fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent, LlmError>> {
     trace!("sse event: {}", event.data);
-    let parsed = match serde_json::from_str::<SseEvent>(&event.data) {
+    let parsed = serde_json::from_str::<SseEvent>(&event.data);
+    let mut mapped = vec![Ok(LlmStreamEvent::Raw(event.data))];
+    let parsed = match parsed {
         Ok(val) => val,
-        Err(err) => return vec![Err(LlmError::Stream(err.to_string()))],
+        Err(err) => {
+            mapped.push(Err(LlmError::Stream(err.to_string())));
+            return mapped;
+        }
     };
 
-    match parsed.kind.as_str() {
+    mapped.extend(match parsed.kind.as_str() {
         "response.output_text.delta" => parsed
             .delta
             .map(LlmStreamEvent::ContentDelta)
@@ -264,5 +269,6 @@ fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent,
             .unwrap_or_default(),
         "response.completed" => vec![Ok(LlmStreamEvent::Completed)],
         _ => Vec::new(),
-    }
+    });
+    mapped
 }

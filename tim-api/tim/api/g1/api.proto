@@ -56,6 +56,7 @@ message CallAbility {
   string name = 3;
   string payload = 4;
   optional uint64 call_ability_id = 5;
+  uint64 branch_id = 6;
 }
 
 message CallAbilityOutcome {
@@ -79,6 +80,7 @@ message TaskStarted {
   uint64 timite_id = 1;  // set by the server
   uint64 task_id = 2;    // set by the server
   string task = 3;       // what is being done, e.g. "fs.search" or the request text
+  uint64 source_event_id = 4;
 }
 
 message TaskStep {
@@ -95,6 +97,15 @@ message TaskToolCall {
   string arguments = 4;  // as the model sent them, usually JSON
   string output = 5;     // what the tool returned, cut by the sender
   optional string error = 6;
+  string call_id = 7;
+}
+
+// One raw event from the coding engine, preserved for session replay.
+message TaskModelEvent {
+  uint64 timite_id = 1;  // set by the server
+  uint64 task_id = 2;
+  string engine = 3;     // e.g. claude or llm
+  string payload = 4;    // raw engine event or an assembled model turn, as JSON
 }
 
 message TaskFinished {
@@ -121,6 +132,7 @@ message SpaceEvent {
   message Metadata {
     uint64 id = 1;
     google.protobuf.Timestamp emitted_at = 2;
+    uint64 branch_id = 3;  // 0: main; otherwise the event this branch forks from
   }
   Metadata metadata = 1;
   oneof data {
@@ -135,6 +147,7 @@ message SpaceEvent {
     EventTaskStep event_task_step = 10;
     EventTaskFinished event_task_finished = 11;
     EventTaskToolCall event_task_tool_call = 12;
+    EventTaskModelEvent event_task_model_event = 13;
   }
 }
 
@@ -183,6 +196,10 @@ message EventTaskToolCall {
   TaskToolCall task_tool_call = 1;
 }
 
+message EventTaskModelEvent {
+  TaskModelEvent task_model_event = 1;
+}
+
 // --[ RPC req/res ]--
 
 message Error {
@@ -209,6 +226,7 @@ message TrustedConnectRes {
 
 message SendMessageReq {
   string content = 2;
+  uint64 branch_id = 3;
 }
 
 message SendMessageRes {
@@ -217,6 +235,7 @@ message SendMessageRes {
 
 message SubscribeToSpaceReq {
   bool receive_own_messages = 1;
+  optional uint64 branch_id = 3;  // unset: all branches
   optional uint64 after_id = 2;  // unset: live only; set: replay events with id > after_id first
 }
 
@@ -236,12 +255,14 @@ message SendCallAbilityOutcomeRes {
 }
 
 message SendTypingStartedReq {
+  uint64 branch_id = 1;
 }
 
 message SendTypingStartedRes {
 }
 
 message SendTypingStoppedReq {
+  uint64 branch_id = 1;
 }
 
 message SendTypingStoppedRes {
@@ -249,6 +270,8 @@ message SendTypingStoppedRes {
 
 message SendTaskStartedReq {
   string task = 1;
+  uint64 branch_id = 2;
+  uint64 source_event_id = 3;
 }
 
 message SendTaskStartedRes {
@@ -270,6 +293,13 @@ message SendTaskToolCallReq {
 message SendTaskToolCallRes {
 }
 
+message SendTaskModelEventReq {
+  TaskModelEvent model_event = 1;
+}
+
+message SendTaskModelEventRes {
+}
+
 message SendTaskFinishedReq {
   uint64 task_id = 1;
 }
@@ -280,6 +310,7 @@ message SendTaskFinishedRes {
 message GetTimelineReq {
   uint64 offset = 1;
   uint32 size = 2;
+  optional uint64 branch_id = 3;  // unset: all branches
 }
 
 message GetTimelineRes {
@@ -300,6 +331,7 @@ service TimGrpcApi {
   rpc SendTaskStarted(SendTaskStartedReq) returns (SendTaskStartedRes);
   rpc SendTaskStep(SendTaskStepReq) returns (SendTaskStepRes);
   rpc SendTaskToolCall(SendTaskToolCallReq) returns (SendTaskToolCallRes);
+  rpc SendTaskModelEvent(SendTaskModelEventReq) returns (SendTaskModelEventRes);
   rpc SendTaskFinished(SendTaskFinishedReq) returns (SendTaskFinishedRes);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
 

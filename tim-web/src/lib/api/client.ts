@@ -27,6 +27,7 @@ export type TimClientConf = {
 	/** Unique handle the timite connects as and is addressed by. */
 	username: string;
 	platform: string;
+	branchId?: bigint;
 };
 
 export class TimClient {
@@ -87,7 +88,7 @@ export class TimClient {
 		if (!trimmed) return;
 
 		const sessionKey = await this.ensureSession();
-		const request = buildSendMessageRequest(trimmed);
+		const request = buildSendMessageRequest(trimmed, this.conf.branchId ?? 0n);
 		await this.client.sendMessage(request, {
 			headers: buildSessionHeaders(sessionKey)
 		});
@@ -95,16 +96,22 @@ export class TimClient {
 
 	async sendTypingStarted(): Promise<void> {
 		const sessionKey = await this.ensureSession();
-		await this.client.sendTypingStarted(create(SendTypingStartedReqSchema, {}), {
-			headers: buildSessionHeaders(sessionKey)
-		});
+		await this.client.sendTypingStarted(
+			create(SendTypingStartedReqSchema, { branchId: this.conf.branchId ?? 0n }),
+			{
+				headers: buildSessionHeaders(sessionKey)
+			}
+		);
 	}
 
 	async sendTypingStopped(): Promise<void> {
 		const sessionKey = await this.ensureSession();
-		await this.client.sendTypingStopped(create(SendTypingStoppedReqSchema, {}), {
-			headers: buildSessionHeaders(sessionKey)
-		});
+		await this.client.sendTypingStopped(
+			create(SendTypingStoppedReqSchema, { branchId: this.conf.branchId ?? 0n }),
+			{
+				headers: buildSessionHeaders(sessionKey)
+			}
+		);
 	}
 
 	async subscribeToSpace(
@@ -114,6 +121,7 @@ export class TimClient {
 	) {
 		const sessionKey = await this.ensureSession();
 		const request = buildSubscribeRequest(receiveOwnMessages, afterId);
+		request.branchId = this.conf.branchId ?? 0n;
 		return this.client.subscribeToSpace(request, {
 			signal,
 			headers: buildSessionHeaders(sessionKey)
@@ -122,7 +130,11 @@ export class TimClient {
 
 	async getTimeline(offset: bigint = 0n, size = 50): Promise<GetTimelineRes> {
 		const sessionKey = await this.ensureSession();
-		const request = create(GetTimelineReqSchema, { offset, size });
+		const request = create(GetTimelineReqSchema, {
+			offset,
+			size,
+			branchId: this.conf.branchId ?? 0n
+		});
 		return this.client.getTimeline(request, {
 			headers: buildSessionHeaders(sessionKey)
 		});
@@ -150,9 +162,10 @@ function buildConnectRequest(conf: TimClientConf): TrustedConnectReq {
 	});
 }
 
-function buildSendMessageRequest(content: string): SendMessageReq {
+function buildSendMessageRequest(content: string, branchId: bigint): SendMessageReq {
 	return create(SendMessageReqSchema, {
-		content
+		content,
+		branchId
 	});
 }
 
