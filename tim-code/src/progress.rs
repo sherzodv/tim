@@ -113,11 +113,20 @@ impl Reporter {
 
     /// Records one JSON event from the coding engine in its original order.
     pub fn model_event(&self, engine: &str, payload: String) {
+        self.send_model_event(engine, payload, None);
+    }
+
+    pub fn llm_event(&self, call_id: u64, payload: String) {
+        self.send_model_event("llm", payload, Some(call_id));
+    }
+
+    fn send_model_event(&self, engine: &str, payload: String, llm_call_id: Option<u64>) {
         let _ = self.reports.send(Report::ModelEvent(TaskModelEvent {
             timite_id: 0,
             task_id: 0,
             engine: engine.to_string(),
             payload,
+            llm_call_id,
         }));
     }
 }

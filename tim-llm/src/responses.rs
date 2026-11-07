@@ -7,6 +7,7 @@ use std::fmt::Debug;
 use eventsource_stream::Eventsource;
 use futures::stream;
 use futures::StreamExt;
+use futures::TryStreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
@@ -97,29 +98,55 @@ impl ResponsesClient {
     ) -> Result<LlmStream, LlmError> {
         debug!("responses req: {:?}", payload);
 
-        let response = self
+        let payload = serde_json::to_value(payload)?;
+        let request = self
             .http
             .post(&self.endpoint)
             .bearer_auth(&self.api_key)
-            .json(payload)
-            .send()
-            .await?;
+            .json(&payload)
+            .build()?;
+        let started = LlmStreamEvent::Request {
+            endpoint: self.endpoint.clone(),
+            payload,
+        };
+        let http = self.http.clone();
+        // Send only after the caller has observed the request event.
+        let response = stream::once(async move {
+            let response = http.execute(request).await?;
+            Ok::<LlmStream, LlmError>(response_stream(response))
+        })
+        .try_flatten();
+        Ok(Box::pin(stream::iter([Ok(started)]).chain(response)))
+    }
+}
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(LlmError::Api(format!("status {status}: {body}")));
-        }
-
-        let events = response.bytes_stream().eventsource().flat_map(|next| {
+fn response_stream(response: reqwest::Response) -> LlmStream {
+    let status = response.status();
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .or_else(|| response.headers().get("request-id"))
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let received = LlmStreamEvent::Response {
+        http_status: status.as_u16(),
+        request_id,
+    };
+    let events: LlmStream = if status.is_success() {
+        Box::pin(response.bytes_stream().eventsource().flat_map(|next| {
             let mapped = match next {
                 Ok(event) => map_sse_event(event),
                 Err(err) => vec![Err(LlmError::Stream(err.to_string()))],
             };
             stream::iter(mapped)
-        });
-        Ok(Box::pin(events))
-    }
+        }))
+    } else {
+        Box::pin(stream::once(async move {
+            let body = response.text().await?;
+            Err(LlmError::Api(format!("status {status}: {body}")))
+        }))
+    };
+    Box::pin(stream::iter([Ok(received)]).chain(events))
 }
 
 #[derive(Serialize)]
@@ -268,6 +295,9 @@ fn map_sse_event(event: eventsource_stream::Event) -> Vec<Result<LlmStreamEvent,
             .map(|ev| vec![Ok(ev)])
             .unwrap_or_default(),
         "response.completed" => vec![Ok(LlmStreamEvent::Completed)],
+        "response.failed" | "response.incomplete" | "error" => {
+            vec![Err(LlmError::Api(parsed.kind))]
+        }
         _ => Vec::new(),
     });
     mapped

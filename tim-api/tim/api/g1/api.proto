@@ -100,12 +100,13 @@ message TaskToolCall {
   string call_id = 7;
 }
 
-// One raw event from the coding engine, preserved for session replay.
+// An engine event or LLM call lifecycle event, preserved in timeline order.
 message TaskModelEvent {
   uint64 timite_id = 1;  // set by the server
   uint64 task_id = 2;
   string engine = 3;     // e.g. claude or llm
-  string payload = 4;    // raw engine event or an assembled model turn, as JSON
+  string payload = 4;    // JSON: raw engine event, model turn, or llm.call.started/response/finished
+  optional uint64 llm_call_id = 5;  // HTTP attempt, unique within task_id
 }
 
 message TaskFinished {
