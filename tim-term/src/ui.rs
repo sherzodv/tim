@@ -1,4 +1,3 @@
-use chrono::{Local, TimeZone};
 use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Color, Style, Stylize},
@@ -14,13 +13,13 @@ use crate::llm::LlmCall;
 const MAX_INPUT_HEIGHT: u16 = 8;
 /// How much of a tool call's arguments and outcome the timeline shows.
 const TOOL_CALL_CHARS: usize = 48;
-const MIN_BODY_WIDTH: usize = 16;
 const PROMPT: &str = "› ";
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let input_height = (app.input.lines().len() as u16).clamp(1, MAX_INPUT_HEIGHT);
-    let [header, timeline, rule, input, footer] = Layout::vertical([
+    let [header, notice, timeline, rule, input, footer] = Layout::vertical([
         Constraint::Length(1),
+        Constraint::Length(u16::from(app.notice.is_some())),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(input_height),
@@ -29,6 +28,12 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .areas(frame.area());
 
     render_header(frame, app, header);
+    if let Some(message) = &app.notice {
+        frame.render_widget(
+            Paragraph::new(format!(" ! {message}")).fg(Color::Yellow),
+            notice,
+        );
+    }
     if app.focus == Focus::Branches {
         render_branches(frame, app, timeline);
     } else if app.focus == Focus::Processes {
@@ -172,8 +177,20 @@ fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
     let width = area.width as usize;
     let mut lines = Vec::new();
     let mut selected_line = None;
+    let mut previous_author = None;
     for (index, item) in app.timeline.iter().enumerate() {
-        let mut rendered = item_lines(item, width);
+        let author = item_author(item, app);
+        let mut rendered = Vec::new();
+        if author != previous_author {
+            if let Some(author) = &author {
+                rendered.push(Line::from(Span::styled(
+                    author.clone(),
+                    Style::new().fg(Color::Cyan).bold(),
+                )));
+            }
+        }
+        previous_author = author;
+        rendered.extend(item_lines(item, width));
         let event_id = app.timeline_event_ids[index];
         if matches!(item, TimelineItem::Message { .. }) && app.branches.contains(&event_id) {
             let status = app.branch_status(event_id);
@@ -184,7 +201,7 @@ fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
             };
             rendered.push(Line::from(Span::styled(
                 format!(
-                    "       ↳ branch #{event_id} · {status}{}",
+                    "  ↳ branch #{event_id} · {status}{}",
                     if event_id == app.branch_id {
                         "current"
                     } else {
@@ -246,7 +263,6 @@ fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
         arguments,
         outcome,
         success,
-        timestamp,
     }) = app.selected_item.and_then(|index| app.timeline.get(index))
     else {
         return;
@@ -256,12 +272,9 @@ fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
     let status = if *success { "returned" } else { "failed" };
     let color = if *success { Color::Cyan } else { Color::Red };
     frame.render_widget(
-        Paragraph::new(format!(
-            "{} · {username} · {tool} · {status}",
-            format_time(*timestamp)
-        ))
-        .fg(color)
-        .bold(),
+        Paragraph::new(format!("{username} · {tool} · {status}"))
+            .fg(color)
+            .bold(),
         header,
     );
 
@@ -343,8 +356,38 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+fn item_author(item: &TimelineItem, app: &App) -> Option<String> {
+    let author = match item {
+        TimelineItem::Message { sender, .. } => sender,
+        TimelineItem::TimiteConnected { username, .. }
+        | TimelineItem::TimiteDisconnected { username, .. }
+        | TimelineItem::TaskStarted { username, .. }
+        | TimelineItem::TaskFinished { username, .. }
+        | TimelineItem::TaskToolCall { username, .. } => username,
+        TimelineItem::AbilityCall { caller, .. } => caller,
+        TimelineItem::Process(process) => {
+            return Some(
+                app.usernames
+                    .get(&process.timite_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("user-{}", process.timite_id)),
+            )
+        }
+        TimelineItem::LlmCall(call) => {
+            return Some(
+                app.usernames
+                    .get(&call.timite_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("user-{}", call.timite_id)),
+            )
+        }
+        TimelineItem::AbilityOutcome { .. } => return None,
+    };
+    Some(author.clone())
+}
+
 fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
-    match item {
+    let (marker, text, style) = match item {
         TimelineItem::Process(process) => {
             let color = match process.status() {
                 "succeeded" => Color::Green,
@@ -352,13 +395,11 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
                 "running" => Color::Cyan,
                 _ => Color::Yellow,
             };
-            vec![Line::from(vec![
-                Span::styled(format_time(process.timestamp), Style::new().dim()),
-                Span::styled(
-                    format!(" · sh · {} · Enter inspect", process.label()),
-                    Style::new().fg(color),
-                ),
-            ])]
+            (
+                "·",
+                format!("sh · {} · Enter inspect", process.label()),
+                Style::new().fg(color),
+            )
         }
         TimelineItem::LlmCall(call) => {
             let marker = match call.status() {
@@ -367,70 +408,30 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
                 "running" => "◌",
                 _ => "?",
             };
-            vec![Line::from(vec![
-                Span::styled(format_time(call.timestamp), Style::new().dim()),
-                Span::styled(
-                    format!(" {marker} {}", call.label()),
-                    Style::new().fg(llm_color(call)),
-                ),
-            ])]
+            (marker, call.label(), Style::new().fg(llm_color(call)))
         }
-        TimelineItem::Message {
-            sender,
-            content,
-            timestamp,
-        } => message_lines(format_time(*timestamp), sender, content, width),
-        TimelineItem::TimiteConnected {
-            username,
-            timestamp,
-        } => {
-            vec![system_line(
-                format_time(*timestamp),
-                format!("{username} joined"),
-            )]
+        TimelineItem::Message { content, .. } => ("›", content.clone(), Style::new()),
+        TimelineItem::TimiteConnected { .. } => ("·", "joined".into(), Style::new().dim()),
+        TimelineItem::TimiteDisconnected { .. } => ("·", "left".into(), Style::new().dim()),
+        TimelineItem::AbilityCall { ability_name, .. } => {
+            ("·", format!("called {ability_name}"), Style::new().dim())
         }
-        TimelineItem::TimiteDisconnected {
-            username,
-            timestamp,
-        } => {
-            vec![system_line(
-                format_time(*timestamp),
-                format!("{username} left"),
-            )]
-        }
-        TimelineItem::AbilityCall {
-            caller,
-            ability_name,
-            timestamp,
-        } => vec![system_line(
-            format_time(*timestamp),
-            format!("{caller} called {ability_name}"),
-        )],
         TimelineItem::AbilityOutcome {
             ability_name,
             success,
-            timestamp,
+            ..
         } => {
             let status = if *success { "completed" } else { "failed" };
-            vec![system_line(
-                format_time(*timestamp),
-                format!("{ability_name} {status}"),
-            )]
+            ("·", format!("{ability_name} {status}"), Style::new().dim())
         }
-        TimelineItem::TaskStarted {
-            username,
-            task,
-            timestamp,
-        } => vec![system_line(
-            format_time(*timestamp),
-            format!("{username} started: {task}"),
-        )],
+        TimelineItem::TaskStarted { task, .. } => {
+            ("·", format!("started: {task}"), Style::new().dim())
+        }
         TimelineItem::TaskFinished {
-            username,
             task,
             error,
             duration_ms,
-            timestamp,
+            ..
         } => {
             let status = if error.is_some() {
                 "failed"
@@ -444,30 +445,32 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
                 .as_ref()
                 .map(|error| format!(": {error}"))
                 .unwrap_or_default();
-            vec![system_line(
-                format_time(*timestamp),
-                format!("{username} {status}: {task}{duration}{error}"),
-            )]
+            (
+                "·",
+                format!("{status}: {task}{duration}{error}"),
+                Style::new().dim(),
+            )
         }
         TimelineItem::TaskToolCall {
-            username,
             tool,
             arguments,
             outcome,
             success,
-            timestamp,
+            ..
         } => {
             let status = if *success { "" } else { "error: " };
-            vec![system_line(
-                format_time(*timestamp),
+            (
+                "·",
                 format!(
-                    "{username} {tool} {} → {status}{}",
+                    "{tool} {} → {status}{}",
                     brief(arguments, TOOL_CALL_CHARS),
                     brief(outcome, TOOL_CALL_CHARS)
                 ),
-            )]
+                Style::new().dim(),
+            )
         }
-    }
+    };
+    message_lines(marker, &text, width, style)
 }
 
 fn llm_color(call: &LlmCall) -> Color {
@@ -489,46 +492,28 @@ fn brief(text: &str, max: usize) -> String {
     brief
 }
 
-fn system_line(time: String, text: String) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(time, Style::new().dim()),
-        Span::styled(format!(" · {text}"), Style::new().dim()),
-    ])
-}
-
-/// Wraps the message under its `time sender:` head; continuation lines hang below the text.
-fn message_lines(time: String, sender: &str, content: &str, width: usize) -> Vec<Line<'static>> {
-    let head_width = display_width(&time) + display_width(sender) + 3;
+/// Each event keeps its own marker; wrapped lines align with the message body.
+fn message_lines(marker: &str, content: &str, width: usize, style: Style) -> Vec<Line<'static>> {
+    let prefix = format!("  {marker} ");
+    let head_width = display_width(&prefix);
     let indent = " ".repeat(head_width);
-    let body_width = width.saturating_sub(head_width).max(MIN_BODY_WIDTH);
-    let head = vec![
-        Span::styled(time, Style::new().dim()),
-        Span::raw(" "),
-        Span::styled(format!("{sender}:"), Style::new().fg(Color::Cyan)),
-        Span::raw(" "),
-    ];
-
+    let body_width = width.saturating_sub(head_width).max(1);
     let mut lines = Vec::new();
-    for source in content.lines() {
+    for source in content.split('\n') {
         for piece in textwrap::wrap(source, body_width) {
-            let mut spans = if lines.is_empty() {
-                head.clone()
+            let prefix = if lines.is_empty() {
+                prefix.clone()
             } else {
-                vec![Span::raw(indent.clone())]
+                indent.clone()
             };
-            spans.push(Span::raw(piece.into_owned()));
-            lines.push(Line::from(spans));
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(piece.into_owned(), style),
+            ]));
         }
     }
     if lines.is_empty() {
-        lines.push(Line::from(head));
+        lines.push(Line::from(Span::styled(prefix, style)));
     }
     lines
-}
-
-fn format_time(ts: u64) -> String {
-    match Local.timestamp_millis_opt(ts as i64).single() {
-        Some(dt) => dt.format("%H:%M").to_string(),
-        None => "--:--".to_string(),
-    }
 }

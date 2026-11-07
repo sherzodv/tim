@@ -1,4 +1,5 @@
 mod app;
+mod diagnostics;
 mod error;
 mod event;
 mod llm;
@@ -33,9 +34,15 @@ const DISABLE_ALTERNATE_SCROLL: &str = "\x1b[?1007l";
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
+    let (log_tx, log_rx) = tokio::sync::watch::channel(String::new());
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")))
-        .with(tracing_subscriber::fmt::layer().with_writer(io::stderr))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_ansi(false)
+                .with_writer(move || diagnostics::Writer::new(log_tx.clone())),
+        )
         .init();
 
     let endpoint = std::env::var("TIM_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:8787".into());
@@ -89,7 +96,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut events = EventHandler::new();
+    let mut events = EventHandler::new(log_rx);
     let forwarder = SpaceForwarder {
         tx: events.sender(),
     };
@@ -146,11 +153,22 @@ async fn run_app(
         terminal.draw(|f| ui::render(f, app))?;
 
         match events.next().await? {
-            AppEvent::Key(key) => handle_key(app, client, key).await?,
+            AppEvent::Key(key) => {
+                if let Err(error) = handle_key(app, client, key).await {
+                    match error {
+                        error::Error::Client(_) => app.notice = Some(error.to_string()),
+                        error => return Err(error),
+                    }
+                }
+            }
+            AppEvent::Notice(notice) => app.notice = Some(notice),
             AppEvent::Paste(text) if app.focus == Focus::Compose => app.paste(&text),
             AppEvent::Paste(_) => {}
             AppEvent::Redraw => {}
-            AppEvent::Space(event) => app.handle_space_event(event),
+            AppEvent::Space(event) => {
+                app.notice = None;
+                app.handle_space_event(event);
+            }
         }
     }
 
@@ -276,10 +294,11 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         KeyCode::Char('j') if ctrl => app.input.insert_newline(),
         KeyCode::Enter if shift => app.input.insert_newline(),
         KeyCode::Enter => {
-            let content = app.take_input();
-            report_typing(app, client).await?;
+            let content = app.input.lines().join("\n");
             if !content.trim().is_empty() {
                 client.send_message(&content).await?;
+                app.take_input();
+                report_typing(app, client).await?;
             }
         }
         KeyCode::PageUp => app.scroll_up(app.timeline_height),

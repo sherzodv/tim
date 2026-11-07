@@ -23,37 +23,30 @@ pub enum TimelineItem {
     Message {
         sender: String,
         content: String,
-        timestamp: u64,
     },
     TimiteConnected {
         username: String,
-        timestamp: u64,
     },
     TimiteDisconnected {
         username: String,
-        timestamp: u64,
     },
     AbilityCall {
         caller: String,
         ability_name: String,
-        timestamp: u64,
     },
     AbilityOutcome {
         ability_name: String,
         success: bool,
-        timestamp: u64,
     },
     TaskStarted {
         username: String,
         task: String,
-        timestamp: u64,
     },
     TaskFinished {
         username: String,
         task: String,
         error: Option<String>,
         duration_ms: Option<u64>,
-        timestamp: u64,
     },
     TaskToolCall {
         username: String,
@@ -62,7 +55,6 @@ pub enum TimelineItem {
         /// The output, or the error when `success` is false.
         outcome: String,
         success: bool,
-        timestamp: u64,
     },
 }
 
@@ -104,6 +96,7 @@ pub struct App {
     pub inspector_return: Focus,
     llm_calls: HashMap<(u64, u64), usize>,
     processes: HashMap<(u64, String), usize>,
+    pub notice: Option<String>,
     pub running: bool,
     pub input: TextArea<'static>,
     pub timeline: Vec<TimelineItem>,
@@ -147,6 +140,7 @@ impl App {
             inspector_return: Focus::Browse,
             llm_calls: HashMap::new(),
             processes: HashMap::new(),
+            notice: None,
             running: true,
             input: new_input(),
             timeline: Vec::new(),
@@ -508,27 +502,27 @@ impl App {
         match data {
             EventData::EventNewMessage(e) => {
                 if let Some(message) = e.message {
-                    self.add_message(message, timestamp);
+                    self.add_message(message);
                 }
             }
             EventData::EventTimiteConnected(e) => {
                 if let Some(timite) = e.timite {
-                    self.timite_connected(timite, timestamp);
+                    self.timite_connected(timite);
                 }
             }
             EventData::EventTimiteDisconnected(e) => {
                 if let Some(timite) = e.timite {
-                    self.timite_disconnected(timite, timestamp);
+                    self.timite_disconnected(timite);
                 }
             }
             EventData::EventCallAbility(e) => {
                 if let Some(call) = e.call_ability {
-                    self.ability_called(call, timestamp);
+                    self.ability_called(call);
                 }
             }
             EventData::EventCallAbilityOutcome(e) => {
                 if let Some(outcome) = e.call_ability_outcome {
-                    self.ability_outcome(outcome, timestamp);
+                    self.ability_outcome(outcome);
                 }
             }
             EventData::EventTypingStarted(e) => {
@@ -543,7 +537,7 @@ impl App {
             }
             EventData::EventTaskStarted(e) => {
                 if let Some(task) = e.task_started {
-                    self.task_started(task, timestamp);
+                    self.task_started(task);
                 }
             }
             EventData::EventTaskStep(e) => {
@@ -553,12 +547,12 @@ impl App {
             }
             EventData::EventTaskFinished(e) => {
                 if let Some(task) = e.task_finished {
-                    self.task_finished(task, timestamp);
+                    self.task_finished(task);
                 }
             }
             EventData::EventTaskToolCall(e) => {
                 if let Some(call) = e.task_tool_call {
-                    self.task_tool_call(call, timestamp);
+                    self.task_tool_call(call);
                 }
             }
             EventData::EventTaskProcessEvent(data) => {
@@ -641,26 +635,23 @@ impl App {
             .unwrap_or_else(|| format!("user-{timite_id}"))
     }
 
-    fn add_message(&mut self, message: Message, timestamp: u64) {
+    fn add_message(&mut self, message: Message) {
         self.typing.remove(&message.sender_id);
         self.timeline.push(TimelineItem::Message {
             sender: self.username(message.sender_id),
             content: message.content,
-            timestamp,
         });
     }
 
-    fn timite_connected(&mut self, timite: Timite, timestamp: u64) {
+    fn timite_connected(&mut self, timite: Timite) {
         let username = timite.username.clone();
         self.usernames.insert(timite.id, username.clone());
         self.online_timites.insert(timite.id, timite);
-        self.timeline.push(TimelineItem::TimiteConnected {
-            username,
-            timestamp,
-        });
+        self.timeline
+            .push(TimelineItem::TimiteConnected { username });
     }
 
-    fn timite_disconnected(&mut self, timite: Timite, timestamp: u64) {
+    fn timite_disconnected(&mut self, timite: Timite) {
         for item in &mut self.timeline {
             if let TimelineItem::Process(process) = item {
                 if process.timite_id == timite.id {
@@ -678,19 +669,17 @@ impl App {
         self.tasks.retain(|_, task| task.timite_id != timite.id);
         self.timeline.push(TimelineItem::TimiteDisconnected {
             username: timite.username,
-            timestamp,
         });
     }
 
-    fn ability_called(&mut self, call: CallAbility, timestamp: u64) {
+    fn ability_called(&mut self, call: CallAbility) {
         self.timeline.push(TimelineItem::AbilityCall {
             caller: self.username(call.sender_id),
             ability_name: call.name,
-            timestamp,
         });
     }
 
-    fn ability_outcome(&mut self, outcome: CallAbilityOutcome, timestamp: u64) {
+    fn ability_outcome(&mut self, outcome: CallAbilityOutcome) {
         for item in &mut self.timeline {
             if let TimelineItem::Process(process) = item {
                 if process.stop_call_id == Some(outcome.call_ability_id) {
@@ -704,16 +693,14 @@ impl App {
         self.timeline.push(TimelineItem::AbilityOutcome {
             ability_name: format!("call-{}", outcome.call_ability_id),
             success: outcome.error.is_none(),
-            timestamp,
         });
     }
 
-    fn task_started(&mut self, task: TaskStarted, timestamp: u64) {
+    fn task_started(&mut self, task: TaskStarted) {
         let username = self.username(task.timite_id);
         self.timeline.push(TimelineItem::TaskStarted {
             username: username.clone(),
             task: task.task.clone(),
-            timestamp,
         });
         self.tasks.insert(
             task.task_id,
@@ -732,7 +719,7 @@ impl App {
         }
     }
 
-    fn task_finished(&mut self, finished: TaskFinished, timestamp: u64) {
+    fn task_finished(&mut self, finished: TaskFinished) {
         for item in &mut self.timeline {
             if let TimelineItem::Process(process) = item {
                 if process.task_id == finished.task_id {
@@ -755,11 +742,10 @@ impl App {
             task,
             error: finished.error,
             duration_ms: finished.duration_ms,
-            timestamp,
         });
     }
 
-    fn task_tool_call(&mut self, call: TaskToolCall, timestamp: u64) {
+    fn task_tool_call(&mut self, call: TaskToolCall) {
         let (outcome, success) = match call.error {
             Some(error) => (error, false),
             None => (call.output, true),
@@ -770,7 +756,6 @@ impl App {
             arguments: call.arguments,
             outcome,
             success,
-            timestamp,
         });
     }
 
