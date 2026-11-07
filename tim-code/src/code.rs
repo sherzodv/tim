@@ -158,9 +158,9 @@ impl CodeAgent {
             branch_id
         };
         let mut client = self.client.in_branch(session_id);
-        let execution = self.execution.clone().lock_owned().await;
+        let execution = self.execution.clone();
         tokio::spawn(async move {
-            let _guard = execution;
+            let _guard = execution.lock_owned().await;
             let result = async {
                 let reporter =
                     Reporter::start(client.clone(), head(&task, TASK_CHARS), source_event_id)
@@ -203,11 +203,15 @@ impl CodeAgent {
         let tools = self.tools.clone();
         let engine = self.engine.clone();
         let mut client = self.client.in_branch(branch_id);
-        let execution = self.execution.clone().lock_owned().await;
+        let execution = self.execution.clone();
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
-            let _guard = execution;
+            let _guard = if ability == tools::SH_STOP {
+                None
+            } else {
+                Some(execution.lock_owned().await)
+            };
             let result = async {
                 let reporter =
                     Reporter::start(client.clone(), ability.clone(), source_event_id).await?;
@@ -243,7 +247,7 @@ async fn dispatch(
     history: History,
 ) -> Result<String, CallError> {
     if ability != CODE_TASK {
-        return Ok(tools::call(tools, ability, payload).await?);
+        return Ok(tools::call(tools, ability, payload, reporter).await?);
     }
     let description = serde_json::from_str::<serde_json::Value>(payload)
         .map_err(ToolError::Arguments)?["description"]

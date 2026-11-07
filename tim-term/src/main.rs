@@ -2,6 +2,7 @@ mod app;
 mod error;
 mod event;
 mod llm;
+mod process;
 mod ui;
 
 use std::io;
@@ -161,6 +162,34 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
     if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
         app.quit();
         return Ok(());
+    }
+    if key.code == KeyCode::Char('x') && matches!(app.focus, Focus::Browse | Focus::Inspect) {
+        if let Some(process) = app.selected_process() {
+            if process.branch_id != app.branch_id {
+                if let Some(process) = app.selected_process_mut() {
+                    process.stop_message =
+                        format!("Open branch #{} to stop this process", process.branch_id);
+                }
+                return Ok(());
+            }
+            if process.status() == "running" && process.stop_call_id.is_none() {
+                let payload = serde_json::json!({ "process_id": process.process_id }).to_string();
+                let result = client
+                    .send_call_ability(process.timite_id, "sh.stop", &payload)
+                    .await;
+                if let Some(process) = app.selected_process_mut() {
+                    match result {
+                        Ok(call_id) => {
+                            process.stop_call_id = Some(call_id);
+                            process.stop_message =
+                                "Stop requested; waiting for process completion".into();
+                        }
+                        Err(error) => process.stop_message = format!("Stop failed: {error}"),
+                    }
+                }
+            }
+            return Ok(());
+        }
     }
     if key.code == KeyCode::F(2) {
         app.open_branches();

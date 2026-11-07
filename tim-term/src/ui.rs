@@ -42,6 +42,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Focus::Compose => " Compose · F2 branches · F3 main · Tab browse · Enter send · Ctrl+J newline",
         Focus::Browse => " Browse · ↑/↓ select · Enter open · f fork · ← parent · b branches · F3 main · Tab compose",
         Focus::Branches => " Branches · ↑/↓ select · Enter open · Esc compose · F3 main",
+        Focus::Inspect if app.selected_process().is_some() => " Process · x stop group · ↑/↓ PgUp/PgDn scroll · Esc back · Tab compose",
         Focus::Inspect if app.selected_llm_call().is_some() => " LLM · 1–4 tabs · ↑/↓ PgUp/PgDn scroll · Esc back · Tab compose",
         Focus::Inspect => " Inspect · ↑/↓ PgUp/PgDn scroll · Home/End · Esc back · Tab compose · Ctrl+C quit",
     };
@@ -172,6 +173,11 @@ fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
 
 /// Shows all recorded text; the sender may already have truncated the output.
 fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
+    if let Some(process) = app.selected_process() {
+        let text = process.details();
+        render_inspector_text(frame, app, area.inner(Margin::new(1, 0)), &text);
+        return;
+    }
     if app.selected_llm_call().is_some() {
         render_llm_inspector(frame, app, area);
         return;
@@ -281,6 +287,21 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
 
 fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
     match item {
+        TimelineItem::Process(process) => {
+            let color = match process.status() {
+                "succeeded" => Color::Green,
+                "failed" | "timed out" => Color::Red,
+                "running" => Color::Cyan,
+                _ => Color::Yellow,
+            };
+            vec![Line::from(vec![
+                Span::styled(format_time(process.timestamp), Style::new().dim()),
+                Span::styled(
+                    format!(" · sh · {} · Enter inspect", process.label()),
+                    Style::new().fg(color),
+                ),
+            ])]
+        }
         TimelineItem::LlmCall(call) => {
             let marker = match call.status() {
                 "succeeded" => "✓",

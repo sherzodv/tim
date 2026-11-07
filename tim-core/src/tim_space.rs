@@ -22,6 +22,7 @@ use crate::api::EventCallAbilityOutcome;
 use crate::api::EventNewMessage;
 use crate::api::EventTaskFinished;
 use crate::api::EventTaskModelEvent;
+use crate::api::EventTaskProcessEvent;
 use crate::api::EventTaskStarted;
 use crate::api::EventTaskStep;
 use crate::api::EventTaskToolCall;
@@ -34,6 +35,7 @@ use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
 use crate::api::TaskModelEvent;
+use crate::api::TaskProcessEvent;
 use crate::api::TaskStarted;
 use crate::api::TaskStep;
 use crate::api::TaskToolCall;
@@ -156,6 +158,12 @@ fn event_task_model_event(model_event: TaskModelEvent) -> EventData {
     })
 }
 
+fn event_task_process_event(process_event: TaskProcessEvent) -> EventData {
+    EventData::EventTaskProcessEvent(EventTaskProcessEvent {
+        task_process_event: Some(process_event),
+    })
+}
+
 fn event_task_finished(task_finished: TaskFinished) -> EventData {
     EventData::EventTaskFinished(EventTaskFinished {
         task_finished: Some(task_finished),
@@ -195,6 +203,9 @@ fn event_sender_id(event: &SpaceEvent) -> Option<u64> {
         EventData::EventTaskStep(data) => data.task_step.as_ref().map(|t| t.timite_id),
         EventData::EventTaskToolCall(data) => data.task_tool_call.as_ref().map(|t| t.timite_id),
         EventData::EventTaskModelEvent(data) => data.task_model_event.as_ref().map(|t| t.timite_id),
+        EventData::EventTaskProcessEvent(data) => {
+            data.task_process_event.as_ref().map(|t| t.timite_id)
+        }
         EventData::EventTaskFinished(data) => data.task_finished.as_ref().map(|t| t.timite_id),
         _ => None,
     }
@@ -316,6 +327,15 @@ impl TimSpace {
         self.append(
             &mut self.lock_state(),
             event_task_model_event(model_event),
+            branch_id,
+        )
+    }
+
+    pub fn publish_task_process_event(&self, event: TaskProcessEvent) -> Result<(), TimSpaceError> {
+        let branch_id = self.task_branch(event.task_id, event.timite_id)?;
+        self.append(
+            &mut self.lock_state(),
+            event_task_process_event(event),
             branch_id,
         )
     }

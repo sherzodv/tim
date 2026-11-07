@@ -113,7 +113,7 @@ impl LlmCode {
             for call in turn.tool_calls {
                 reporter.step(step_label(&call));
                 let ability = tools::ability_name(&call.name);
-                let result = tools::call(&self.tools, &ability, &call.arguments)
+                let result = tools::call(&self.tools, &ability, &call.arguments, reporter)
                     .await
                     .map_err(|error| error.to_string());
                 reporter.tool_call(

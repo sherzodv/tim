@@ -24,6 +24,8 @@ use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskFinishedRes;
 use crate::api::SendTaskModelEventReq;
 use crate::api::SendTaskModelEventRes;
+use crate::api::SendTaskProcessEventReq;
+use crate::api::SendTaskProcessEventRes;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStartedRes;
 use crate::api::SendTaskStepReq;
@@ -39,6 +41,7 @@ use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskFinished;
 use crate::api::TaskModelEvent;
+use crate::api::TaskProcessEvent;
 use crate::api::TaskStep;
 use crate::api::TaskToolCall;
 use crate::api::Timite;
@@ -383,6 +386,48 @@ impl TimApi {
         level = "debug",
         fields(service = "api", timite_id = session.timite_id)
     )]
+    pub fn send_task_process_event(
+        &self,
+        req: &SendTaskProcessEventReq,
+        session: &Session,
+    ) -> Result<SendTaskProcessEventRes, TimApiError> {
+        let process_event = req
+            .process_event
+            .as_ref()
+            .ok_or_else(|| TimApiError::InvalidArgError("process event required".into()))?;
+        use crate::api::process_finished::Reason;
+        use crate::api::process_output::Stream;
+        use crate::api::task_process_event::Data;
+        let valid = !process_event.process_id.is_empty()
+            && match &process_event.data {
+                Some(Data::Started(started)) => !started.command.trim().is_empty(),
+                Some(Data::Output(output)) => {
+                    matches!(
+                        Stream::try_from(output.stream),
+                        Ok(Stream::Stdout | Stream::Stderr)
+                    ) && !output.data.is_empty()
+                        && output.data.len() <= 8192
+                }
+                Some(Data::Finished(finished)) => {
+                    matches!(Reason::try_from(finished.reason), Ok(reason) if reason != Reason::Unspecified)
+                }
+                None => false,
+            };
+        if !valid {
+            return Err(TimApiError::InvalidArgError("invalid process event".into()));
+        }
+        self.t_space.publish_task_process_event(TaskProcessEvent {
+            timite_id: session.timite_id,
+            ..process_event.clone()
+        })?;
+        Ok(SendTaskProcessEventRes {})
+    }
+
+    #[instrument(
+        skip(self, req, session),
+        level = "debug",
+        fields(service = "api", timite_id = session.timite_id)
+    )]
     pub fn send_task_finished(
         &self,
         req: &SendTaskFinishedReq,
@@ -455,6 +500,9 @@ fn collect_timite_ids(events: &[SpaceEvent]) -> BTreeSet<u64> {
             }
             SpaceEventData::EventTaskModelEvent(payload) => {
                 ids.extend(payload.task_model_event.as_ref().map(|t| t.timite_id));
+            }
+            SpaceEventData::EventTaskProcessEvent(payload) => {
+                ids.extend(payload.task_process_event.as_ref().map(|t| t.timite_id));
             }
             SpaceEventData::EventTaskFinished(payload) => {
                 ids.extend(payload.task_finished.as_ref().map(|t| t.timite_id));

@@ -2425,6 +2425,7 @@ dependencies = [
  "config",
  "dotenvy",
  "futures",
+ "libc",
  "serde",
  "serde_json",
  "shellexpand",
@@ -2434,6 +2435,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

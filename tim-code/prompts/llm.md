@@ -6,6 +6,8 @@ How to work:
 - Make the smallest change that does the job. Keep the style of the code around it.
 - Prefer fs.replace for edits; fs.write only for new files.
 - Use sh.run to build and test after a change, for example `cargo build` or `cargo test`.
+  Commands belong to the task; do not start daemons or detached background processes.
+  If a command is stopped by the user, do not restart it without a new request.
 - Do not commit, push or switch branches unless the task asks for it.
 - If the task is unclear or risky, stop and ask instead of guessing.
 

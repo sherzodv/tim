@@ -13,10 +13,13 @@ use tim_client::api::{
 };
 
 use crate::llm::LlmCall;
+use crate::process::Process;
+use tim_client::api::TaskProcessEvent;
 
 #[derive(Debug, Clone)]
 pub enum TimelineItem {
     LlmCall(Box<LlmCall>),
+    Process(Box<Process>),
     Message {
         sender: String,
         content: String,
@@ -98,6 +101,7 @@ pub struct App {
     pub inspector_offset: usize,
     pub inspector_tab: usize,
     llm_calls: HashMap<(u64, u64), usize>,
+    processes: HashMap<(u64, String), usize>,
     pub running: bool,
     pub input: TextArea<'static>,
     pub timeline: Vec<TimelineItem>,
@@ -139,6 +143,7 @@ impl App {
             inspector_offset: 0,
             inspector_tab: 0,
             llm_calls: HashMap::new(),
+            processes: HashMap::new(),
             running: true,
             input: new_input(),
             timeline: Vec::new(),
@@ -180,7 +185,11 @@ impl App {
     pub fn open_inspector(&mut self) {
         if matches!(
             self.selected_item.and_then(|i| self.timeline.get(i)),
-            Some(TimelineItem::TaskToolCall { .. } | TimelineItem::LlmCall(_))
+            Some(
+                TimelineItem::TaskToolCall { .. }
+                    | TimelineItem::LlmCall(_)
+                    | TimelineItem::Process(_)
+            )
         ) {
             self.inspector_offset = 0;
             self.inspector_tab = 0;
@@ -194,6 +203,26 @@ impl App {
             .and_then(|index| self.timeline.get(index))
         {
             Some(TimelineItem::LlmCall(call)) => Some(call),
+            _ => None,
+        }
+    }
+
+    pub fn selected_process(&self) -> Option<&Process> {
+        match self
+            .selected_item
+            .and_then(|index| self.timeline.get(index))
+        {
+            Some(TimelineItem::Process(process)) => Some(process),
+            _ => None,
+        }
+    }
+
+    pub fn selected_process_mut(&mut self) -> Option<&mut Process> {
+        match self
+            .selected_item
+            .and_then(|index| self.timeline.get_mut(index))
+        {
+            Some(TimelineItem::Process(process)) => Some(process),
             _ => None,
         }
     }
@@ -294,6 +323,7 @@ impl App {
         self.typing_sent = false;
         self.timeline.clear();
         self.llm_calls.clear();
+        self.processes.clear();
         self.timeline_event_ids.clear();
         self.tasks.clear();
         self.typing.clear();
@@ -407,6 +437,7 @@ impl App {
 
     fn apply_event(&mut self, event: SpaceEvent) {
         let event_id = event.metadata.as_ref().map_or(0, |meta| meta.id);
+        let branch_id = event.metadata.as_ref().map_or(0, |meta| meta.branch_id);
         let previous_len = self.timeline.len();
         let timestamp = event
             .metadata
@@ -474,6 +505,11 @@ impl App {
                     self.task_tool_call(call, timestamp);
                 }
             }
+            EventData::EventTaskProcessEvent(data) => {
+                if let Some(event) = data.task_process_event {
+                    self.process_event(event, branch_id, timestamp);
+                }
+            }
             EventData::EventTaskModelEvent(data) => {
                 if let Some(event) = data.task_model_event {
                     self.model_event(event, event_id, timestamp);
@@ -510,6 +546,32 @@ impl App {
         }
     }
 
+    fn process_event(&mut self, event: TaskProcessEvent, branch_id: u64, timestamp: u64) {
+        let Some(data) = event.data else {
+            return;
+        };
+        let key = (event.task_id, event.process_id.clone());
+        let index = match self.processes.get(&key) {
+            Some(index) => *index,
+            None => {
+                let index = self.timeline.len();
+                self.timeline
+                    .push(TimelineItem::Process(Box::new(Process::new(
+                        event.timite_id,
+                        event.task_id,
+                        event.process_id,
+                        branch_id,
+                        timestamp,
+                    ))));
+                self.processes.insert(key, index);
+                index
+            }
+        };
+        if let TimelineItem::Process(process) = &mut self.timeline[index] {
+            process.record(data);
+        }
+    }
+
     fn username(&self, timite_id: u64) -> String {
         self.usernames
             .get(&timite_id)
@@ -538,6 +600,11 @@ impl App {
 
     fn timite_disconnected(&mut self, timite: Timite, timestamp: u64) {
         for item in &mut self.timeline {
+            if let TimelineItem::Process(process) = item {
+                if process.timite_id == timite.id {
+                    process.interrupted = true;
+                }
+            }
             if let TimelineItem::LlmCall(call) = item {
                 if call.timite_id == timite.id {
                     call.interrupted = true;
@@ -562,6 +629,16 @@ impl App {
     }
 
     fn ability_outcome(&mut self, outcome: CallAbilityOutcome, timestamp: u64) {
+        for item in &mut self.timeline {
+            if let TimelineItem::Process(process) = item {
+                if process.stop_call_id == Some(outcome.call_ability_id) {
+                    if let Some(error) = &outcome.error {
+                        process.stop_message = format!("Stop failed: {error}");
+                    }
+                    process.stop_call_id = None;
+                }
+            }
+        }
         self.timeline.push(TimelineItem::AbilityOutcome {
             ability_name: format!("call-{}", outcome.call_ability_id),
             success: outcome.error.is_none(),
@@ -595,6 +672,11 @@ impl App {
 
     fn task_finished(&mut self, finished: TaskFinished, timestamp: u64) {
         for item in &mut self.timeline {
+            if let TimelineItem::Process(process) = item {
+                if process.task_id == finished.task_id {
+                    process.interrupted = true;
+                }
+            }
             if let TimelineItem::LlmCall(call) = item {
                 if call.task_id == finished.task_id {
                     call.interrupted = true;

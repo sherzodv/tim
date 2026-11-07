@@ -4,13 +4,17 @@ use std::time::Instant;
 
 use tim_client::api::TaskModelEvent;
 use tim_client::api::TaskToolCall;
+use tim_client::api::{task_process_event, TaskProcessEvent};
 use tim_client::client::TimClient;
 use tim_client::client::TimClientError;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReportError {
+    #[error("process event was not persisted: {0}")]
+    Process(String),
     #[error(transparent)]
     Client(#[from] TimClientError),
     #[error("task report worker failed: {0}")]
@@ -25,10 +29,15 @@ enum Report {
     },
     ToolCall(TaskToolCall),
     ModelEvent(TaskModelEvent),
+    ProcessEvent(
+        TaskProcessEvent,
+        Option<oneshot::Sender<Result<(), String>>>,
+    ),
 }
 
 /// Keeps the space informed about one running task; `finish` reports its end.
 pub struct Reporter {
+    branch_id: u64,
     started: Instant,
     reports: mpsc::UnboundedSender<Report>,
     worker: JoinHandle<Result<(), TimClientError>>,
@@ -40,6 +49,7 @@ impl Reporter {
         task: String,
         source_event_id: u64,
     ) -> Result<Self, TimClientError> {
+        let branch_id = client.branch_id();
         let started = Instant::now();
         let task_id = client.send_task_started(&task, source_event_id).await?;
         let (tx, mut rx) = mpsc::unbounded_channel::<Report>();
@@ -50,6 +60,16 @@ impl Reporter {
                         return client
                             .send_task_finished(task_id, error, Some(duration_ms))
                             .await;
+                    }
+                    Report::ProcessEvent(event, ack) => {
+                        let result = client
+                            .send_task_process_event(TaskProcessEvent { task_id, ..event })
+                            .await;
+                        if let Some(ack) = ack {
+                            let _ =
+                                ack.send(result.as_ref().map(|_| ()).map_err(ToString::to_string));
+                        }
+                        result
                     }
                     Report::Step(step) => client.send_task_step(task_id, &step).await,
                     Report::ToolCall(call) => {
@@ -68,6 +88,7 @@ impl Reporter {
             Ok(())
         });
         Ok(Self {
+            branch_id,
             started,
             reports: tx,
             worker,
@@ -81,6 +102,39 @@ impl Reporter {
         drop(self.reports);
         self.worker.await??;
         Ok(())
+    }
+
+    pub fn branch_id(&self) -> u64 {
+        self.branch_id
+    }
+
+    /// Wait for persistence before starting the command or reading its next output chunk.
+    pub async fn process_event(
+        &self,
+        process_id: &str,
+        data: task_process_event::Data,
+    ) -> Result<(), ReportError> {
+        let (tx, rx) = oneshot::channel();
+        self.reports
+            .send(Report::ProcessEvent(
+                process_event(process_id, data),
+                Some(tx),
+            ))
+            .map_err(|_| ReportError::Process("report worker closed".into()))?;
+        rx.await
+            .map_err(|_| ReportError::Process("report worker closed".into()))?
+            .map_err(ReportError::Process)
+    }
+
+    /// Cancellation cannot await; the terminal event is queued before TaskFinished.
+    pub fn process_cancelled(&self, process_id: &str, data: task_process_event::Data) {
+        if self
+            .reports
+            .send(Report::ProcessEvent(process_event(process_id, data), None))
+            .is_err()
+        {
+            tracing::error!(process_id, "failed to queue process cancellation");
+        }
     }
 
     /// What the task is doing now, in a few words.
@@ -128,5 +182,14 @@ impl Reporter {
             payload,
             llm_call_id,
         }));
+    }
+}
+
+fn process_event(process_id: &str, data: task_process_event::Data) -> TaskProcessEvent {
+    TaskProcessEvent {
+        timite_id: 0,
+        task_id: 0,
+        process_id: process_id.to_string(),
+        data: Some(data),
     }
 }

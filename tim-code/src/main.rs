@@ -5,6 +5,7 @@ mod git;
 mod history;
 mod llm;
 mod llm_call;
+mod process;
 mod progress;
 mod shell;
 mod text;

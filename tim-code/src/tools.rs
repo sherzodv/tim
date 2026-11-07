@@ -14,10 +14,13 @@ use crate::fs::Files;
 use crate::fs::FsError;
 use crate::git::Git;
 use crate::git::GitError;
+use crate::process::{ProcessError, Processes};
+use crate::progress::Reporter;
 use crate::shell::Shell;
 use crate::shell::ShellError;
 
 pub const SH_RUN: &str = "sh.run";
+pub const SH_STOP: &str = "sh.stop";
 pub const FS_READ: &str = "fs.read";
 pub const FS_WRITE: &str = "fs.write";
 pub const FS_REPLACE: &str = "fs.replace";
@@ -33,12 +36,15 @@ const DEFAULT_LOG_COUNT: usize = 10;
 #[derive(Clone)]
 pub struct Tools {
     pub shell: Shell,
+    pub processes: Processes,
     pub files: Files,
     pub git: Git,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
+    #[error(transparent)]
+    Process(#[from] ProcessError),
     #[error("unknown tool: {0}")]
     Unknown(String),
 
@@ -58,6 +64,11 @@ pub enum ToolError {
 #[derive(Deserialize)]
 struct ShRunReq {
     cmd: String,
+}
+
+#[derive(Deserialize)]
+struct ShStopReq {
+    process_id: String,
 }
 
 #[derive(Deserialize)]
@@ -121,6 +132,7 @@ impl Tools {
     pub fn new(workdir: PathBuf, timeout: Duration, max_output_chars: usize) -> Self {
         let shell = Shell::new(workdir, timeout, max_output_chars);
         Self {
+            processes: Processes::default(),
             files: Files::new(shell.clone(), max_output_chars),
             git: Git::new(shell.clone(), max_output_chars),
             shell,
@@ -129,7 +141,12 @@ impl Tools {
 }
 
 /// Runs the named tool with JSON arguments; empty arguments mean none.
-pub async fn call(tools: &Tools, name: &str, arguments: &str) -> Result<String, ToolError> {
+pub async fn call(
+    tools: &Tools,
+    name: &str,
+    arguments: &str,
+    reporter: &Reporter,
+) -> Result<String, ToolError> {
     let arguments = if arguments.trim().is_empty() {
         "{}"
     } else {
@@ -138,7 +155,16 @@ pub async fn call(tools: &Tools, name: &str, arguments: &str) -> Result<String, 
     match name {
         SH_RUN => {
             let req: ShRunReq = serde_json::from_str(arguments)?;
-            Ok(tools.shell.run(&req.cmd).await?)
+            Ok(tools
+                .processes
+                .run(&tools.shell, &req.cmd, reporter)
+                .await?)
+        }
+        SH_STOP => {
+            let req: ShStopReq = serde_json::from_str(arguments)?;
+            Ok(tools
+                .processes
+                .stop(&req.process_id, reporter.branch_id())?)
         }
         FS_READ => {
             let req: FsReadReq = serde_json::from_str(arguments)?;
@@ -180,7 +206,7 @@ pub async fn call(tools: &Tools, name: &str, arguments: &str) -> Result<String, 
 /// The argument that tells a call apart, for progress reports.
 pub fn detail(arguments: &str) -> Option<String> {
     let arguments: serde_json::Value = serde_json::from_str(arguments).ok()?;
-    ["path", "cmd", "pattern", "message"]
+    ["path", "cmd", "pattern", "message", "process_id"]
         .iter()
         .find_map(|field| arguments[field].as_str())
         .map(str::to_string)
@@ -226,9 +252,15 @@ pub fn definitions() -> Vec<LlmTool> {
     vec![
         tool(
             SH_RUN,
-            "Runs a shell command in the workspace directory, returns exit code and output tail.",
+            "Runs a task-owned shell command. Streams full output to the space; returns JSON with process_id, reason, exit_code, signal and output tails. Background/daemon processes are not supported.",
             json!({ "cmd": { "type": "string", "description": "shell command" } }),
             &["cmd"],
+        ),
+        tool(
+            SH_STOP,
+            "Requests immediate termination of a running command and its process group in this branch. Completion is reported separately in the space.",
+            json!({ "process_id": { "type": "string", "description": "opaque ID from the process event, not an OS PID" } }),
+            &["process_id"],
         ),
         tool(
             FS_READ,
