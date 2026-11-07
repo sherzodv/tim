@@ -34,6 +34,9 @@
    - Existing tests cover only complex flows or unclear library behavior.
    - Do **not** add tests unless explicitly requested.
 
+7. **Concise responses**
+   - Always keep responses brief and within one screen unless the user explicitly requests details.
+
 ---
 
 ## Current Focus
