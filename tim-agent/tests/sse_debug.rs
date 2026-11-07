@@ -54,6 +54,11 @@ async fn stream_debug() -> Result<(), Box<dyn std::error::Error>> {
 
     while let Some(item) = stream.next().await {
         match item? {
+            LlmStreamEvent::Request { endpoint, .. } => println!("request: {endpoint}"),
+            LlmStreamEvent::Response {
+                http_status,
+                request_id,
+            } => println!("response: {http_status} {request_id:?}"),
             LlmStreamEvent::Raw(event) => println!("raw: {event}"),
             LlmStreamEvent::ContentDelta(delta) => println!("delta: {delta}"),
             LlmStreamEvent::Item(item) => println!("item: {item}"),

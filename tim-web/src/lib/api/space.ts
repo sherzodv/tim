@@ -216,8 +216,13 @@ export class TimSpace implements TimSpaceHandler {
 			case 'eventTaskFinished': {
 				const finished = payload.value.taskFinished;
 				if (!finished) return null;
-				const task = this.tasks.get(finished.taskId)?.task ?? `task-${finished.taskId}`;
-				return this.buildTaskItem(update, { timiteId: finished.timiteId, task }, 'finished');
+				const duration = finished.durationMs === undefined ? '' : ` (${finished.durationMs} ms)`;
+				const error = finished.error === undefined ? '' : `: ${finished.error}`;
+				return this.buildTaskItem(
+					update,
+					{ timiteId: finished.timiteId, task: `task-${finished.taskId}${duration}${error}` },
+					finished.error === undefined ? 'finished' : 'failed'
+				);
 			}
 			case 'eventTaskToolCall':
 				return this.buildToolCallItem(update, payload.value.taskToolCall);
@@ -241,7 +246,7 @@ export class TimSpace implements TimSpaceHandler {
 	private buildTaskItem(
 		update: SpaceEvent,
 		task: { timiteId: bigint; task: string } | undefined,
-		action: 'started' | 'finished'
+		action: 'started' | 'finished' | 'failed'
 	): WorklogItem | null {
 		if (!task) return null;
 		return {

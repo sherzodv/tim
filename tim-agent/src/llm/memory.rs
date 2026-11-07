@@ -86,6 +86,7 @@ impl Memory {
             Some(Event::EventTaskStep(_)) => None,
             Some(Event::EventTaskToolCall(_)) => None,
             Some(Event::EventTaskModelEvent(_)) => None,
+            Some(Event::EventTaskProcessEvent(_)) => None,
             Some(Event::EventTaskFinished(_)) => None,
             None => None,
         }

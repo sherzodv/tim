@@ -4,6 +4,9 @@ mod fs;
 mod git;
 mod history;
 mod llm;
+mod llm_call;
+mod process;
+mod process_log;
 mod progress;
 mod shell;
 mod text;
@@ -123,6 +126,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine: engine_conf(config.engine),
     };
 
-    agent::spawn(tim_conf, code_conf).await?;
+    let processes = code_conf.tools.processes.clone();
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let result = tokio::select! {
+        result = agent::spawn(tim_conf, code_conf) => result,
+        result = tokio::signal::ctrl_c() => { result?; Ok(()) },
+        _ = terminate.recv() => Ok(()),
+    };
+    processes.shutdown().await;
+    result?;
     Ok(())
 }

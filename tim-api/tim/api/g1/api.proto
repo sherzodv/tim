@@ -100,17 +100,66 @@ message TaskToolCall {
   string call_id = 7;
 }
 
-// One raw event from the coding engine, preserved for session replay.
+// An engine event or LLM call lifecycle event, preserved in timeline order.
 message TaskModelEvent {
   uint64 timite_id = 1;  // set by the server
   uint64 task_id = 2;
   string engine = 3;     // e.g. claude or llm
-  string payload = 4;    // raw engine event or an assembled model turn, as JSON
+  string payload = 4;    // JSON: raw engine event, model turn, or llm.call.started/response/finished
+  optional uint64 llm_call_id = 5;  // HTTP attempt, unique within task_id
+}
+
+// Process events are recorded by the task owner, in the task's branch.
+// process_id is an opaque UUID, never an OS PID. Output offsets are per stream.
+message TaskProcessEvent {
+  uint64 timite_id = 1;  // set by the server
+  uint64 task_id = 2;
+  string process_id = 3;
+  oneof data {
+    ProcessStarted started = 4;
+    ProcessOutput output = 5;
+    ProcessFinished finished = 6;
+  }
+}
+
+message ProcessStarted {
+  string command = 1;
+  string workdir = 2;
+  bool background = 3;  // session-owned; its dedicated task outlives the launching task
+}
+
+message ProcessOutput {
+  enum Stream {
+    STREAM_UNSPECIFIED = 0;
+    STREAM_STDOUT = 1;
+    STREAM_STDERR = 2;
+  }
+  Stream stream = 1;
+  uint64 offset = 2;  // byte offset, starting at zero
+  bytes data = 3;    // at most 8192 bytes; may split a UTF-8 character
+}
+
+message ProcessFinished {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_EXITED = 1;     // inspect exit_code or signal for success/failure
+    REASON_STOPPED = 2;
+    REASON_TIMED_OUT = 3;
+    REASON_FAILED = 4;     // spawn, IO, or reporting failure
+    REASON_CANCELLED = 5;  // owning execution was dropped; exit status may be unknown
+  }
+  Reason reason = 1;
+  optional int32 exit_code = 2;
+  optional int32 signal = 3;
+  uint64 duration_ms = 4;
+  optional string error = 5;
 }
 
 message TaskFinished {
   uint64 timite_id = 1;  // set by the server
   uint64 task_id = 2;
+  optional string error = 3;
+  optional uint64 duration_ms = 4;  // elapsed execution time, measured by the agent
 }
 
 message DeclareAbilitiesReq {
@@ -148,6 +197,7 @@ message SpaceEvent {
     EventTaskFinished event_task_finished = 11;
     EventTaskToolCall event_task_tool_call = 12;
     EventTaskModelEvent event_task_model_event = 13;
+    EventTaskProcessEvent event_task_process_event = 14;
   }
 }
 
@@ -198,6 +248,10 @@ message EventTaskToolCall {
 
 message EventTaskModelEvent {
   TaskModelEvent task_model_event = 1;
+}
+
+message EventTaskProcessEvent {
+  TaskProcessEvent task_process_event = 1;
 }
 
 // --[ RPC req/res ]--
@@ -300,8 +354,17 @@ message SendTaskModelEventReq {
 message SendTaskModelEventRes {
 }
 
+message SendTaskProcessEventReq {
+  TaskProcessEvent process_event = 1;
+}
+
+message SendTaskProcessEventRes {
+}
+
 message SendTaskFinishedReq {
   uint64 task_id = 1;
+  optional string error = 2;
+  optional uint64 duration_ms = 3;
 }
 
 message SendTaskFinishedRes {
@@ -332,6 +395,7 @@ service TimGrpcApi {
   rpc SendTaskStep(SendTaskStepReq) returns (SendTaskStepRes);
   rpc SendTaskToolCall(SendTaskToolCallReq) returns (SendTaskToolCallRes);
   rpc SendTaskModelEvent(SendTaskModelEventReq) returns (SendTaskModelEventRes);
+  rpc SendTaskProcessEvent(SendTaskProcessEventReq) returns (SendTaskProcessEventRes);
   rpc SendTaskFinished(SendTaskFinishedReq) returns (SendTaskFinishedRes);
   rpc DeclareAbilities(DeclareAbilitiesReq) returns (DeclareAbilitiesRes);
 

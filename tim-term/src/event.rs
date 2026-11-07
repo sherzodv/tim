@@ -9,16 +9,19 @@ pub enum AppEvent {
     Key(KeyEvent),
     Paste(String),
     Redraw,
+    Notice(String),
+    Connection(bool),
     Space(SpaceEvent),
 }
 
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<AppEvent>,
+    logs: tokio::sync::watch::Receiver<String>,
     tx: mpsc::UnboundedSender<AppEvent>,
 }
 
 impl EventHandler {
-    pub fn new() -> Self {
+    pub fn new(logs: tokio::sync::watch::Receiver<String>) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let input_tx = tx.clone();
@@ -37,7 +40,7 @@ impl EventHandler {
             }
         });
 
-        Self { rx, tx }
+        Self { rx, tx, logs }
     }
 
     pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
@@ -45,9 +48,10 @@ impl EventHandler {
     }
 
     pub async fn next(&mut self) -> Result<AppEvent> {
-        self.rx
-            .recv()
-            .await
-            .ok_or_else(|| std::io::Error::other("event channel closed").into())
+        tokio::select! {
+            Ok(()) = self.logs.changed() => Ok(AppEvent::Notice(self.logs.borrow_and_update().clone())),
+            event = self.rx.recv() => event.ok_or_else(|| std::io::Error::other("event channel closed").into()),
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => Ok(AppEvent::Redraw),
+        }
     }
 }

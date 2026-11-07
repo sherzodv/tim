@@ -151,17 +151,28 @@ impl CodeAgent {
         }
         let tools = self.tools.clone();
         let engine = self.engine.clone();
-        let mut client = self.client.in_branch(branch_id);
-        let execution = self.execution.clone().lock_owned().await;
+        // A request in main starts a session; follow-ups keep that session.
+        let session_id = if branch_id == 0 {
+            source_event_id
+        } else {
+            branch_id
+        };
+        let mut client = self.client.in_branch(session_id);
+        let execution = self.execution.clone();
         tokio::spawn(async move {
-            let _guard = execution;
+            let _guard = execution.lock_owned().await;
             let result = async {
-                let history = History::load(&mut client, source_event_id).await?;
                 let reporter =
                     Reporter::start(client.clone(), head(&task, TASK_CHARS), source_event_id)
                         .await?;
-                let result = report(&tools, &engine, &task, history, &reporter).await;
-                reporter.finish().await?;
+                let result: Result<String, CallError> = async {
+                    let history = History::load(&mut client, source_event_id).await?;
+                    report(&tools, &engine, &task, history, &reporter).await
+                }
+                .await;
+                reporter
+                    .finish(result.as_ref().err().map(ToString::to_string))
+                    .await?;
                 result
             }
             .await;
@@ -192,22 +203,33 @@ impl CodeAgent {
         let tools = self.tools.clone();
         let engine = self.engine.clone();
         let mut client = self.client.in_branch(branch_id);
-        let execution = self.execution.clone().lock_owned().await;
+        let execution = self.execution.clone();
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
-            let _guard = execution;
+            let _guard = if matches!(
+                ability.as_str(),
+                tools::SH_STOP | tools::SH_STATUS | tools::SH_OUTPUT
+            ) {
+                None
+            } else {
+                Some(execution.lock_owned().await)
+            };
             let result = async {
-                let history = if ability == CODE_TASK {
-                    History::load(&mut client, source_event_id).await?
-                } else {
-                    History::default()
-                };
                 let reporter =
                     Reporter::start(client.clone(), ability.clone(), source_event_id).await?;
-                let result =
-                    dispatch(&tools, &engine, &reporter, &ability, &payload, history).await;
-                reporter.finish().await?;
+                let result: Result<String, CallError> = async {
+                    let history = if ability == CODE_TASK {
+                        History::load(&mut client, source_event_id).await?
+                    } else {
+                        History::default()
+                    };
+                    dispatch(&tools, &engine, &reporter, &ability, &payload, history).await
+                }
+                .await;
+                reporter
+                    .finish(result.as_ref().err().map(ToString::to_string))
+                    .await?;
                 result
             }
             .await;
@@ -228,7 +250,7 @@ async fn dispatch(
     history: History,
 ) -> Result<String, CallError> {
     if ability != CODE_TASK {
-        return Ok(tools::call(tools, ability, payload).await?);
+        return Ok(tools::call(tools, ability, payload, reporter).await?);
     }
     let description = serde_json::from_str::<serde_json::Value>(payload)
         .map_err(ToolError::Arguments)?["description"]

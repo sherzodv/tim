@@ -116,6 +116,15 @@ pub enum LlmError {
 
 #[derive(Debug)]
 pub enum LlmStreamEvent {
+    /// The exact JSON body, emitted before the HTTP request is sent. No auth headers.
+    Request {
+        endpoint: String,
+        payload: serde_json::Value,
+    },
+    Response {
+        http_status: u16,
+        request_id: Option<String>,
+    },
     /// The SSE payload exactly as the provider sent it.
     Raw(String),
     ContentDelta(String),
@@ -184,7 +193,9 @@ pub async fn collect(
 
     while let Some(item) = stream.next().await {
         match item? {
-            LlmStreamEvent::Raw(_) => {}
+            LlmStreamEvent::Request { .. }
+            | LlmStreamEvent::Response { .. }
+            | LlmStreamEvent::Raw(_) => {}
             LlmStreamEvent::ContentDelta(delta) => {
                 trace!("LLM content delta: {:?}", delta);
                 turn.text.push_str(&delta);
@@ -202,12 +213,14 @@ pub async fn collect(
             }
             LlmStreamEvent::Completed => {
                 debug!("LLM stream completed");
-                break;
+                return Ok(turn);
             }
         }
     }
 
-    Ok(turn)
+    Err(LlmError::Stream(
+        "stream ended without completion".to_string(),
+    ))
 }
 
 fn tool_call(item: &serde_json::Value) -> Option<LlmToolCall> {

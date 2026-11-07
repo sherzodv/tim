@@ -13,11 +13,11 @@ use tim_llm::llm::LlmConf;
 use tim_llm::llm::LlmError;
 use tim_llm::llm::LlmItem;
 use tim_llm::llm::LlmReq;
-use tim_llm::llm::LlmStreamEvent;
 use tim_llm::llm::LlmToolCall;
 use tokio::time::timeout;
 use tracing::info;
 
+use crate::llm_call::LlmCall;
 use crate::progress::Reporter;
 use crate::text::head;
 use crate::tools;
@@ -42,6 +42,7 @@ pub enum LlmCodeError {
 #[derive(Clone)]
 pub struct LlmCode {
     llm: Arc<dyn Llm>,
+    provider: String,
     tools: Tools,
     /// Model turns one task may take.
     max_steps: usize,
@@ -56,6 +57,7 @@ impl LlmCode {
     ) -> Result<Self, LlmError> {
         Ok(Self {
             llm: build_llm(provider, conf)?,
+            provider: provider.to_string(),
             tools,
             max_steps,
         })
@@ -90,12 +92,18 @@ impl LlmCode {
                 inputs: &items,
                 tools: &definitions,
             };
-            let mut stream = self.llm.chat_stream(&req).await?.inspect(|event| {
-                if let Ok(LlmStreamEvent::Raw(payload)) = event {
-                    reporter.model_event("llm", payload.clone());
-                }
-            });
-            let turn = collect(&mut stream).await?;
+            let stream = self.llm.chat_stream(&req).await?;
+            let mut call = LlmCall::new(reporter, step as u64, &self.provider);
+            let result = {
+                let mut stream = stream.inspect(|event| {
+                    if let Ok(event) = event {
+                        call.record(event);
+                    }
+                });
+                collect(&mut stream).await
+            };
+            call.finish(result.as_ref().err());
+            let turn = result?;
             items.push(LlmItem::Turn(turn.items));
 
             if turn.tool_calls.is_empty() {
@@ -105,7 +113,7 @@ impl LlmCode {
             for call in turn.tool_calls {
                 reporter.step(step_label(&call));
                 let ability = tools::ability_name(&call.name);
-                let result = tools::call(&self.tools, &ability, &call.arguments)
+                let result = tools::call(&self.tools, &ability, &call.arguments, reporter)
                     .await
                     .map_err(|error| error.to_string());
                 reporter.tool_call(

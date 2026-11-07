@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use crate::api::tim_grpc_api_client::TimGrpcApiClient;
 use crate::api::Ability;
+use crate::api::CallAbility;
 use crate::api::CallAbilityOutcome;
 use crate::api::ClientInfo;
 use crate::api::DeclareAbilitiesReq;
@@ -10,9 +11,11 @@ use crate::api::GetTimelineReq;
 use crate::api::GetTimelineRes;
 use crate::api::ListAbilitiesReq;
 use crate::api::SendCallAbilityOutcomeReq;
+use crate::api::SendCallAbilityReq;
 use crate::api::SendMessageReq;
 use crate::api::SendTaskFinishedReq;
 use crate::api::SendTaskModelEventReq;
+use crate::api::SendTaskProcessEventReq;
 use crate::api::SendTaskStartedReq;
 use crate::api::SendTaskStepReq;
 use crate::api::SendTaskToolCallReq;
@@ -21,6 +24,7 @@ use crate::api::SendTypingStoppedReq;
 use crate::api::SpaceEvent;
 use crate::api::SubscribeToSpaceReq;
 use crate::api::TaskModelEvent;
+use crate::api::TaskProcessEvent;
 use crate::api::TaskToolCall;
 use crate::api::TimiteAbilities;
 use crate::api::TrustedConnectReq;
@@ -60,6 +64,19 @@ pub enum TimClientError {
 
     #[error("invalid session metadata value: {0}")]
     SessionMetadata(#[from] InvalidMetadataValue),
+}
+
+impl TimClientError {
+    pub fn is_connection_error(&self) -> bool {
+        match self {
+            Self::TimConnect(_) => true,
+            Self::TimGrpc(status) => matches!(
+                status.code(),
+                tonic::Code::Unavailable | tonic::Code::DeadlineExceeded | tonic::Code::Cancelled
+            ),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -223,8 +240,30 @@ impl TimClient {
         Ok(())
     }
 
-    pub async fn send_task_finished(&mut self, task_id: u64) -> Result<(), TimClientError> {
-        let mut req = tonic::Request::new(SendTaskFinishedReq { task_id });
+    pub async fn send_task_process_event(
+        &mut self,
+        process_event: TaskProcessEvent,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskProcessEventReq {
+            process_event: Some(process_event),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        self.client.send_task_process_event(req).await?;
+        Ok(())
+    }
+
+    pub async fn send_task_finished(
+        &mut self,
+        task_id: u64,
+        error: Option<String>,
+        duration_ms: Option<u64>,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskFinishedReq {
+            task_id,
+            error,
+            duration_ms,
+        });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_task_finished(req).await?;
@@ -240,6 +279,32 @@ impl TimClient {
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.declare_abilities(req).await?;
         Ok(())
+    }
+
+    pub async fn send_call_ability(
+        &mut self,
+        timite_id: u64,
+        name: &str,
+        payload: &str,
+    ) -> Result<u64, TimClientError> {
+        let mut req = tonic::Request::new(SendCallAbilityReq {
+            call_ability: Some(CallAbility {
+                timite_id,
+                sender_id: self.timite_id(),
+                name: name.to_string(),
+                payload: payload.to_string(),
+                call_ability_id: None,
+                branch_id: self.branch_id(),
+            }),
+        });
+        req.metadata_mut()
+            .insert(SESSION_METADATA_KEY, self.token.clone());
+        Ok(self
+            .client
+            .send_call_ability(req)
+            .await?
+            .into_inner()
+            .call_ability_id)
     }
 
     pub async fn send_call_ability_outcome(

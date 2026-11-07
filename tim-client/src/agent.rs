@@ -41,6 +41,11 @@ pub trait Agent: Send {
         Ok(())
     }
 
+    /// Subscription transport state, including successful reconnects with no new events.
+    async fn on_connection_changed(&mut self, _connected: bool) -> Result<(), AgentError> {
+        Ok(())
+    }
+
     async fn on_live(&mut self) -> Result<(), AgentError> {
         Ok(())
     }
@@ -83,10 +88,11 @@ impl AgentRunner {
         let mut cursor = after_id;
 
         loop {
-            match self
+            let result = self
                 .follow_space(&mut agent, live_timer.as_mut(), &mut cursor)
-                .await
-            {
+                .await;
+            agent.on_connection_changed(false).await?;
+            match result {
                 Ok(()) => info!("space stream ended, reconnecting"),
                 Err(AgentError::TimGrpc(status)) => {
                     warn!(%status, "space stream failed, reconnecting")
@@ -111,6 +117,7 @@ impl AgentRunner {
             .client
             .subscribe_to_space(*cursor, agent.receive_own_messages())
             .await?;
+        agent.on_connection_changed(true).await?;
         loop {
             let maybe_update = match live_timer.as_mut() {
                 Some(timer) => tokio::select! {

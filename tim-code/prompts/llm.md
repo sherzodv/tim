@@ -6,6 +6,13 @@ How to work:
 - Make the smallest change that does the job. Keep the style of the code around it.
 - Prefer fs.replace for edits; fs.write only for new files.
 - Use sh.run to build and test after a change, for example `cargo build` or `cargo test`.
+  sh.run belongs to the task. Use sh.start for dev servers that must survive your reply.
+  Keep commands in the foreground (no & or daemonization). sh.start confirms spawn, not readiness.
+  Check readiness with sh.status and one page of sh.output; do not drain logs just to report status.
+  If more history is needed, pass the entire next_cursor object unchanged. It preserves a fixed snapshot.
+  Stop reading when has_more is false; do not start new snapshots to chase a running process's output.
+  Stop session processes with sh.stop when no longer needed; they do not survive agent shutdown.
+  If a command is stopped by the user, do not restart it without a new request.
 - Do not commit, push or switch branches unless the task asks for it.
 - If the task is unclear or risky, stop and ask instead of guessing.
 

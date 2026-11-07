@@ -26,12 +26,16 @@
 
 5. **Review-driven iteration**
    - Always start a feature on its own branch; `main` only receives merges.
+   - Always commit completed work, including each finished iteration, without waiting for a separate request or review. Keep commits focused; commit refinements separately.
    - Propose patch → review → refine → merge.
    - Suggest simplifications and edge cases proactively.
 
 6. **No new tests by default**
    - Existing tests cover only complex flows or unclear library behavior.
    - Do **not** add tests unless explicitly requested.
+
+7. **Concise responses**
+   - Always keep responses brief and within one screen unless the user explicitly requests details.
 
 ---
 
