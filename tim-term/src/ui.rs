@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     let input_height = (app.input.lines().len() as u16).clamp(1, MAX_INPUT_HEIGHT);
     let [header, notice, timeline, rule, input, footer] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(u16::from(app.notice.is_some())),
+        Constraint::Length(u16::from(app.connected && app.notice.is_some())),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(input_height),
@@ -28,7 +28,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .areas(frame.area());
 
     render_header(frame, app, header);
-    if let Some(message) = &app.notice {
+    if let Some(message) = app.notice.as_ref().filter(|_| app.connected) {
         frame.render_widget(
             Paragraph::new(format!(" ! {message}")).fg(Color::Yellow),
             notice,
@@ -126,6 +126,10 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Style::new().dim(),
         ),
     ];
+    if !app.connected {
+        header.truncate(3);
+        header.push(Span::styled(" · offline", Style::new().fg(Color::Yellow)));
+    }
     let running = app.timeline.iter().filter(|item| matches!(item,
         TimelineItem::Process(process) if process.branch_id == app.branch_id && process.status() == "running"
     )).count();

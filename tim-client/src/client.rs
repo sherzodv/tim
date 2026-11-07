@@ -66,6 +66,19 @@ pub enum TimClientError {
     SessionMetadata(#[from] InvalidMetadataValue),
 }
 
+impl TimClientError {
+    pub fn is_connection_error(&self) -> bool {
+        match self {
+            Self::TimConnect(_) => true,
+            Self::TimGrpc(status) => matches!(
+                status.code(),
+                tonic::Code::Unavailable | tonic::Code::DeadlineExceeded | tonic::Code::Cancelled
+            ),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TimClient {
     client: TimGrpcApiClient<tonic::transport::Channel>,

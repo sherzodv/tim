@@ -20,7 +20,7 @@ use tim_client::agent::{Agent, AgentError, AgentRunner};
 use tim_client::api::SpaceEvent;
 use tim_client::client::{TimClient, TimClientConf};
 use tokio::sync::mpsc;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 use crate::app::{App, Focus};
 use crate::error::Result;
@@ -41,7 +41,10 @@ async fn main() -> Result<()> {
             tracing_subscriber::fmt::layer()
                 .without_time()
                 .with_ansi(false)
-                .with_writer(move || diagnostics::Writer::new(log_tx.clone())),
+                .with_writer(move || diagnostics::Writer::new(log_tx.clone()))
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.target() != "tim_client::agent"
+                })),
         )
         .init();
 
@@ -129,6 +132,15 @@ struct SpaceForwarder {
 
 #[async_trait]
 impl Agent for SpaceForwarder {
+    async fn on_connection_changed(
+        &mut self,
+        connected: bool,
+    ) -> std::result::Result<(), AgentError> {
+        self.tx
+            .send(AppEvent::Connection(connected))
+            .map_err(|_| AgentError::Agent("ui closed".into()))
+    }
+
     async fn on_space_update(
         &mut self,
         update: &SpaceEvent,
@@ -156,16 +168,31 @@ async fn run_app(
             AppEvent::Key(key) => {
                 if let Err(error) = handle_key(app, client, key).await {
                     match error {
-                        error::Error::Client(_) => app.notice = Some(error.to_string()),
+                        error::Error::Client(error) => {
+                            if error.is_connection_error() {
+                                app.connected = false;
+                            } else {
+                                app.notice = Some("Request failed".into());
+                            }
+                        }
                         error => return Err(error),
                     }
                 }
             }
-            AppEvent::Notice(notice) => app.notice = Some(notice),
+            AppEvent::Notice(notice) => {
+                if app.connected {
+                    app.notice = Some(notice);
+                }
+            }
+            AppEvent::Connection(connected) => {
+                app.connected = connected;
+                app.notice = None;
+            }
             AppEvent::Paste(text) if app.focus == Focus::Compose => app.paste(&text),
             AppEvent::Paste(_) => {}
             AppEvent::Redraw => {}
             AppEvent::Space(event) => {
+                app.connected = true;
                 app.notice = None;
                 app.handle_space_event(event);
             }
@@ -204,7 +231,14 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
                             process.stop_message =
                                 "Stop requested; waiting for process completion".into();
                         }
-                        Err(error) => process.stop_message = format!("Stop failed: {error}"),
+                        Err(error) => {
+                            process.stop_message = if error.is_connection_error() {
+                                "offline"
+                            } else {
+                                "Stop failed"
+                            }
+                            .into();
+                        }
                     }
                 }
             }

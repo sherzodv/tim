@@ -10,6 +10,7 @@ pub enum AppEvent {
     Paste(String),
     Redraw,
     Notice(String),
+    Connection(bool),
     Space(SpaceEvent),
 }
 
