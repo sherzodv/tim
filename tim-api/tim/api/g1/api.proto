@@ -125,6 +125,7 @@ message TaskProcessEvent {
 message ProcessStarted {
   string command = 1;
   string workdir = 2;
+  bool background = 3;  // session-owned; its dedicated task outlives the launching task
 }
 
 message ProcessOutput {

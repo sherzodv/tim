@@ -37,6 +37,8 @@ enum Report {
 
 /// Keeps the space informed about one running task; `finish` reports its end.
 pub struct Reporter {
+    client: TimClient,
+    task_id: u64,
     branch_id: u64,
     started: Instant,
     reports: mpsc::UnboundedSender<Report>,
@@ -52,6 +54,7 @@ impl Reporter {
         let branch_id = client.branch_id();
         let started = Instant::now();
         let task_id = client.send_task_started(&task, source_event_id).await?;
+        let process_client = client.clone();
         let (tx, mut rx) = mpsc::unbounded_channel::<Report>();
         let worker = tokio::spawn(async move {
             while let Some(report) = rx.recv().await {
@@ -88,6 +91,8 @@ impl Reporter {
             Ok(())
         });
         Ok(Self {
+            client: process_client,
+            task_id,
             branch_id,
             started,
             reports: tx,
@@ -102,6 +107,19 @@ impl Reporter {
         drop(self.reports);
         self.worker.await??;
         Ok(())
+    }
+
+    /// A background process has its own task lifetime, linked to its launching task.
+    pub async fn child(&self, task: String) -> Result<Self, TimClientError> {
+        Self::start(self.client.clone(), task, self.task_id).await
+    }
+
+    pub fn task_id(&self) -> u64 {
+        self.task_id
+    }
+
+    pub fn client(&self) -> TimClient {
+        self.client.clone()
     }
 
     pub fn branch_id(&self) -> u64 {

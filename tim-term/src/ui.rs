@@ -31,6 +31,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_header(frame, app, header);
     if app.focus == Focus::Branches {
         render_branches(frame, app, timeline);
+    } else if app.focus == Focus::Processes {
+        render_processes(frame, app, timeline);
     } else if app.focus == Focus::Inspect {
         render_inspector(frame, app, timeline);
     } else {
@@ -39,14 +41,61 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new("─".repeat(rule.width as usize)).dim(), rule);
     render_input(frame, app, input);
     let help = match app.focus {
-        Focus::Compose => " Compose · F2 branches · F3 main · Tab browse · Enter send · Ctrl+J newline",
+        Focus::Compose => " Compose · F2 branches · F3 main · F4 processes · Tab browse · Enter send · Ctrl+J newline",
         Focus::Browse => " Browse · ↑/↓ select · Enter open · f fork · ← parent · b branches · F3 main · Tab compose",
+        Focus::Processes => " Processes · ↑/↓ select · Enter logs · x stop group · Esc back · Tab compose",
         Focus::Branches => " Branches · ↑/↓ select · Enter open · Esc compose · F3 main",
         Focus::Inspect if app.selected_process().is_some() => " Process · x stop group · ↑/↓ PgUp/PgDn scroll · Esc back · Tab compose",
         Focus::Inspect if app.selected_llm_call().is_some() => " LLM · 1–4 tabs · ↑/↓ PgUp/PgDn scroll · Esc back · Tab compose",
         Focus::Inspect => " Inspect · ↑/↓ PgUp/PgDn scroll · Home/End · Esc back · Tab compose · Ctrl+C quit",
     };
     frame.render_widget(Paragraph::new(help).dim(), footer);
+}
+
+fn render_processes(frame: &mut Frame, app: &App, area: Rect) {
+    let items = app.process_items();
+    if items.is_empty() {
+        frame.render_widget(
+            Paragraph::new(
+                " No processes in this branch. Use sh.start for a session background command.",
+            )
+            .dim(),
+            area,
+        );
+        return;
+    }
+    let height = usize::from(area.height);
+    let selected = items
+        .iter()
+        .position(|index| Some(*index) == app.selected_item)
+        .unwrap_or(0);
+    let skip = selected.saturating_sub(height.saturating_sub(1));
+    let lines: Vec<Line> = items
+        .into_iter()
+        .skip(skip)
+        .take(height)
+        .map(|index| {
+            let TimelineItem::Process(process) = &app.timeline[index] else {
+                unreachable!()
+            };
+            let notice = if process.stop_message.is_empty() {
+                String::new()
+            } else {
+                format!("{} · ", process.stop_message)
+            };
+            let line = Line::raw(format!(
+                " {notice}{} · {}",
+                process.label(),
+                process.process_id.chars().take(8).collect::<String>()
+            ));
+            if app.selected_item == Some(index) {
+                line.reversed()
+            } else {
+                line
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
@@ -72,6 +121,15 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             Style::new().dim(),
         ),
     ];
+    let running = app.timeline.iter().filter(|item| matches!(item,
+        TimelineItem::Process(process) if process.branch_id == app.branch_id && process.status() == "running"
+    )).count();
+    if running > 0 {
+        header.push(Span::styled(
+            format!(" · {running} processes (F4)"),
+            Style::new().fg(Color::Yellow),
+        ));
+    }
     let status = app.status();
     if !status.is_empty() {
         header.push(Span::styled(

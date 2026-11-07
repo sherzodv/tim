@@ -1,12 +1,12 @@
-//! Task-owned shell processes. The space is the output log; only tails stay in memory.
-//! Unix process groups delimit ownership: detached/daemon processes are not supported.
+//! Managed shell processes. The space is the output log; only tails stay in memory.
+//! Unix process groups delimit ownership: commands must stay in their process group (no daemonization).
 
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::process::{ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use tim_client::api::process_finished::Reason;
@@ -34,16 +34,34 @@ pub enum ProcessError {
     NotRunning(String),
     #[error("command is empty")]
     EmptyCommand,
+    #[error("process is not known to this agent in this branch: {0}")]
+    NotFound(String),
+    #[error("process start was interrupted")]
+    StartInterrupted,
+    #[error("process supervisor is shutting down")]
+    ShuttingDown,
+    #[error("process start failed: {0}")]
+    Start(String),
 }
 
 struct Control {
     branch_id: u64,
     stop: Option<oneshot::Sender<()>>,
+    command: String,
+    started: Instant,
+    outcome: Option<ProcessFinished>,
+}
+
+#[derive(Default)]
+struct Registry {
+    closing: bool,
+    records: HashMap<String, Control>,
 }
 
 #[derive(Clone, Default)]
 pub struct Processes {
-    running: Arc<Mutex<HashMap<String, Control>>>,
+    registry: Arc<Mutex<Registry>>,
+    background: Arc<Mutex<tokio::task::JoinSet<()>>>,
 }
 
 impl Processes {
@@ -53,44 +71,130 @@ impl Processes {
         command: &str,
         reporter: &Reporter,
     ) -> Result<String, ProcessError> {
+        self.execute(shell, command, reporter, None).await
+    }
+
+    /// Returns only after start is persisted and the OS process has been spawned.
+    pub async fn start(
+        &self,
+        shell: &Shell,
+        command: &str,
+        parent: &Reporter,
+    ) -> Result<String, ProcessError> {
         if command.trim().is_empty() {
             return Err(ProcessError::EmptyCommand);
         }
+        let reporter = parent
+            .child(format!("sh.start: {}", crate::text::head(command, 80)))
+            .await
+            .map_err(ReportError::from)?;
+        let processes = self.clone();
+        let shell = shell.clone();
+        let command = command.to_string();
+        let (ready, started) = oneshot::channel();
+        {
+            let mut background = self.background.lock().expect("process supervisor poisoned");
+            while background.try_join_next().is_some() {}
+            background.spawn(async move {
+                let result = processes
+                    .execute(&shell, &command, &reporter, Some(ready))
+                    .await;
+                let error = result.as_ref().err().map(ToString::to_string);
+                if let Err(error) = reporter.finish(error).await {
+                    tracing::error!(%error, "failed to finish background process task");
+                }
+            });
+        }
+        started
+            .await
+            .map_err(|_| ProcessError::StartInterrupted)?
+            .map_err(ProcessError::Start)
+    }
+
+    async fn execute(
+        &self,
+        shell: &Shell,
+        command: &str,
+        reporter: &Reporter,
+        mut ready: Option<oneshot::Sender<Result<String, String>>>,
+    ) -> Result<String, ProcessError> {
+        if command.trim().is_empty() {
+            return Err(ProcessError::EmptyCommand);
+        }
+        let background = ready.is_some();
         let process_id = Uuid::new_v4().to_string();
         let (tx, mut stop) = oneshot::channel();
-        self.running
-            .lock()
-            .expect("process registry poisoned")
-            .insert(
+        {
+            let mut registry = self.registry.lock().expect("process registry poisoned");
+            if registry.closing {
+                return Err(ProcessError::ShuttingDown);
+            }
+            registry.records.insert(
                 process_id.clone(),
                 Control {
                     branch_id: reporter.branch_id(),
                     stop: Some(tx),
+                    command: command.to_string(),
+                    started: Instant::now(),
+                    outcome: None,
                 },
             );
+        }
         let mut execution = Execution::new(self, reporter, process_id, shell.max_output_chars());
-        reporter
+        let launch = reporter
             .process_event(
                 &execution.process_id,
                 Data::Started(ProcessStarted {
                     command: command.to_string(),
                     workdir: shell.workdir().display().to_string(),
+                    background,
                 }),
             )
-            .await?;
-        if stop.try_recv().is_ok() {
-            return execution.finish(Reason::Stopped, None).await;
+            .await
+            .map_err(ProcessError::from);
+        if launch.is_ok() {
+            let stopped = stop.try_recv().is_ok();
+            let cancelled = ready.as_ref().is_some_and(|ready| ready.is_closed());
+            if stopped || cancelled {
+                if let Some(ready) = ready {
+                    let _ = ready.send(Err("cancelled before spawn".into()));
+                }
+                return execution
+                    .finish(
+                        if stopped {
+                            Reason::Stopped
+                        } else {
+                            Reason::Cancelled
+                        },
+                        None,
+                    )
+                    .await;
+            }
         }
-        if let Err(error) = execution.spawn(shell, command) {
-            execution
-                .finish(Reason::Failed, Some(error.to_string()))
-                .await?;
-            return Err(error.into());
+        let launch =
+            launch.and_then(|()| execution.spawn(shell, command).map_err(ProcessError::from));
+        if let Err(error) = launch {
+            let message = error.to_string();
+            if let Some(ready) = ready.take() {
+                let _ = ready.send(Err(message.clone()));
+            }
+            execution.finish(Reason::Failed, Some(message)).await?;
+            return Err(error);
+        }
+        if let Some(ready) = ready {
+            let response =
+                json!({"process_id": execution.process_id, "status": "started", "output_cursor": reporter.task_id()}).to_string();
+            if ready.send(Ok(response)).is_err() {
+                // The caller was cancelled before receiving the ID: do not leave an orphan.
+                execution.kill_group()?;
+                execution.reap().await?;
+                return execution.finish(Reason::Cancelled, None).await;
+            }
         }
         let (reason, result) = tokio::select! {
             result = execution.follow() => (Reason::Exited, result),
-            _ = stop => (Reason::Stopped, Ok(())),
-            _ = tokio::time::sleep(shell.timeout()) => (Reason::TimedOut, Ok(())),
+            _ = &mut stop => (Reason::Stopped, Ok(())),
+            _ = process_timeout((!background).then_some(shell.timeout())) => (Reason::TimedOut, Ok(())),
         };
         // Stop the group even when logging fails. Reap the leader before acknowledging completion.
         let result = match result {
@@ -111,13 +215,61 @@ impl Processes {
         execution.finish(reason, None).await
     }
 
+    /// Stop managed processes before dropping the runtime, then abort stalled reporting.
+    pub async fn shutdown(&self) {
+        {
+            let mut registry = self.registry.lock().expect("process registry poisoned");
+            registry.closing = true;
+            for control in registry.records.values_mut() {
+                if let Some(stop) = control.stop.take() {
+                    let _ = stop.send(());
+                }
+            }
+        }
+        let mut background =
+            std::mem::take(&mut *self.background.lock().expect("process supervisor poisoned"));
+        if tokio::time::timeout(Duration::from_secs(5), async {
+            while background.join_next().await.is_some() {}
+        })
+        .await
+        .is_err()
+        {
+            background.abort_all();
+            while background.join_next().await.is_some() {}
+        }
+    }
+
+    /// Runtime status; persisted history remains available through sh.output and the terminal.
+    pub fn status(&self, process_id: &str, branch_id: u64) -> Result<String, ProcessError> {
+        let registry = self.registry.lock().expect("process registry poisoned");
+        let control = registry
+            .records
+            .get(process_id)
+            .filter(|c| c.branch_id == branch_id)
+            .ok_or_else(|| ProcessError::NotFound(process_id.to_string()))?;
+        let finished = control.outcome.as_ref();
+        Ok(json!({
+            "process_id": process_id, "command": control.command,
+            "status": if finished.is_some() { "finished" } else { "running" },
+            "reason": finished.and_then(|f| Reason::try_from(f.reason).ok()).map(|r| r.as_str_name()),
+            "duration_ms": finished.map_or_else(|| control.started.elapsed().as_millis() as u64, |f| f.duration_ms),
+            "exit_code": finished.and_then(|f| f.exit_code),
+            "signal": finished.and_then(|f| f.signal),
+            "error": finished.and_then(|f| f.error.as_deref()),
+        }).to_string())
+    }
+
     /// An idempotent stop request, not a claim that the process has already exited.
     pub fn stop(&self, process_id: &str, branch_id: u64) -> Result<String, ProcessError> {
-        let mut running = self.running.lock().expect("process registry poisoned");
-        let control = running
+        let mut registry = self.registry.lock().expect("process registry poisoned");
+        let control = registry
+            .records
             .get_mut(process_id)
             .filter(|control| control.branch_id == branch_id)
             .ok_or_else(|| ProcessError::NotRunning(process_id.to_string()))?;
+        if control.outcome.is_some() {
+            return Ok(format!("already finished: {process_id}"));
+        }
         if let Some(stop) = control.stop.take() {
             stop.send(())
                 .map_err(|_| ProcessError::NotRunning(process_id.to_string()))?;
@@ -249,6 +401,20 @@ impl<'a> Execution<'a> {
         Ok(())
     }
 
+    fn record_outcome(&self, outcome: ProcessFinished) {
+        if let Some(control) = self
+            .processes
+            .registry
+            .lock()
+            .expect("process registry poisoned")
+            .records
+            .get_mut(&self.process_id)
+        {
+            control.outcome = Some(outcome);
+            control.stop = None;
+        }
+    }
+
     fn outcome(&self, reason: Reason, error: Option<String>) -> ProcessFinished {
         ProcessFinished {
             reason: reason.into(),
@@ -266,12 +432,14 @@ impl<'a> Execution<'a> {
     ) -> Result<String, ProcessError> {
         let finished = self.outcome(reason, error);
         // Never enqueue a second terminal event if the persistence acknowledgement is lost.
+        self.record_outcome(finished.clone());
         self.finished = true;
         self.reporter
             .process_event(&self.process_id, Data::Finished(finished.clone()))
             .await?;
         Ok(json!({
             "process_id": self.process_id, "reason": reason.as_str_name(),
+            "output_cursor": self.reporter.task_id(),
             "exit_code": finished.exit_code, "signal": finished.signal,
             "stdout": self.stdout_tail.text(), "stderr": self.stderr_tail.text(),
         })
@@ -283,16 +451,12 @@ impl Drop for Execution<'_> {
     fn drop(&mut self) {
         let error = self.kill_group().err().map(|error| error.to_string());
         if !self.finished {
+            self.record_outcome(self.outcome(Reason::Cancelled, error.clone()));
             self.reporter.process_cancelled(
                 &self.process_id,
                 Data::Finished(self.outcome(Reason::Cancelled, error)),
             );
         }
-        self.processes
-            .running
-            .lock()
-            .expect("process registry poisoned")
-            .remove(&self.process_id);
         // Child::kill_on_drop handles the leader; Tokio reaps it after cancellation.
     }
 }
@@ -324,5 +488,12 @@ impl OutputTail {
 
     fn text(&self) -> String {
         tail(&String::from_utf8_lossy(&self.bytes), self.max_chars)
+    }
+}
+
+async fn process_timeout(duration: Option<Duration>) {
+    match duration {
+        Some(duration) => tokio::time::sleep(duration).await,
+        None => std::future::pending().await,
     }
 }

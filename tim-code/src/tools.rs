@@ -20,6 +20,9 @@ use crate::shell::Shell;
 use crate::shell::ShellError;
 
 pub const SH_RUN: &str = "sh.run";
+pub const SH_START: &str = "sh.start";
+pub const SH_STATUS: &str = "sh.status";
+pub const SH_OUTPUT: &str = "sh.output";
 pub const SH_STOP: &str = "sh.stop";
 pub const FS_READ: &str = "fs.read";
 pub const FS_WRITE: &str = "fs.write";
@@ -45,6 +48,8 @@ pub struct Tools {
 pub enum ToolError {
     #[error(transparent)]
     Process(#[from] ProcessError),
+    #[error(transparent)]
+    Client(#[from] tim_client::client::TimClientError),
     #[error("unknown tool: {0}")]
     Unknown(String),
 
@@ -67,8 +72,15 @@ struct ShRunReq {
 }
 
 #[derive(Deserialize)]
-struct ShStopReq {
+struct ProcessReq {
     process_id: String,
+}
+
+#[derive(Deserialize)]
+struct ShOutputReq {
+    process_id: String,
+    #[serde(default)]
+    cursor: u64,
 }
 
 #[derive(Deserialize)]
@@ -160,8 +172,25 @@ pub async fn call(
                 .run(&tools.shell, &req.cmd, reporter)
                 .await?)
         }
+        SH_START => {
+            let req: ShRunReq = serde_json::from_str(arguments)?;
+            Ok(tools
+                .processes
+                .start(&tools.shell, &req.cmd, reporter)
+                .await?)
+        }
+        SH_STATUS => {
+            let req: ProcessReq = serde_json::from_str(arguments)?;
+            Ok(tools
+                .processes
+                .status(&req.process_id, reporter.branch_id())?)
+        }
+        SH_OUTPUT => {
+            let req: ShOutputReq = serde_json::from_str(arguments)?;
+            Ok(crate::process_log::read(reporter.client(), &req.process_id, req.cursor).await?)
+        }
         SH_STOP => {
-            let req: ShStopReq = serde_json::from_str(arguments)?;
+            let req: ProcessReq = serde_json::from_str(arguments)?;
             Ok(tools
                 .processes
                 .stop(&req.process_id, reporter.branch_id())?)
@@ -252,9 +281,27 @@ pub fn definitions() -> Vec<LlmTool> {
     vec![
         tool(
             SH_RUN,
-            "Runs a task-owned shell command. Streams full output to the space; returns JSON with process_id, reason, exit_code, signal and output tails. Background/daemon processes are not supported.",
+            "Runs a task-owned shell command. Streams full output to the space; returns JSON with process_id, reason, exit_code, signal and output tails. Use sh.start for session background commands. Do not daemonize.",
             json!({ "cmd": { "type": "string", "description": "shell command" } }),
             &["cmd"],
+        ),
+        tool(
+            SH_START,
+            "Starts a session-owned background command, returns process_id and output_cursor once spawned (not a readiness guarantee). Survives the current task, stops with the agent. No timeout, stdin or daemonization; use sh.stop when done.",
+            json!({ "cmd": { "type": "string", "description": "shell command; keep the server in the foreground, no & or daemon mode" } }),
+            &["cmd"],
+        ),
+        tool(
+            SH_STATUS,
+            "Returns the current agent's process status, duration and exit details in this branch. Runtime metadata is not restored after agent restart; persisted history remains available through sh.output.",
+            json!({ "process_id": { "type": "string" } }),
+            &["process_id"],
+        ),
+        tool(
+            SH_OUTPUT,
+            "Reads a bounded page of persisted process events in this branch. Pass next_cursor back to continue; has_more means more journal events, even when this page has no matching output. Start from output_cursor returned by sh.start/sh.run. cursor is a space event ID, not a byte offset. Output text uses lossy UTF-8 per chunk; raw bytes remain in the space.",
+            json!({ "process_id": { "type": "string" }, "cursor": { "type": "integer", "minimum": 0, "description": "inclusive event cursor, defaults to 0 (beginning)" } }),
+            &["process_id"],
         ),
         tool(
             SH_STOP,

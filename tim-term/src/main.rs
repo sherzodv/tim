@@ -163,7 +163,9 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         app.quit();
         return Ok(());
     }
-    if key.code == KeyCode::Char('x') && matches!(app.focus, Focus::Browse | Focus::Inspect) {
+    if key.code == KeyCode::Char('x')
+        && matches!(app.focus, Focus::Browse | Focus::Inspect | Focus::Processes)
+    {
         if let Some(process) = app.selected_process() {
             if process.branch_id != app.branch_id {
                 if let Some(process) = app.selected_process_mut() {
@@ -189,6 +191,31 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
                 }
             }
             return Ok(());
+        }
+    }
+    if key.code == KeyCode::F(4) {
+        app.open_processes();
+        return Ok(());
+    }
+    if app.focus == Focus::Processes {
+        match key.code {
+            KeyCode::Esc => {
+                app.focus = Focus::Browse;
+                return Ok(());
+            }
+            KeyCode::Up => {
+                app.select_process(false);
+                return Ok(());
+            }
+            KeyCode::Down => {
+                app.select_process(true);
+                return Ok(());
+            }
+            KeyCode::Enter => {
+                app.open_inspector();
+                return Ok(());
+            }
+            _ => {}
         }
     }
     if key.code == KeyCode::F(2) {
@@ -281,7 +308,7 @@ fn handle_browse_key(app: &mut App, key: KeyCode) {
                 app.inspector_tab = usize::from(tab as u8 - b'1');
                 app.inspector_offset = 0;
             }
-            KeyCode::Esc => app.focus = Focus::Browse,
+            KeyCode::Esc => app.focus = app.inspector_return,
             KeyCode::Up => app.inspector_offset = app.inspector_offset.saturating_sub(1),
             KeyCode::Down => app.inspector_offset = app.inspector_offset.saturating_add(1),
             KeyCode::PageUp => {

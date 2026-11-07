@@ -207,7 +207,10 @@ impl CodeAgent {
         let ability = call.name.clone();
         let payload = call.payload.clone();
         tokio::spawn(async move {
-            let _guard = if ability == tools::SH_STOP {
+            let _guard = if matches!(
+                ability.as_str(),
+                tools::SH_STOP | tools::SH_STATUS | tools::SH_OUTPUT
+            ) {
                 None
             } else {
                 Some(execution.lock_owned().await)

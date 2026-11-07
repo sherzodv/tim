@@ -96,7 +96,15 @@ impl Process {
             .duration_ms()
             .map(|ms| format!(" · {}.{:03}s", ms / 1000, ms % 1000))
             .unwrap_or_default();
-        format!("{}{duration} · {preview}", self.status())
+        format!(
+            "{}{duration}{} · {preview}",
+            self.status(),
+            if self.started.as_ref().is_some_and(|s| s.background) {
+                " · background"
+            } else {
+                ""
+            }
+        )
     }
 
     fn duration_ms(&self) -> Option<u64> {
@@ -119,8 +127,14 @@ impl Process {
         );
         if let Some(started) = &self.started {
             text.push_str(&format!(
-                "Directory: {}\nCommand:\n{}\n",
-                started.workdir, started.command
+                "Lifetime: {}\nDirectory: {}\nCommand:\n{}\n",
+                if started.background {
+                    "session (background)"
+                } else {
+                    "task"
+                },
+                started.workdir,
+                started.command
             ));
         }
         if let Some(duration) = self.duration_ms() {

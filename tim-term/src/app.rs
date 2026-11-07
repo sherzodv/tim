@@ -80,6 +80,7 @@ pub enum Focus {
     Browse,
     Inspect,
     Branches,
+    Processes,
 }
 
 #[derive(Default)]
@@ -100,6 +101,7 @@ pub struct App {
     pub selected_item: Option<usize>,
     pub inspector_offset: usize,
     pub inspector_tab: usize,
+    pub inspector_return: Focus,
     llm_calls: HashMap<(u64, u64), usize>,
     processes: HashMap<(u64, String), usize>,
     pub running: bool,
@@ -142,6 +144,7 @@ impl App {
             selected_item: None,
             inspector_offset: 0,
             inspector_tab: 0,
+            inspector_return: Focus::Browse,
             llm_calls: HashMap::new(),
             processes: HashMap::new(),
             running: true,
@@ -191,6 +194,7 @@ impl App {
                     | TimelineItem::Process(_)
             )
         ) {
+            self.inspector_return = self.focus;
             self.inspector_offset = 0;
             self.inspector_tab = 0;
             self.focus = Focus::Inspect;
@@ -225,6 +229,58 @@ impl App {
             Some(TimelineItem::Process(process)) => Some(process),
             _ => None,
         }
+    }
+
+    /// Current branch only; inherited processes remain visible in the normal timeline.
+    pub fn process_items(&self) -> Vec<usize> {
+        let mut items: Vec<_> = self
+            .timeline
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| match item {
+                TimelineItem::Process(process) if process.branch_id == self.branch_id => {
+                    Some(index)
+                }
+                _ => None,
+            })
+            .collect();
+        items.sort_by_key(|index| {
+            let TimelineItem::Process(process) = &self.timeline[*index] else {
+                unreachable!()
+            };
+            (process.status() != "running", std::cmp::Reverse(*index))
+        });
+        items
+    }
+
+    pub fn open_processes(&mut self) {
+        let items = self.process_items();
+        if !self
+            .selected_item
+            .is_some_and(|index| items.contains(&index))
+        {
+            self.selected_item = items.first().copied();
+        }
+        self.focus = Focus::Processes;
+    }
+
+    pub fn select_process(&mut self, next: bool) {
+        let items = self.process_items();
+        if items.is_empty() {
+            self.selected_item = None;
+            return;
+        }
+        let position = items
+            .iter()
+            .position(|index| Some(*index) == self.selected_item);
+        let position = position.map_or(0, |position| {
+            if next {
+                (position + 1).min(items.len() - 1)
+            } else {
+                position.saturating_sub(1)
+            }
+        });
+        self.selected_item = Some(items[position]);
     }
 
     pub fn open_branches(&mut self) {
@@ -569,6 +625,12 @@ impl App {
         };
         if let TimelineItem::Process(process) = &mut self.timeline[index] {
             process.record(data);
+        }
+        if self.focus == Focus::Processes
+            && self.selected_item.is_none()
+            && branch_id == self.branch_id
+        {
+            self.selected_item = Some(index);
         }
     }
 
