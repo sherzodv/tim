@@ -370,17 +370,22 @@ impl TimSpace {
             return Ok(self.storage.timeline(offset, size)?);
         };
         let branches = self.branch_path(branch_id)?;
+        // A timeline read is finite even while other tasks keep appending events.
+        let end = self.lock_state().next_id;
         let mut result = VecDeque::new();
         let mut cursor = offset.max(1);
         if size == 0 {
             return Ok(Vec::new());
         }
-        loop {
+        while cursor < end {
             let events = self.storage.timeline(cursor, REPLAY_PAGE)?;
             if events.is_empty() {
                 break;
             }
             for event in events {
+                if event_id(&event) >= end {
+                    return Ok(result.into());
+                }
                 cursor = event_id(&event) + 1;
                 if !matches_branch(&event, Some(&branches)) {
                     continue;

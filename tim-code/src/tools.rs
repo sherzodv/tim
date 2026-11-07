@@ -80,7 +80,7 @@ struct ProcessReq {
 struct ShOutputReq {
     process_id: String,
     #[serde(default)]
-    cursor: u64,
+    cursor: crate::process_log::Cursor,
 }
 
 #[derive(Deserialize)]
@@ -299,8 +299,20 @@ pub fn definitions() -> Vec<LlmTool> {
         ),
         tool(
             SH_OUTPUT,
-            "Reads a bounded page of persisted process events in this branch. Pass next_cursor back to continue; has_more means more journal events, even when this page has no matching output. Start from output_cursor returned by sh.start/sh.run. cursor is a space event ID, not a byte offset. Output text uses lossy UTF-8 per chunk; raw bytes remain in the space.",
-            json!({ "process_id": { "type": "string" }, "cursor": { "type": "integer", "minimum": 0, "description": "inclusive event cursor, defaults to 0 (beginning)" } }),
+            "Reads one page (up to 32 KiB of output) from a fixed snapshot of this process's journal. A numeric cursor starts a snapshot, e.g. output_cursor from sh.start/sh.run. Pass the entire returned next_cursor object unchanged for more pages; has_more concerns only that snapshot. Stop when false. Usually one page is enough for a status check. To explicitly read newer output later, start a new snapshot using next_cursor.offset. Text is lossy UTF-8 per chunk; raw bytes remain in the space.",
+            json!({
+                "process_id": { "type": "string" },
+                "cursor": {
+                    "description": "Initial event offset (default 0), or the complete next_cursor object from the previous page",
+                    "anyOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "object", "properties": {
+                            "offset": { "type": "integer", "minimum": 1 },
+                            "through": { "type": "integer", "minimum": 0 }
+                        }, "required": ["offset", "through"], "additionalProperties": false }
+                    ]
+                }
+            }),
             &["process_id"],
         ),
         tool(
