@@ -45,9 +45,9 @@ impl EventHandler {
     }
 
     pub async fn next(&mut self) -> Result<AppEvent> {
-        self.rx
-            .recv()
-            .await
-            .ok_or_else(|| std::io::Error::other("event channel closed").into())
+        tokio::select! {
+            event = self.rx.recv() => event.ok_or_else(|| std::io::Error::other("event channel closed").into()),
+            _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => Ok(AppEvent::Redraw),
+        }
     }
 }

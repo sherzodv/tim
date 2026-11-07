@@ -1,6 +1,7 @@
 mod app;
 mod error;
 mod event;
+mod llm;
 mod ui;
 
 use std::io;
@@ -247,6 +248,10 @@ async fn switch_branch(app: &mut App, client: &mut TimClient, branch_id: u64) ->
 fn handle_browse_key(app: &mut App, key: KeyCode) {
     if app.focus == Focus::Inspect {
         match key {
+            KeyCode::Char(tab @ '1'..='4') if app.selected_llm_call().is_some() => {
+                app.inspector_tab = usize::from(tab as u8 - b'1');
+                app.inspector_offset = 0;
+            }
             KeyCode::Esc => app.focus = Focus::Browse,
             KeyCode::Up => app.inspector_offset = app.inspector_offset.saturating_sub(1),
             KeyCode::Down => app.inspector_offset = app.inspector_offset.saturating_add(1),

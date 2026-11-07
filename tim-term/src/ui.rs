@@ -9,6 +9,7 @@ use ratatui::{
 use textwrap::core::display_width;
 
 use crate::app::{App, Focus, TimelineItem};
+use crate::llm::LlmCall;
 
 const MAX_INPUT_HEIGHT: u16 = 8;
 /// How much of a tool call's arguments and outcome the timeline shows.
@@ -41,6 +42,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Focus::Compose => " Compose · F2 branches · F3 main · Tab browse · Enter send · Ctrl+J newline",
         Focus::Browse => " Browse · ↑/↓ select · Enter open · f fork · ← parent · b branches · F3 main · Tab compose",
         Focus::Branches => " Branches · ↑/↓ select · Enter open · Esc compose · F3 main",
+        Focus::Inspect if app.selected_llm_call().is_some() => " LLM · 1–4 tabs · ↑/↓ PgUp/PgDn scroll · Esc back · Tab compose",
         Focus::Inspect => " Inspect · ↑/↓ PgUp/PgDn scroll · Home/End · Esc back · Tab compose · Ctrl+C quit",
     };
     frame.render_widget(Paragraph::new(help).dim(), footer);
@@ -170,6 +172,10 @@ fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
 
 /// Shows all recorded text; the sender may already have truncated the output.
 fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
+    if app.selected_llm_call().is_some() {
+        render_llm_inspector(frame, app, area);
+        return;
+    }
     let Some(TimelineItem::TaskToolCall {
         username,
         tool,
@@ -199,6 +205,43 @@ fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
         "Arguments\n{arguments}\n\n{} (as recorded)\n{outcome}",
         if *success { "Output" } else { "Error" }
     );
+    render_inspector_text(frame, app, body, &text);
+}
+
+fn render_llm_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
+    let Some(call) = app.selected_llm_call() else {
+        return;
+    };
+    let area = area.inner(Margin::new(1, 0));
+    let [header, tabs, body] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(2),
+        Constraint::Min(0),
+    ])
+    .areas(area);
+    frame.render_widget(
+        Paragraph::new(call.label()).fg(llm_color(call)).bold(),
+        header,
+    );
+    let names = ["1 Summary", "2 Request", "3 Response", "4 Events"];
+    let spans: Vec<Span> = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let style = if index == app.inspector_tab {
+                Style::new().reversed()
+            } else {
+                Style::new().dim()
+            };
+            Span::styled(format!(" {name} "), style)
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(Line::from(spans)), tabs);
+    let text = call.details(app.inspector_tab);
+    render_inspector_text(frame, app, body, &text);
+}
+
+fn render_inspector_text(frame: &mut Frame, app: &mut App, body: Rect, text: &str) {
     let lines: Vec<Line> = text
         .split('\n')
         .flat_map(|line| {
@@ -238,6 +281,21 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
 
 fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
     match item {
+        TimelineItem::LlmCall(call) => {
+            let marker = match call.status() {
+                "succeeded" => "✓",
+                "failed" => "✗",
+                "running" => "◌",
+                _ => "?",
+            };
+            vec![Line::from(vec![
+                Span::styled(format_time(call.timestamp), Style::new().dim()),
+                Span::styled(
+                    format!(" {marker} {}", call.label()),
+                    Style::new().fg(llm_color(call)),
+                ),
+            ])]
+        }
         TimelineItem::Message {
             sender,
             content,
@@ -330,6 +388,15 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
                 ),
             )]
         }
+    }
+}
+
+fn llm_color(call: &LlmCall) -> Color {
+    match call.status() {
+        "failed" => Color::Red,
+        "succeeded" => Color::Green,
+        "running" => Color::Cyan,
+        _ => Color::Yellow,
     }
 }
 

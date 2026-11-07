@@ -8,12 +8,15 @@ use tui_textarea::TextArea;
 
 use tim_client::api::space_event::Data as EventData;
 use tim_client::api::{
-    CallAbility, CallAbilityOutcome, Message, SpaceEvent, TaskFinished, TaskStarted, TaskStep,
-    TaskToolCall, Timite,
+    CallAbility, CallAbilityOutcome, Message, SpaceEvent, TaskFinished, TaskModelEvent,
+    TaskStarted, TaskStep, TaskToolCall, Timite,
 };
+
+use crate::llm::LlmCall;
 
 #[derive(Debug, Clone)]
 pub enum TimelineItem {
+    LlmCall(Box<LlmCall>),
     Message {
         sender: String,
         content: String,
@@ -93,6 +96,8 @@ pub struct App {
     pub focus: Focus,
     pub selected_item: Option<usize>,
     pub inspector_offset: usize,
+    pub inspector_tab: usize,
+    llm_calls: HashMap<(u64, u64), usize>,
     pub running: bool,
     pub input: TextArea<'static>,
     pub timeline: Vec<TimelineItem>,
@@ -132,6 +137,8 @@ impl App {
             focus: Focus::Compose,
             selected_item: None,
             inspector_offset: 0,
+            inspector_tab: 0,
+            llm_calls: HashMap::new(),
             running: true,
             input: new_input(),
             timeline: Vec::new(),
@@ -173,10 +180,21 @@ impl App {
     pub fn open_inspector(&mut self) {
         if matches!(
             self.selected_item.and_then(|i| self.timeline.get(i)),
-            Some(TimelineItem::TaskToolCall { .. })
+            Some(TimelineItem::TaskToolCall { .. } | TimelineItem::LlmCall(_))
         ) {
             self.inspector_offset = 0;
+            self.inspector_tab = 0;
             self.focus = Focus::Inspect;
+        }
+    }
+
+    pub fn selected_llm_call(&self) -> Option<&LlmCall> {
+        match self
+            .selected_item
+            .and_then(|index| self.timeline.get(index))
+        {
+            Some(TimelineItem::LlmCall(call)) => Some(call),
+            _ => None,
         }
     }
 
@@ -275,6 +293,7 @@ impl App {
         self.focus = Focus::Compose;
         self.typing_sent = false;
         self.timeline.clear();
+        self.llm_calls.clear();
         self.timeline_event_ids.clear();
         self.tasks.clear();
         self.typing.clear();
@@ -369,9 +388,14 @@ impl App {
             return;
         };
         self.branches.insert(meta.branch_id);
-        // Raw model events are not rendered by this client.
-        if matches!(&event.data, Some(EventData::EventTaskModelEvent(_))) {
-            return;
+        if let Some(EventData::EventTaskModelEvent(data)) = &event.data {
+            if !data
+                .task_model_event
+                .as_ref()
+                .is_some_and(|event| event.engine == "llm" && event.llm_call_id.is_some())
+            {
+                return;
+            }
         }
         if self.events.insert(meta.id, event.clone()).is_some() {
             return;
@@ -450,10 +474,39 @@ impl App {
                     self.task_tool_call(call, timestamp);
                 }
             }
-            EventData::EventTaskModelEvent(_) => {}
+            EventData::EventTaskModelEvent(data) => {
+                if let Some(event) = data.task_model_event {
+                    self.model_event(event, event_id, timestamp);
+                }
+            }
         }
         if self.timeline.len() > previous_len {
             self.timeline_event_ids.push(event_id);
+        }
+    }
+
+    fn model_event(&mut self, event: TaskModelEvent, event_id: u64, timestamp: u64) {
+        let Some(call_id) = event.llm_call_id else {
+            return;
+        };
+        let key = (event.task_id, call_id);
+        let index = match self.llm_calls.get(&key) {
+            Some(index) => *index,
+            None => {
+                let index = self.timeline.len();
+                self.timeline
+                    .push(TimelineItem::LlmCall(Box::new(LlmCall::new(
+                        event.timite_id,
+                        event.task_id,
+                        call_id,
+                        timestamp,
+                    ))));
+                self.llm_calls.insert(key, index);
+                index
+            }
+        };
+        if let TimelineItem::LlmCall(call) = &mut self.timeline[index] {
+            call.record(event_id, timestamp, event.payload);
         }
     }
 
@@ -484,6 +537,13 @@ impl App {
     }
 
     fn timite_disconnected(&mut self, timite: Timite, timestamp: u64) {
+        for item in &mut self.timeline {
+            if let TimelineItem::LlmCall(call) = item {
+                if call.timite_id == timite.id {
+                    call.interrupted = true;
+                }
+            }
+        }
         self.online_timites.remove(&timite.id);
         self.typing.remove(&timite.id);
         self.tasks.retain(|_, task| task.timite_id != timite.id);
@@ -534,6 +594,13 @@ impl App {
     }
 
     fn task_finished(&mut self, finished: TaskFinished, timestamp: u64) {
+        for item in &mut self.timeline {
+            if let TimelineItem::LlmCall(call) = item {
+                if call.task_id == finished.task_id {
+                    call.interrupted = true;
+                }
+            }
+        }
         let task = self
             .tasks
             .remove(&finished.task_id)
