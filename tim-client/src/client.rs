@@ -223,8 +223,17 @@ impl TimClient {
         Ok(())
     }
 
-    pub async fn send_task_finished(&mut self, task_id: u64) -> Result<(), TimClientError> {
-        let mut req = tonic::Request::new(SendTaskFinishedReq { task_id });
+    pub async fn send_task_finished(
+        &mut self,
+        task_id: u64,
+        error: Option<String>,
+        duration_ms: Option<u64>,
+    ) -> Result<(), TimClientError> {
+        let mut req = tonic::Request::new(SendTaskFinishedReq {
+            task_id,
+            error,
+            duration_ms,
+        });
         req.metadata_mut()
             .insert(SESSION_METADATA_KEY, self.token.clone());
         self.client.send_task_finished(req).await?;

@@ -8,7 +8,7 @@ use ratatui::{
 };
 use textwrap::core::display_width;
 
-use crate::app::{App, TimelineItem};
+use crate::app::{App, Focus, TimelineItem};
 
 const MAX_INPUT_HEIGHT: u16 = 8;
 /// How much of a tool call's arguments and outcome the timeline shows.
@@ -28,13 +28,22 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     .areas(frame.area());
 
     render_header(frame, app, header);
-    render_timeline(frame, app, timeline);
+    if app.focus == Focus::Branches {
+        render_branches(frame, app, timeline);
+    } else if app.focus == Focus::Inspect {
+        render_inspector(frame, app, timeline);
+    } else {
+        render_timeline(frame, app, timeline);
+    }
     frame.render_widget(Paragraph::new("─".repeat(rule.width as usize)).dim(), rule);
     render_input(frame, app, input);
-    frame.render_widget(
-        Paragraph::new(" Enter send · Ctrl+J newline · ↑/↓ PgUp/PgDn scroll · Ctrl+C quit").dim(),
-        footer,
-    );
+    let help = match app.focus {
+        Focus::Compose => " Compose · F2 branches · F3 main · Tab browse · Enter send · Ctrl+J newline",
+        Focus::Browse => " Browse · ↑/↓ select · Enter open · f fork · ← parent · b branches · F3 main · Tab compose",
+        Focus::Branches => " Branches · ↑/↓ select · Enter open · Esc compose · F3 main",
+        Focus::Inspect => " Inspect · ↑/↓ PgUp/PgDn scroll · Home/End · Esc back · Tab compose · Ctrl+C quit",
+    };
+    frame.render_widget(Paragraph::new(help).dim(), footer);
 }
 
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
@@ -47,7 +56,10 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut header = vec![
         Span::styled(" tim", Style::new().fg(Color::Cyan).bold()),
-        Span::styled(" · ", Style::new().dim()),
+        Span::styled(
+            format!(" / {} · ", app.branch_label(app.branch_id)),
+            Style::new().fg(Color::Yellow),
+        ),
         Span::styled(
             format!("@{}", app.my_username),
             Style::new().fg(Color::Green),
@@ -67,23 +79,147 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(Line::from(header)), area);
 }
 
+fn render_branches(frame: &mut Frame, app: &App, area: Rect) {
+    let height = usize::from(area.height);
+    let skip = app.selected_branch.saturating_sub(height.saturating_sub(1));
+    let lines: Vec<Line> = app
+        .branches
+        .iter()
+        .enumerate()
+        .skip(skip)
+        .take(height)
+        .map(|(index, id)| {
+            let marker = if *id == app.branch_id { "●" } else { " " };
+            let line = Line::raw(format!(
+                " {marker} {}  {}",
+                app.branch_label(*id),
+                app.branch_status(*id)
+            ));
+            if index == app.selected_branch {
+                line.reversed()
+            } else {
+                line
+            }
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
 /// Pre-wrapped lines let the scroll offset count from the bottom in visual lines.
 fn render_timeline(frame: &mut Frame, app: &mut App, area: Rect) {
     let area = area.inner(Margin::new(1, 0));
     let width = area.width as usize;
-    let lines: Vec<Line> = app
-        .timeline
-        .iter()
-        .flat_map(|item| item_lines(item, width))
-        .collect();
+    let mut lines = Vec::new();
+    let mut selected_line = None;
+    for (index, item) in app.timeline.iter().enumerate() {
+        let mut rendered = item_lines(item, width);
+        let event_id = app.timeline_event_ids[index];
+        if matches!(item, TimelineItem::Message { .. }) && app.branches.contains(&event_id) {
+            let status = app.branch_status(event_id);
+            let status = if status.is_empty() {
+                String::new()
+            } else {
+                format!("{status} · ")
+            };
+            rendered.push(Line::from(Span::styled(
+                format!(
+                    "       ↳ branch #{event_id} · {status}{}",
+                    if event_id == app.branch_id {
+                        "current"
+                    } else {
+                        "Enter open"
+                    }
+                ),
+                Style::new().fg(Color::Yellow),
+            )));
+        }
+        if app.focus == Focus::Browse && app.selected_item == Some(index) {
+            selected_line = Some(lines.len());
+            for line in &mut rendered {
+                line.style = Style::new().reversed();
+            }
+        }
+        lines.extend(rendered);
+    }
 
     let height = area.height as usize;
     let max_offset = lines.len().saturating_sub(height);
     app.scroll_offset = app.scroll_offset.min(max_offset);
     app.timeline_height = height;
-    let skip = max_offset - app.scroll_offset;
+    let mut skip = max_offset - app.scroll_offset;
+    if let Some(selected) = selected_line {
+        if selected < skip {
+            skip = selected;
+        } else if selected >= skip + height {
+            skip = selected.saturating_sub(height.saturating_sub(1));
+        }
+        app.scroll_offset = max_offset.saturating_sub(skip);
+    }
 
-    frame.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), area);
+    frame.render_widget(
+        Paragraph::new(
+            lines
+                .into_iter()
+                .skip(skip)
+                .take(height)
+                .collect::<Vec<_>>(),
+        ),
+        area,
+    );
+}
+
+/// Shows all recorded text; the sender may already have truncated the output.
+fn render_inspector(frame: &mut Frame, app: &mut App, area: Rect) {
+    let Some(TimelineItem::TaskToolCall {
+        username,
+        tool,
+        arguments,
+        outcome,
+        success,
+        timestamp,
+    }) = app.selected_item.and_then(|index| app.timeline.get(index))
+    else {
+        return;
+    };
+    let area = area.inner(Margin::new(1, 0));
+    let [header, body] = Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(area);
+    let status = if *success { "returned" } else { "failed" };
+    let color = if *success { Color::Cyan } else { Color::Red };
+    frame.render_widget(
+        Paragraph::new(format!(
+            "{} · {username} · {tool} · {status}",
+            format_time(*timestamp)
+        ))
+        .fg(color)
+        .bold(),
+        header,
+    );
+
+    let text = format!(
+        "Arguments\n{arguments}\n\n{} (as recorded)\n{outcome}",
+        if *success { "Output" } else { "Error" }
+    );
+    let lines: Vec<Line> = text
+        .split('\n')
+        .flat_map(|line| {
+            textwrap::wrap(line, usize::from(body.width).max(1))
+                .into_iter()
+                .map(|piece| Line::raw(piece.into_owned()))
+        })
+        .collect();
+    let height = usize::from(body.height);
+    app.timeline_height = height;
+    app.inspector_offset = app.inspector_offset.min(lines.len().saturating_sub(height));
+    frame.render_widget(
+        Paragraph::new(
+            lines
+                .into_iter()
+                .skip(app.inspector_offset)
+                .take(height)
+                .collect::<Vec<_>>(),
+        ),
+        body,
+    );
 }
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
@@ -93,7 +229,11 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     ])
     .areas(area);
     frame.render_widget(Paragraph::new(PROMPT).fg(Color::Cyan), prompt);
-    frame.render_widget(&app.input, text);
+    if app.focus == Focus::Compose {
+        frame.render_widget(&app.input, text);
+    } else {
+        frame.render_widget(Paragraph::new(app.input.lines().join("\n")).dim(), text);
+    }
 }
 
 fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
@@ -151,11 +291,27 @@ fn item_lines(item: &TimelineItem, width: usize) -> Vec<Line<'static>> {
         TimelineItem::TaskFinished {
             username,
             task,
+            error,
+            duration_ms,
             timestamp,
-        } => vec![system_line(
-            format_time(*timestamp),
-            format!("{username} finished: {task}"),
-        )],
+        } => {
+            let status = if error.is_some() {
+                "failed"
+            } else {
+                "finished"
+            };
+            let duration = duration_ms
+                .map(|ms| format!(" ({ms} ms)"))
+                .unwrap_or_default();
+            let error = error
+                .as_ref()
+                .map(|error| format!(": {error}"))
+                .unwrap_or_default();
+            vec![system_line(
+                format_time(*timestamp),
+                format!("{username} {status}: {task}{duration}{error}"),
+            )]
+        }
         TimelineItem::TaskToolCall {
             username,
             tool,

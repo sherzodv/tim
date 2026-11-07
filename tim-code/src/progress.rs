@@ -1,5 +1,7 @@
 //! Reports one running task to the space: its start, model events, tools and finish.
 
+use std::time::Instant;
+
 use tim_client::api::TaskModelEvent;
 use tim_client::api::TaskToolCall;
 use tim_client::client::TimClient;
@@ -17,12 +19,17 @@ pub enum ReportError {
 
 enum Report {
     Step(String),
+    Finished {
+        error: Option<String>,
+        duration_ms: u64,
+    },
     ToolCall(TaskToolCall),
     ModelEvent(TaskModelEvent),
 }
 
 /// Keeps the space informed about one running task; `finish` reports its end.
 pub struct Reporter {
+    started: Instant,
     reports: mpsc::UnboundedSender<Report>,
     worker: JoinHandle<Result<(), TimClientError>>,
 }
@@ -33,11 +40,17 @@ impl Reporter {
         task: String,
         source_event_id: u64,
     ) -> Result<Self, TimClientError> {
+        let started = Instant::now();
         let task_id = client.send_task_started(&task, source_event_id).await?;
         let (tx, mut rx) = mpsc::unbounded_channel::<Report>();
         let worker = tokio::spawn(async move {
             while let Some(report) = rx.recv().await {
                 let sent = match report {
+                    Report::Finished { error, duration_ms } => {
+                        return client
+                            .send_task_finished(task_id, error, Some(duration_ms))
+                            .await;
+                    }
                     Report::Step(step) => client.send_task_step(task_id, &step).await,
                     Report::ToolCall(call) => {
                         client
@@ -52,16 +65,19 @@ impl Reporter {
                 };
                 sent?;
             }
-            client.send_task_finished(task_id).await
+            Ok(())
         });
         Ok(Self {
+            started,
             reports: tx,
             worker,
         })
     }
 
     /// Reports the finish and waits until it is in the log, so a reply sent next comes after it.
-    pub async fn finish(self) -> Result<(), ReportError> {
+    pub async fn finish(self, error: Option<String>) -> Result<(), ReportError> {
+        let duration_ms = self.started.elapsed().as_millis() as u64;
+        let _ = self.reports.send(Report::Finished { error, duration_ms });
         drop(self.reports);
         self.worker.await??;
         Ok(())

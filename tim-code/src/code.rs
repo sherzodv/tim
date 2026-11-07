@@ -151,17 +151,28 @@ impl CodeAgent {
         }
         let tools = self.tools.clone();
         let engine = self.engine.clone();
-        let mut client = self.client.in_branch(branch_id);
+        // A request in main starts a session; follow-ups keep that session.
+        let session_id = if branch_id == 0 {
+            source_event_id
+        } else {
+            branch_id
+        };
+        let mut client = self.client.in_branch(session_id);
         let execution = self.execution.clone().lock_owned().await;
         tokio::spawn(async move {
             let _guard = execution;
             let result = async {
-                let history = History::load(&mut client, source_event_id).await?;
                 let reporter =
                     Reporter::start(client.clone(), head(&task, TASK_CHARS), source_event_id)
                         .await?;
-                let result = report(&tools, &engine, &task, history, &reporter).await;
-                reporter.finish().await?;
+                let result: Result<String, CallError> = async {
+                    let history = History::load(&mut client, source_event_id).await?;
+                    report(&tools, &engine, &task, history, &reporter).await
+                }
+                .await;
+                reporter
+                    .finish(result.as_ref().err().map(ToString::to_string))
+                    .await?;
                 result
             }
             .await;
@@ -198,16 +209,20 @@ impl CodeAgent {
         tokio::spawn(async move {
             let _guard = execution;
             let result = async {
-                let history = if ability == CODE_TASK {
-                    History::load(&mut client, source_event_id).await?
-                } else {
-                    History::default()
-                };
                 let reporter =
                     Reporter::start(client.clone(), ability.clone(), source_event_id).await?;
-                let result =
-                    dispatch(&tools, &engine, &reporter, &ability, &payload, history).await;
-                reporter.finish().await?;
+                let result: Result<String, CallError> = async {
+                    let history = if ability == CODE_TASK {
+                        History::load(&mut client, source_event_id).await?
+                    } else {
+                        History::default()
+                    };
+                    dispatch(&tools, &engine, &reporter, &ability, &payload, history).await
+                }
+                .await;
+                reporter
+                    .finish(result.as_ref().err().map(ToString::to_string))
+                    .await?;
                 result
             }
             .await;

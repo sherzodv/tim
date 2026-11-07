@@ -391,6 +391,8 @@ impl TimApi {
         self.t_space.publish_task_finished(TaskFinished {
             timite_id: session.timite_id,
             task_id: req.task_id,
+            error: req.error.clone(),
+            duration_ms: req.duration_ms,
         })?;
         Ok(SendTaskFinishedRes {})
     }

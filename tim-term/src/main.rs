@@ -19,7 +19,7 @@ use tim_client::client::{TimClient, TimClientConf};
 use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::app::App;
+use crate::app::{App, Focus};
 use crate::error::Result;
 use crate::event::{AppEvent, EventHandler};
 
@@ -48,8 +48,33 @@ async fn main() -> Result<()> {
     };
 
     tracing::info!("Connecting to Tim server...");
-    let mut client = TimClient::new(config).await?.in_branch(0);
+    let mut client = TimClient::new(config).await?;
     let timite_id = client.timite_id();
+
+    let mut app = App::new(timite_id, username);
+
+    // Discover branches and their fork points before starting the all-branch stream.
+    let mut cursor = Some(0);
+    let mut offset = 1;
+    loop {
+        let res = client.get_timeline(offset, 100).await?;
+        if res.events.is_empty() {
+            break;
+        }
+        for timite in &res.timites {
+            app.add_timite_to_cache(timite);
+        }
+        cursor = res
+            .events
+            .iter()
+            .filter_map(|event| event.metadata.as_ref())
+            .map(|metadata| metadata.id)
+            .max();
+        offset = cursor.unwrap_or(0) + 1;
+        for event in res.events {
+            app.handle_space_event(event);
+        }
+    }
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -62,25 +87,6 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(timite_id, username);
-
-    // Load timeline history
-    let mut cursor = None;
-    if let Ok(res) = client.get_timeline(0, 100).await {
-        for timite in &res.timites {
-            app.add_timite_to_cache(timite);
-        }
-        cursor = res
-            .events
-            .iter()
-            .filter_map(|event| event.metadata.as_ref())
-            .map(|metadata| metadata.id)
-            .max();
-        for event in res.events {
-            app.handle_space_event(event);
-        }
-    }
-
     let mut events = EventHandler::new();
     let forwarder = SpaceForwarder {
         tx: events.sender(),
@@ -92,6 +98,7 @@ async fn main() -> Result<()> {
         }
     });
 
+    client = client.in_branch(0);
     let result = run_app(&mut terminal, &mut app, &mut events, &mut client).await;
 
     disable_raw_mode()?;
@@ -138,7 +145,8 @@ async fn run_app(
 
         match events.next().await? {
             AppEvent::Key(key) => handle_key(app, client, key).await?,
-            AppEvent::Paste(text) => app.paste(&text),
+            AppEvent::Paste(text) if app.focus == Focus::Compose => app.paste(&text),
+            AppEvent::Paste(_) => {}
             AppEvent::Redraw => {}
             AppEvent::Space(event) => app.handle_space_event(event),
         }
@@ -149,9 +157,65 @@ async fn run_app(
 
 async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Result<()> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    if ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')) {
+        app.quit();
+        return Ok(());
+    }
+    if key.code == KeyCode::F(2) {
+        app.open_branches();
+        return Ok(());
+    }
+    if key.code == KeyCode::F(3) {
+        switch_branch(app, client, 0).await?;
+        return Ok(());
+    }
+    if app.focus == Focus::Branches {
+        match key.code {
+            KeyCode::Esc => app.focus = Focus::Compose,
+            KeyCode::Up => app.selected_branch = app.selected_branch.saturating_sub(1),
+            KeyCode::Down => {
+                app.selected_branch = (app.selected_branch + 1).min(app.branches.len() - 1)
+            }
+            KeyCode::Enter => {
+                if let Some(id) = app.branches.iter().nth(app.selected_branch).copied() {
+                    switch_branch(app, client, id).await?;
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+    if app.focus == Focus::Browse {
+        match key.code {
+            KeyCode::Char('b') => {
+                app.open_branches();
+                return Ok(());
+            }
+            KeyCode::Left => {
+                switch_branch(app, client, app.parent_branch()).await?;
+                return Ok(());
+            }
+            KeyCode::Char('f') | KeyCode::Enter => {
+                if let Some(id) = app.selected_message_id() {
+                    if key.code == KeyCode::Char('f') || app.branches.contains(&id) {
+                        switch_branch(app, client, id).await?;
+                    }
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+    if key.code == KeyCode::Tab {
+        app.toggle_focus();
+        return Ok(());
+    }
+    if app.focus != Focus::Compose {
+        handle_browse_key(app, key.code);
+        return Ok(());
+    }
     let shift = key.modifiers.contains(KeyModifiers::SHIFT);
     match key.code {
-        KeyCode::Char('c') | KeyCode::Char('d') if ctrl => app.quit(),
         KeyCode::Char('j') if ctrl => app.input.insert_newline(),
         KeyCode::Enter if shift => app.input.insert_newline(),
         KeyCode::Enter => {
@@ -171,6 +235,40 @@ async fn handle_key(app: &mut App, client: &mut TimClient, key: KeyEvent) -> Res
         }
     }
     Ok(())
+}
+
+async fn switch_branch(app: &mut App, client: &mut TimClient, branch_id: u64) -> Result<()> {
+    client.send_typing_stopped().await?;
+    app.switch_branch(branch_id);
+    *client = client.in_branch(branch_id);
+    report_typing(app, client).await
+}
+
+fn handle_browse_key(app: &mut App, key: KeyCode) {
+    if app.focus == Focus::Inspect {
+        match key {
+            KeyCode::Esc => app.focus = Focus::Browse,
+            KeyCode::Up => app.inspector_offset = app.inspector_offset.saturating_sub(1),
+            KeyCode::Down => app.inspector_offset = app.inspector_offset.saturating_add(1),
+            KeyCode::PageUp => {
+                app.inspector_offset = app.inspector_offset.saturating_sub(app.timeline_height)
+            }
+            KeyCode::PageDown => {
+                app.inspector_offset = app.inspector_offset.saturating_add(app.timeline_height)
+            }
+            KeyCode::Home => app.inspector_offset = 0,
+            KeyCode::End => app.inspector_offset = usize::MAX,
+            _ => {}
+        }
+        return;
+    }
+    match key {
+        KeyCode::Esc => app.focus = Focus::Compose,
+        KeyCode::Up => app.select_item(false),
+        KeyCode::Down => app.select_item(true),
+        KeyCode::Enter => app.open_inspector(),
+        _ => {}
+    }
 }
 
 /// Tells the space when this timite starts or stops typing.

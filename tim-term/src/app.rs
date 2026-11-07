@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -44,6 +45,8 @@ pub enum TimelineItem {
     TaskFinished {
         username: String,
         task: String,
+        error: Option<String>,
+        duration_ms: Option<u64>,
         timestamp: u64,
     },
     TaskToolCall {
@@ -65,7 +68,31 @@ struct LiveTask {
     step: Option<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Compose,
+    Browse,
+    Inspect,
+    Branches,
+}
+
+#[derive(Default)]
+struct BranchView {
+    input: TextArea<'static>,
+    scroll_offset: usize,
+    selected_item: Option<usize>,
+}
+
 pub struct App {
+    pub branch_id: u64,
+    pub branches: BTreeSet<u64>,
+    pub selected_branch: usize,
+    pub timeline_event_ids: Vec<u64>,
+    events: BTreeMap<u64, SpaceEvent>,
+    branch_views: HashMap<u64, BranchView>,
+    pub focus: Focus,
+    pub selected_item: Option<usize>,
+    pub inspector_offset: usize,
     pub running: bool,
     pub input: TextArea<'static>,
     pub timeline: Vec<TimelineItem>,
@@ -96,6 +123,15 @@ impl App {
         let mut usernames = HashMap::new();
         usernames.insert(my_timite_id, my_username.clone());
         Self {
+            branch_id: 0,
+            branches: BTreeSet::from([0]),
+            selected_branch: 0,
+            timeline_event_ids: Vec::new(),
+            events: BTreeMap::new(),
+            branch_views: HashMap::new(),
+            focus: Focus::Compose,
+            selected_item: None,
+            inspector_offset: 0,
             running: true,
             input: new_input(),
             timeline: Vec::new(),
@@ -108,6 +144,174 @@ impl App {
             typing_sent: false,
             my_timite_id,
             my_username,
+        }
+    }
+
+    pub fn toggle_focus(&mut self) {
+        self.focus = if self.focus == Focus::Compose {
+            if self.selected_item.is_none() {
+                self.selected_item = self.timeline.len().checked_sub(1);
+            }
+            Focus::Browse
+        } else {
+            Focus::Compose
+        };
+    }
+
+    pub fn select_item(&mut self, next: bool) {
+        if self.timeline.is_empty() {
+            return;
+        }
+        let current = self.selected_item.unwrap_or(self.timeline.len() - 1);
+        self.selected_item = Some(if next {
+            (current + 1).min(self.timeline.len() - 1)
+        } else {
+            current.saturating_sub(1)
+        });
+    }
+
+    pub fn open_inspector(&mut self) {
+        if matches!(
+            self.selected_item.and_then(|i| self.timeline.get(i)),
+            Some(TimelineItem::TaskToolCall { .. })
+        ) {
+            self.inspector_offset = 0;
+            self.focus = Focus::Inspect;
+        }
+    }
+
+    pub fn open_branches(&mut self) {
+        self.selected_branch = self
+            .branches
+            .iter()
+            .position(|id| *id == self.branch_id)
+            .unwrap_or(0);
+        self.focus = Focus::Branches;
+    }
+
+    pub fn selected_message_id(&self) -> Option<u64> {
+        let index = self.selected_item?;
+        matches!(self.timeline.get(index)?, TimelineItem::Message { .. })
+            .then(|| self.timeline_event_ids[index])
+    }
+
+    pub fn branch_label(&self, id: u64) -> String {
+        if id == 0 {
+            return "main (0)".to_string();
+        }
+        let description = self
+            .events
+            .get(&id)
+            .and_then(|event| match &event.data {
+                Some(EventData::EventNewMessage(data)) => data
+                    .message
+                    .as_ref()
+                    .map(|message| message.content.as_str()),
+                _ => None,
+            })
+            .unwrap_or("");
+        let preview: String = description
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(60)
+            .collect();
+        format!("#{id} {preview}")
+    }
+
+    pub fn branch_status(&self, branch_id: u64) -> &'static str {
+        self.events
+            .values()
+            .rev()
+            .filter(|event| {
+                event
+                    .metadata
+                    .as_ref()
+                    .is_some_and(|meta| meta.branch_id == branch_id)
+            })
+            .find_map(|event| match &event.data {
+                Some(EventData::EventTaskStarted(_)) => Some("running"),
+                Some(EventData::EventTaskFinished(data)) => {
+                    data.task_finished.as_ref().map(|task| {
+                        if task.error.is_some() {
+                            "failed"
+                        } else {
+                            "finished"
+                        }
+                    })
+                }
+                _ => None,
+            })
+            .unwrap_or("")
+    }
+
+    pub fn parent_branch(&self) -> u64 {
+        self.events
+            .get(&self.branch_id)
+            .and_then(|event| event.metadata.as_ref())
+            .map_or(0, |meta| meta.branch_id)
+    }
+
+    pub fn switch_branch(&mut self, branch_id: u64) {
+        let view = BranchView {
+            input: std::mem::replace(&mut self.input, new_input()),
+            scroll_offset: self.scroll_offset,
+            selected_item: self.selected_item,
+        };
+        self.branch_views.insert(self.branch_id, view);
+        let view = self
+            .branch_views
+            .remove(&branch_id)
+            .unwrap_or_else(|| BranchView {
+                input: new_input(),
+                ..Default::default()
+            });
+        self.branch_id = branch_id;
+        self.branches.insert(branch_id);
+        self.input = view.input;
+        self.scroll_offset = view.scroll_offset;
+        self.selected_item = view.selected_item;
+        self.focus = Focus::Compose;
+        self.typing_sent = false;
+        self.timeline.clear();
+        self.timeline_event_ids.clear();
+        self.tasks.clear();
+        self.typing.clear();
+        self.online_timites.clear();
+        let events: Vec<_> = self
+            .events
+            .values()
+            .filter(|event| self.visible(event) || is_presence(event))
+            .cloned()
+            .collect();
+        for event in events {
+            self.apply_event(event);
+        }
+    }
+
+    fn visible(&self, event: &SpaceEvent) -> bool {
+        let Some(meta) = &event.metadata else {
+            return false;
+        };
+        let mut branch = self.branch_id;
+        let mut end = u64::MAX;
+        loop {
+            if meta.branch_id == branch {
+                return meta.id <= end;
+            }
+            if branch == 0 {
+                return false;
+            }
+            let Some(parent) = self
+                .events
+                .get(&branch)
+                .and_then(|event| event.metadata.as_ref())
+            else {
+                return false;
+            };
+            end = branch;
+            branch = parent.branch_id;
         }
     }
 
@@ -161,6 +365,25 @@ impl App {
     }
 
     pub fn handle_space_event(&mut self, event: SpaceEvent) {
+        let Some(meta) = &event.metadata else {
+            return;
+        };
+        self.branches.insert(meta.branch_id);
+        // Raw model events are not rendered by this client.
+        if matches!(&event.data, Some(EventData::EventTaskModelEvent(_))) {
+            return;
+        }
+        if self.events.insert(meta.id, event.clone()).is_some() {
+            return;
+        }
+        if self.visible(&event) || is_presence(&event) {
+            self.apply_event(event);
+        }
+    }
+
+    fn apply_event(&mut self, event: SpaceEvent) {
+        let event_id = event.metadata.as_ref().map_or(0, |meta| meta.id);
+        let previous_len = self.timeline.len();
         let timestamp = event
             .metadata
             .as_ref()
@@ -228,6 +451,9 @@ impl App {
                 }
             }
             EventData::EventTaskModelEvent(_) => {}
+        }
+        if self.timeline.len() > previous_len {
+            self.timeline_event_ids.push(event_id);
         }
     }
 
@@ -316,6 +542,8 @@ impl App {
         self.timeline.push(TimelineItem::TaskFinished {
             username: self.username(finished.timite_id),
             task,
+            error: finished.error,
+            duration_ms: finished.duration_ms,
             timestamp,
         });
     }
@@ -338,4 +566,11 @@ impl App {
     pub fn add_timite_to_cache(&mut self, timite: &Timite) {
         self.usernames.insert(timite.id, timite.username.clone());
     }
+}
+
+fn is_presence(event: &SpaceEvent) -> bool {
+    matches!(
+        &event.data,
+        Some(EventData::EventTimiteConnected(_) | EventData::EventTimiteDisconnected(_))
+    )
 }
